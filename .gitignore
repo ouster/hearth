@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+reports/
+bench/results/
+.DS_Store
+__pycache__/
+*.pyc
+.venv/

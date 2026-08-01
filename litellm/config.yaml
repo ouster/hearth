@@ -1,0 +1,136 @@
+# ai-stack gateway
+# The ONLY file that names concrete models. Everything else uses roles.
+# Changes here need a matching entry in docs/MODELS.md and an ADR.
+#
+# A model whose api_key resolves to a missing env var fails the ENTIRE config
+# load, not just that entry. So cloud roles you have no key for stay commented
+# out. Uncomment as you add keys to ~/.config/litellm/env.
+
+model_list:
+
+  # ---------- LOCAL ----------
+  # ollama_chat/, not ollama/ — the completion-API prefix causes tool-call
+  # loops and dropped context. See docs/decisions/0001.
+
+  - model_name: local-fast
+    litellm_params:
+      model: ollama_chat/qwen2.5-coder:7b
+      api_base: http://127.0.0.1:11434
+    model_info:
+      tier: local
+      set_on: "2026-08-01"
+      note: "quick edits, autocomplete, throwaway questions"
+
+  - model_name: local-code
+    litellm_params:
+      model: ollama_chat/qwen2.5-coder:32b
+      api_base: http://127.0.0.1:11434
+    model_info:
+      tier: local
+      set_on: "2026-08-01"
+      note: "default coding model, ~19GB"
+
+  - model_name: local-big
+    litellm_params:
+      model: ollama_chat/llama3.3:70b
+      api_base: http://127.0.0.1:11434
+    model_info:
+      tier: local
+      set_on: "2026-08-01"
+      note: "FLAGGED — 42GB, dated. Bench a 30B MoE before keeping. See PLAN Phase 4."
+
+  - model_name: local-embed
+    litellm_params:
+      model: ollama/nomic-embed-text
+      api_base: http://127.0.0.1:11434
+    model_info:
+      tier: local
+      mode: embedding
+      set_on: "2026-08-01"
+
+  # ---------- CLOUD: ACTIVE ----------
+  # Only GOOGLE_API_KEY exists today, so this is the only live cloud role.
+
+  - model_name: cloud-cheap
+    litellm_params:
+      model: gemini/gemini-3.5-flash
+      api_key: os.environ/GOOGLE_API_KEY
+    model_info:
+      tier: cloud
+      set_on: "2026-08-01"
+      note: "1M context, cheap. Bulk non-sensitive work."
+
+  # ---------- CLOUD: DORMANT ----------
+  # Uncomment one block at a time, add the key to ~/.config/litellm/env,
+  # kickstart the agent, then run scripts/healthcheck.sh.
+
+  # cloud-code — needs a pay-per-token Anthropic API key, which is NOT the same
+  # as a Claude subscription. Claude Code already runs on the subscription and
+  # does not need this. Only worth opening if you want Claude available to
+  # aider, Cursor-via-gateway, scripts, or the laptop.
+  #
+  # - model_name: cloud-code
+  #   litellm_params:
+  #     model: anthropic/claude-sonnet-5
+  #     api_key: os.environ/ANTHROPIC_API_KEY
+  #   model_info:
+  #     tier: cloud
+  #     set_on: "2026-08-01"
+  #     note: "hard coding + agentic. The old alias used claude-sonnet-4-6, a generation behind."
+
+  # cloud-frontier — PRIMARY frontier route once you have an OpenRouter key.
+  # One key, day-zero access to new models: the churn hedge. $3/$15 for K3.
+  #
+  # - model_name: cloud-frontier
+  #   litellm_params:
+  #     model: openrouter/moonshotai/kimi-k3
+  #     api_key: os.environ/OPENROUTER_API_KEY
+  #   model_info:
+  #     tier: cloud
+  #     set_on: "2026-08-01"
+  #     note: "$3/$15. ~92% cache hit reported → effective input ~$0.52/M."
+
+  # - model_name: cloud-frontier-direct
+  #   litellm_params:
+  #     model: moonshot/kimi-k3
+  #     api_key: os.environ/MOONSHOT_API_KEY
+  #   model_info:
+  #     tier: cloud
+  #     set_on: "2026-08-01"
+  #     note: "$3/$15 from the source. Best caching for K3 specifically."
+
+  # - model_name: cloud-frontier-fast
+  #   litellm_params:
+  #     model: fireworks_ai/accounts/fireworks/models/kimi-k3
+  #     api_key: os.environ/FIREWORKS_API_KEY
+  #   model_info:
+  #     tier: cloud
+  #     set_on: "2026-08-01"
+  #     note: "$3.30/$16.50 — dearest of the three. Throughput or LoRA only."
+
+router_settings:
+  num_retries: 2
+  timeout: 120
+
+  # PRIVACY-CRITICAL.
+  # Local roles fall back to OTHER LOCAL ROLES ONLY. Never to cloud.
+  # The inherited config had local-ollama -> gemini, which meant any Ollama
+  # timeout silently shipped the prompt to Google. Do not reintroduce that.
+  #
+  # scripts/audit-fallbacks.sh fails if a local-* role can reach a cloud model.
+  fallbacks:
+    - local-code: ["local-fast"]
+    - local-big:  ["local-code"]
+    # Re-add these alongside the dormant blocks above:
+    # - cloud-code: ["cloud-cheap"]
+    # - cloud-frontier: ["cloud-frontier-direct", "cloud-frontier-fast", "cloud-code"]
+
+litellm_settings:
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY   # was hardcoded in the inherited config
+  # Virtual keys, spend caps and store_model_in_db need Postgres.
+  # Uncomment after scripts/db.sh up — see docs/RUNBOOK.md.
+  # database_url: os.environ/DATABASE_URL
+  # store_model_in_db: true
