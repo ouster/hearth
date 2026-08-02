@@ -61,6 +61,8 @@ alias ask-cloud='_aider_role cloud-cheap general'
 # --- utilities ---
 alias ai-health='"$HOME/dev/ai-stack/scripts/healthcheck.sh"'
 alias ai-audit='"$HOME/dev/ai-stack/scripts/audit-fallbacks.sh"'
+alias ai-status='"$HOME/dev/ai-stack/scripts/status.sh"'
+alias ai-boot='"$HOME/dev/ai-stack/scripts/boot.sh"'
 alias ai-db='"$HOME/dev/ai-stack/scripts/db.sh"'
 alias ai-restart='launchctl kickstart -k "gui/$(id -u)/com.colinnevin.litellm"'
 alias ai-log='tail -f "$HOME/Library/Logs/litellm.error.log"'

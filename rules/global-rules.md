@@ -17,6 +17,10 @@ passes on any Linux CI, and dies on the Mac. Avoid:
 - `${var^^}` / `${var,,}` — use `tr`
 - Bare `"${arr[@]}"` on a possibly-empty array under `set -u` — throws
   "unbound variable". Guard it: `${arr[@]+"${arr[@]}"}`
+- `pgrep -q` — BSD and GNU disagree. Use `pgrep -f x >/dev/null 2>&1`.
+- `$(... | grep -c . || echo 0)` — `grep -c` prints `0` **and** exits 1 on no
+  match, so the fallback appends a second value and every numeric test after it
+  fails. Use `wc -l | tr -d ' '`.
 
 If a script genuinely needs bash 4+, shebang `#!/usr/bin/env bash` **and** check
 `((BASH_VERSINFO[0] >= 4))` at the top with a clear error.

@@ -130,6 +130,7 @@ ask-cloud          # cloud-cheap, explicit reach
 
 ai-health          # every role + the leak test
 ai-audit           # fallback leak check
+ai-status          # is everything up
 ai-restart
 ```
 
@@ -149,6 +150,9 @@ ai-restart
 | `bisect-config.sh` | Find which config section breaks model loading |
 | `webui.sh` | Open WebUI chat surface, private-scoped by default |
 | `usage.sh` | Which role, which model, local or cloud, tokens and cost |
+| `status.sh` | One glance: is everything up right now |
+| `install-autostart.sh` | Make the stack survive a reboot; report sleep settings |
+| `boot.sh` | Start Podman, containers, gateway in order. Run by the boot agent |
 
 Start with `docs/ARCHITECTURE.md`, then `docs/ROUTING.md` and `docs/RUNBOOK.md`.
 `docs/IDES.md` covers Zed and aider, including why both.

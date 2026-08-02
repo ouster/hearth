@@ -55,6 +55,47 @@ launchctl kickstart -k gui/$(id -u)/com.colinnevin.litellm
 Provider keys go in `~/.config/litellm/env`, which `run-litellm.sh` sources.
 Rollback is `mv` the `.pre-ai-stack` file back and kickstart.
 
+## Surviving a reboot
+
+```bash
+scripts/install-autostart.sh --check    # what does and does not come back
+scripts/install-autostart.sh --apply    # install the boot agent
+scripts/status.sh                       # is everything up right now
+```
+
+What already survives, and what does not:
+
+| Piece | After a reboot |
+|---|---|
+| LiteLLM | comes back — launchd `KeepAlive` |
+| `OLLAMA_HOST` | set at login by `com.user.setollamahost.plist` |
+| Ollama itself | **only if "Open at Login" is ticked in its Settings** |
+| Podman VM | **does not start itself** — this is the real gap |
+| Containers | restart policies only apply once the VM is up |
+
+`scripts/boot.sh` closes the gap: starts the Podman VM, starts the containers,
+waits for Postgres, then kicks the gateway if it has not settled.
+
+LiteLLM would eventually recover on its own — it crash-loops against a missing
+database and launchd restarts it every 10 s — but a clean start beats a minute
+of restart noise in the log.
+
+### Sleep
+
+A sleeping Studio means every laptop loses the gateway. `install-autostart.sh`
+**prints** these rather than running them, because silently changing when your
+machine sleeps is not something a script should do:
+
+```bash
+sudo pmset -c sleep 0        # never sleep on AC
+sudo pmset -c disksleep 0
+sudo pmset -a womp 1         # wake on network access
+sudo pmset -c displaysleep 10   # displays can still sleep, that is free
+```
+
+`womp` is the interesting one — with it a laptop reaching the Studio can wake
+it. Without it, asleep means unavailable.
+
 ## Everyday
 
 ```bash
