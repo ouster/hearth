@@ -32,6 +32,7 @@ model_list:
     litellm_params:
       model: ollama_chat/qwen3:8b
       api_base: http://127.0.0.1:11434
+      think: false      # qwen3 thinking off — see ADR 0006
     # set 2026-08-02 — GENERAL knowledge and conversation, 5.2GB, 40K ctx.
     # Added because every other local role is a coder or reasoning model.
     # Asking qwen2.5-coder:7b for a history fact got a hallucinated tool call,

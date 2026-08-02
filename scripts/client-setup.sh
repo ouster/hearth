@@ -4,6 +4,7 @@
 #   scripts/client-setup.sh lan            # local roles + cloud-cheap
 #   scripts/client-setup.sh lan-cloud      # wider scope: adds the cloud roles
 #   scripts/client-setup.sh lan --install user@laptop   # scp and wire it up
+#   scripts/client-setup.sh lan --windows               # PowerShell instructions
 #
 # The client needs no Ollama, no models, no Podman. Everything runs on this
 # machine; the laptop just points at the gateway.
@@ -15,6 +16,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
 ai_load_env "$ROOT"
+
+WINDOWS=false
+for a in "$@"; do [ "$a" = "--windows" ] && WINDOWS=true; done
 
 SCOPE="${1:-lan}"
 case "$SCOPE" in
@@ -41,6 +45,65 @@ if [ "${2:-}" = "--install" ] && [ -n "${3:-}" ]; then
   ssh "$TARGET" "grep -q ai-stack-client \$HOME/.bashrc 2>/dev/null || echo 'export AI_STACK_GATEWAY=${GATEWAY}; source ~/.ai-stack-client.sh' >> \$HOME/.bashrc"
   echo "done. On ${TARGET}: open a new shell, then 'ai-ping' and 'ai-models'."
   exit 0
+fi
+
+if $WINDOWS; then
+cat <<EOF
+=============================================================
+ ai-stack client setup — WINDOWS — ${SCOPE} key (${DESC})
+=============================================================
+
+Three ways, easiest first.
+
+A. WSL or Git Bash — the .sh works unchanged
+   Follow the normal instructions: scripts/client-setup.sh ${SCOPE}
+
+B. Native PowerShell (5.1 or 7+, no WSL needed)
+
+   1. Copy the client
+      scp $(whoami)@${LANIP}:~/dev/ai-stack/client/ai-stack-client.ps1 \$HOME\.ai-stack-client.ps1
+
+   2. Store the key
+      '${KEY}' | Out-File -NoNewline \$HOME\.ai-stack-key
+
+      Then lock it down (Windows has no chmod):
+      icacls \$HOME\.ai-stack-key /inheritance:r /grant:r "\$env:USERNAME:(R)"
+
+   3. Load it every session
+      notepad \$PROFILE
+      # add these two lines:
+      \$env:AI_STACK_GATEWAY = "${GATEWAY}"
+      . "\$HOME\.ai-stack-client.ps1"
+
+      If \$PROFILE does not exist:
+      New-Item -ItemType File -Path \$PROFILE -Force
+
+   4. Open a new PowerShell and check
+      ai-ping
+      ai-models
+      ask-chat "say hello"
+
+   Note: if the profile will not load, PowerShell's execution policy is
+   blocking it. Per-user fix:
+      Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+C. Nothing installed at all — just point any OpenAI-compatible tool at:
+      base URL: ${GATEWAY}/v1
+      api key:  ${KEY}
+      model:    local-chat   (or local-code, local-big, cloud-cheap)
+
+-------------------------------------------------------------
+ Same caveats as any client
+-------------------------------------------------------------
+No Ollama, no models, no containers on this machine — inference happens
+on the Mac Studio. If it is asleep, nothing works.
+
+Traffic is plain HTTP on your LAN. Fine at home, wrong on public wifi.
+Off-network, tunnel instead:
+  ssh -N -L 4000:127.0.0.1:4000 $(whoami)@${LANIP}
+  \$env:AI_STACK_GATEWAY = "http://127.0.0.1:4000"
+EOF
+exit 0
 fi
 
 cat <<EOF

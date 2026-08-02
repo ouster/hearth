@@ -22,7 +22,15 @@ PORT=3000
 
 CMD="${1:-status}"
 SCOPE="private"
-[ "${2:-}" = "--general" ] && SCOPE="general"
+BIND="127.0.0.1"
+for a in "$@"; do
+  [ "$a" = "--general" ] && SCOPE="general"
+  # --lan exposes the UI to the whole network. Open WebUI has its own login, so
+  # this is not wide open — but it is another authenticated surface on a machine
+  # whose other services are deliberately localhost-only. The SSH tunnel in
+  # docs/RUNBOOK.md gives laptop access without opening anything.
+  [ "$a" = "--lan" ] && BIND="0.0.0.0"
+done
 
 case "$CMD" in
   up)
@@ -66,7 +74,7 @@ case "$CMD" in
     podman run -d \
       --name "$NAME" \
       --restart unless-stopped \
-      -p "127.0.0.1:${PORT}:8080" \
+      -p "${BIND}:${PORT}:8080" \
       -e OPENAI_API_BASE_URL="http://host.containers.internal:4000/v1" \
       -e OPENAI_API_KEY="$KEY" \
       -e ENABLE_OLLAMA_API=False \
@@ -157,5 +165,5 @@ EOF
     podman volume rm "$VOLUME" >/dev/null 2>&1 || true
     echo "gone"
     ;;
-  *) echo "usage: $0 {up [--general]|down|status|logs|destroy}"; exit 1 ;;
+  *) echo "usage: $0 {up [--general] [--lan]|down|status|logs|destroy}"; exit 1 ;;
 esac

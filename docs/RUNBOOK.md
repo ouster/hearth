@@ -81,10 +81,39 @@ curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
 ## Chat UI and visibility
 
 ```bash
-scripts/webui.sh up          # private scope — local roles only
+scripts/webui.sh up            # private scope — local roles only
 scripts/webui.sh up --general  # cloud reachable, deliberate
+scripts/webui.sh up --lan      # reachable from other machines (see below)
 scripts/webui.sh down
 ```
+
+### Using the chat UI from a laptop
+
+Open WebUI is a **web app** — nothing to install on the laptop, and you get the
+same chat history rather than a second disconnected copy. It only needs to be
+reachable.
+
+**Preferred: SSH tunnel.** Keeps the UI localhost-only, works from anywhere you
+can ssh, and encrypts the traffic:
+
+```bash
+# on the laptop
+ssh -N -L 3000:127.0.0.1:3000 colin@192.168.50.154
+# then browse to http://127.0.0.1:3000
+```
+
+**Alternative: bind to the LAN.**
+
+```bash
+scripts/webui.sh up --lan     # then http://192.168.50.154:3000
+```
+
+Open WebUI has its own login, so this is not wide open. But it is another
+authenticated surface on a machine whose other services — Ollama, Postgres — are
+deliberately localhost-only, and the traffic is plain HTTP. Fine on a trusted
+home network; the tunnel is better if you can be bothered.
+
+Either way, **do not port-forward :3000 to the internet.**
 
 Then `http://127.0.0.1:3000`. First visit creates a local account; signup is
 disabled afterwards. In Settings → Interface, enable **Display "Response Info"**

@@ -273,6 +273,68 @@ ask "explain this repo"  # aider on local-code, running on the Studio
 Clients use the same **role** names, so swapping the model behind `local-code`
 never requires touching a laptop.
 
+### The chat UI on a laptop
+
+Each machine runs **its own** Open WebUI against the shared gateway, so chat
+history stays local to the device. Inference still happens on the Studio.
+
+```bash
+# on the laptop — needs podman or docker
+scp colin@192.168.50.154:~/dev/ai-stack/client/webui-client.sh ~/webui-client.sh
+chmod +x ~/webui-client.sh
+~/webui-client.sh up          # then http://127.0.0.1:3000
+```
+
+It reads the same `~/.ai-stack-key` and `$AI_STACK_GATEWAY` as the shell client,
+checks the gateway is reachable before starting, and binds to localhost — a
+client that serves other clients is a surprise nobody wants.
+
+| | Own instance (this) | Browsing the Studio's |
+|---|---|---|
+| Chat history | local to the device | shared across machines |
+| Needs on laptop | podman or docker | nothing |
+| Web search | not available | works |
+
+**Web search from a laptop instance** needs SearXNG forwarded, since it's bound
+to the Studio's localhost:
+
+```bash
+~/webui-client.sh tunnel          # prints the ssh line
+ssh -N -L 8888:127.0.0.1:8888 colin@192.168.50.154   # leave running
+~/webui-client.sh up              # detects the tunnel, wires search
+```
+
+`up` only configures search if the tunnel is actually up, then verifies the
+*container* can reach it — the container needs `host.containers.internal`
+(podman) or `host.docker.internal` (docker), not `127.0.0.1`, so checking from
+the host would prove nothing.
+
+You still have to switch it on in Admin Panel → Settings → Web Search, because
+Open WebUI's database overrides the env vars.
+
+If you'd rather have no container on the laptop after all, browse the Studio's
+instance instead — `scripts/webui.sh up --lan`, or an SSH tunnel on `3000`,
+which keeps it localhost-only and encrypted.
+
+### Windows
+
+The `.sh` shim is POSIX shell, so native PowerShell can't run it. Three routes:
+
+```bash
+scripts/client-setup.sh lan --windows    # prints all three
+```
+
+- **WSL or Git Bash** — the `.sh` works unchanged, nothing else needed.
+- **Native PowerShell** — `client/ai-stack-client.ps1` gives the same
+  `ask` / `ask-chat` / `ask-big` / `ai-ping` / `ai-models` commands on
+  PowerShell 5.1 or 7+, no WSL. Dot-source it from `$PROFILE`.
+- **Nothing at all** — point any OpenAI-compatible tool at
+  `http://<studio>:4000/v1` with the key and a role name as the model.
+
+Two Windows-specific gotchas the script covers: there's no `chmod`, so the key
+file is locked with `icacls`; and PowerShell's execution policy will silently
+refuse to load the profile until you set `RemoteSigned` for the current user.
+
 Two things to be clear-eyed about:
 
 - **If the Studio is asleep, the laptops have nothing.** That is the trade for

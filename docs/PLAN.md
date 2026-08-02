@@ -20,7 +20,8 @@ This file tracks progress only. The original plan is preserved in
 | Aliases switched to roles | done |
 | 3 — lock Ollama to localhost | **done** — LAN unreachable, verified |
 | llama3.3:70b retired | done — ADR 0004. 440 s to 5 s |
-| 4 — bench harness | done and run — **results need a human read** |
+| 4 — bench harness | done and run — found the local-chat verbosity problem |
+| local-chat thinking disabled | done — ADR 0006. 29.7 s to 5.1 s |
 | digest pinning | recorded + drift-checked (not enforceable in Ollama) |
 | 5 — auto-update pipeline | deferred |
 | 6 — Open WebUI | **done** — chat UI on :3000, private-scoped, local-chat default |
@@ -86,7 +87,8 @@ Kept as a record of why the tooling exists.
 
 ## Next
 
-1. **Read the bench output for task 03.** `gpt-oss:20b` earned `local-big` on
+1. **Re-run `bench.sh`** now that thinking is off, so the recorded numbers
+   match reality, then **read the task 03 output.** `gpt-oss:20b` earned `local-big` on
    capacity, not quality — nothing has yet confirmed it reasons well. Task 03
    hides a float-for-currency bug in settlement arithmetic; a model that fixes
    the obvious `range(len())` and misses that is the wrong tool for conveyancing

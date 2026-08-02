@@ -11,7 +11,7 @@ model's size — see the measurement below.
 
 | Role | Model | Size | Set | Digest | Why |
 |---|---|---|---|---|---|
-| `local-chat` | `qwen3:8b` | 5.2 GB | 2026-08-02 | _pending_ | General knowledge, 40K ctx. Open WebUI default |
+| `local-chat` | `qwen3:8b` | 5.2 GB | 2026-08-02 | _pending_ | General knowledge, 40K ctx. **thinking off** — ADR 0006 |
 | `local-code` | `qwen3-coder:30b` | 19 GB | 2026-08-02 | _pending_ | 30B MoE, ~3B active, 256K ctx. Runs at ~7B speed |
 | `local-big` | `gpt-oss:20b` | 13 GB | 2026-08-02 | _pending_ | Reasoning. Replaced llama3.3:70b — ADR 0004 |
 | `local-embed` | `nomic-embed-text` | 0.3 GB | 2026-08-01 | _pending_ | Local RAG |
@@ -20,8 +20,9 @@ model's size — see the measurement below.
 **Resident total: 37.5 GB of ~54 GB.** All four local models stay loaded; no
 switch evicts anything.
 
-Digest pinning is not yet implemented — roles are still tag-backed, so an
-`ollama pull` can change the weights underneath one. See below.
+Digests are **recorded and drift-checked**, not enforced — see below. Run
+`scripts/pin-digests.sh` once the bench output has been read, so the recorded
+state is a known-good one.
 
 ## Dormant
 
@@ -56,6 +57,24 @@ Note on the last one: Qwen3-Coder has **no variant below 30B**, so
 `qwen2.5-coder:7b` remained the best sub-10 GB coding model available. It went
 because the role became unnecessary, not because it was outdated. If a small
 dense coder appears, the role can return.
+
+## Verbosity, not speed
+
+Second measurement, from the first real bench run:
+
+| Model | tokens over 4 tasks | wall clock | avg tok/s |
+|---|---|---|---|
+| `qwen3-coder:30b` | 1,218 | 11.2 s | 108.8 |
+| `gpt-oss:20b` | 4,466 (3.7x) | 47.6 s | 93.8 |
+| `qwen3:8b` (thinking on) | 13,840 (11.4x) | 181.4 s | 76.3 |
+
+Throughput barely moves — 65–120 tok/s across everything, because the machine
+is memory-bandwidth bound. **Wall clock is set by how many tokens a model emits,
+not how fast.** A hybrid reasoning model can be the slowest role while being the
+smallest.
+
+Disabling thinking on `local-chat` took it from 2,370 tokens / 29.7 s to
+**386 tokens / 5.1 s** through the gateway. See ADR 0006.
 
 ## The measurement that drove all of this
 
@@ -101,10 +120,19 @@ decisions and does **not** update itself. Re-check before relying on it.
 
 Ollama tags are mutable pointers, not versions. `ollama pull qwen3-coder:30b`
 fetches whatever that tag points at today, which may be a different quantisation
-than the one you benched. Roles should therefore pin digests, and the auto-updater
-should stage new pulls under a `candidate-` prefix rather than overwriting.
+than the one you benched, and nothing warns you.
 
-**Not yet implemented.** Until it is, a routine pull can silently change a role.
+Ollama offers **no way to bind a tag to a digest in the model name**, so pinning
+here is record-and-detect rather than enforce:
+
+```bash
+scripts/pin-digests.sh           # record, after a bench you trust
+scripts/pin-digests.sh --check   # compare live against recorded
+```
+
+`pins/digests.tsv` is git-tracked, so drift shows up in a diff.
+`scripts/preflight.sh` runs the check and fails on a mismatch. That is weaker
+than true pinning; the honest framing is that you will be told, not stopped.
 
 ## Changing a role
 

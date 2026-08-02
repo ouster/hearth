@@ -126,8 +126,11 @@ PY
         fi ;;
     esac
 
+    # Tokens first, deliberately. On a memory-bandwidth-bound machine tok/s
+    # barely varies between models, so wall-clock is driven by how MANY tokens
+    # a model emits. Leading with tok/s hid a role taking 100s to answer.
     tps=$("$AI_PY" -c "import sys; t,s=float(sys.argv[1]),float(sys.argv[2]); print(f'{t/s:.1f}' if s>0 else '0')" "$toks" "$secs")
-    printf '%6s tok/s  %6ss  %s\n' "$tps" "$secs" "$verdict"
+    printf '%7s tok  %7ss  %6s tok/s  %s\n' "$toks" "$secs" "$tps" "$verdict"
     printf '%s\t%s\t%s\t%s\t%s\n' "$model" "$tid" "$toks" "$secs" "$verdict" >> "$TSV"
   done
 done
@@ -152,12 +155,19 @@ for r in rows:
 
 print(f"# Bench — {stamp}\n")
 print("Host: M4 Max, 64 GB. Ollama direct.\n")
-print("## Speed and auto-checks\n")
+print("## Verbosity and speed\n")
+print("Tokens emitted is the number that matters. Throughput barely varies between")
+print("models on this machine — it is memory-bandwidth bound — so wall-clock is")
+print("driven by how much a model chooses to say. A *thinking* model can be the")
+print("slowest role while being the smallest.\n")
 print("| Model | tokens | total s | avg tok/s | syntax ok | syntax fail | errors |")
 print("|---|---|---|---|---|---|---|")
-for m, a in sorted(agg.items()):
+ordered = sorted(agg.items(), key=lambda kv: kv[1]["toks"])
+least = ordered[0][1]["toks"] if ordered else 1
+for m, a in ordered:
     avg = a["toks"] / a["secs"] if a["secs"] > 0 else 0
-    print(f'| `{m}` | {a["toks"]} | {a["secs"]:.1f} | {avg:.1f} | {a["ok"]} | {a["bad"]} | {a["err"]} |')
+    ratio = a["toks"] / least if least else 1
+    print(f'| `{m}` | {a["toks"]} ({ratio:.1f}x) | {a["secs"]:.1f} | {avg:.1f} | {a["ok"]} | {a["bad"]} | {a["err"]} |')
 
 print("\n## Per task\n")
 print("| Model | Task | tok/s | verdict |")
