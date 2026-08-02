@@ -305,6 +305,8 @@ fine and then fail at runtime.
 
 ## Status
 
-Gateway live, four scoped keys, leak test passing, Ollama localhost-only.
-Outstanding: digest pinning, a chat UI, and an approval-gated model auto-updater.
-See `docs/PLAN.md`.
+Live: gateway with five roles, four scoped keys, leak test passing, Ollama bound
+to localhost, Open WebUI with opt-in SearXNG web search, digest drift detection.
+
+Outstanding: read the bench results for task 03 before trusting `gpt-oss:20b` as
+`local-big`, and an approval-gated model auto-updater. See `docs/PLAN.md`.

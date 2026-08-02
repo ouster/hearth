@@ -89,8 +89,10 @@ The inherited config had `local-ollama -> cloud-fallback (gemini)`, so any Ollam
 timeout, cold load, or restart silently routed the prompt to Google. A fallback is
 an invisible route change; on a privacy boundary that is a leak, not resilience.
 
-Local roles fall back to smaller local roles. If every local role is down, the
-request fails loudly. Failing is the correct behaviour here.
+Local roles fall back to *other local roles*, never to cloud. Currently
+`local-code` and `local-chat` both fall back to `local-big`, and `local-big` has
+no fallback at all — if it is down, fail loudly rather than quietly answer with
+a weaker model. `scripts/audit-fallbacks.sh` enforces the local-only rule.
 
 ## Break-glass
 

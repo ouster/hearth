@@ -277,6 +277,21 @@ for m in cfg.get('model_list', []):
 PY
 )
   fi
+  # Digest drift. Tags are mutable pointers, so a routine `ollama pull` can
+  # change the weights behind a benched role with no warning.
+  if [ -f "${ROOT}/pins/digests.tsv" ]; then
+    bash "${ROOT}/scripts/pin-digests.sh" --check >/dev/null 2>&1
+    case $? in
+      0) ok "all roles match their recorded digest" ;;
+      1) bad "DIGEST DRIFT — weights changed under a benched role"
+         echo "        scripts/pin-digests.sh --check    (see which)" ;;
+      *) wrn "some roles unpinned — scripts/pin-digests.sh to record" ;;
+    esac
+  else
+    wrn "no digest pins recorded — scripts/pin-digests.sh"
+    echo "        Without pins an ollama pull can silently swap a role's weights."
+  fi
+
   # Ollama reports an implicit :latest tag, so a config entry without a tag
   # must match the :latest variant. Compare both forms.
   for w in $want; do

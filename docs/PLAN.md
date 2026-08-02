@@ -20,8 +20,8 @@ This file tracks progress only. The original plan is preserved in
 | Aliases switched to roles | done |
 | 3 — lock Ollama to localhost | **done** — LAN unreachable, verified |
 | llama3.3:70b retired | done — ADR 0004. 440 s to 5 s |
-| 4 — bench harness | done; **not yet run** |
-| digest pinning | **not implemented** — roles are still tag-backed |
+| 4 — bench harness | done and run — **results need a human read** |
+| digest pinning | recorded + drift-checked (not enforceable in Ollama) |
 | 5 — auto-update pipeline | deferred |
 | 6 — Open WebUI | **done** — chat UI on :3000, private-scoped, local-chat default |
 | Web search via SearXNG | **done** — opt-in per message, :8888, verified end to end |
@@ -69,13 +69,30 @@ Kept as a record of why the tooling exists.
 8. **Leak test could false-pass** — it probed a dormant role, where "model not
    found" also returns 4xx. Now probes a live cloud role and adds a positive
    control, since a merely broken key also refuses everything.
+9. **`model_info: tier: local`** — `tier` is a real LiteLLM field accepting only
+   `free` or `paid`. Pydantic rejected it and LiteLLM logged "ignoring and
+   continuing with other deployments", silently dropping EVERY model. The
+   gateway started clean, passed readiness, and served nothing.
+10. **bash 4 syntax on bash 3.2** — `declare -A` and unguarded `"${arr[@]}"`
+    pass everywhere except macOS, which is the only place it runs.
+11. **`curl | python - args <<'PY'`** — the heredoc and the pipe both claim
+    stdin, so `json.load(sys.stdin)` reads nothing. Symptom is a bogus
+    "response was not JSON".
+12. **`/key/delete` accepted a token hash and did nothing** — it wants
+    `key_aliases`. A silent no-op that looks like success.
+13. **Open WebUI env vars were overridden by its database.** Env only seeds a
+    fresh DB; the persisted volume kept the first run's settings. `podman exec
+    ... env` showed the feature enabled while the UI had it off.
 
 ## Next
 
-1. **Run `bench.sh`.** `gpt-oss:20b` earned `local-big` on capacity, not
-   quality. Task 03 (the float-for-currency trap) is the one that matters.
-2. **Digest pinning.** Roles are still tag-backed, so a routine `ollama pull`
-   can change the weights behind one without anything noticing.
+1. **Read the bench output for task 03.** `gpt-oss:20b` earned `local-big` on
+   capacity, not quality — nothing has yet confirmed it reasons well. Task 03
+   hides a float-for-currency bug in settlement arithmetic; a model that fixes
+   the obvious `range(len())` and misses that is the wrong tool for conveyancing
+   work. Syntax checks cannot answer this. It needs a human read.
+2. **Record digests after that read**, with `scripts/pin-digests.sh`, so drift
+   is detectable from a known-good state rather than an arbitrary one.
 3. **Live with it for a week** before building the auto-updater. It is the
    piece most likely to be overbuilt for a problem that turns out to be small.
 

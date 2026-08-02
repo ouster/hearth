@@ -32,8 +32,12 @@ Read `docs/ROUTING.md` before suggesting any routing change.
 5. **Nothing replaces a role until it is benched.** Run `bench/tasks/` against the
    incumbent. Reputation is not evidence.
 
-6. **Roles pin to digests, not tags.** Ollama tags are mutable pointers. An unpinned
-   role can silently change weights on any pull.
+6. **Digests are recorded and drift is detected — not enforced.** Ollama tags are
+   mutable pointers and Ollama offers no way to pin a tag to a digest in the model
+   name, so `scripts/pin-digests.sh` records the digest each role was blessed with
+   and `preflight.sh` fails when the live one differs. That is weaker than true
+   pinning; say so rather than implying roles are immutable. Re-record only after
+   re-benching.
 
 7. **Check the RAM envelope.** 64 GB total, ~54 GB for weights after macOS and
    apps. Current resident set is 37.5 GB. Say when a suggestion will not fit, or

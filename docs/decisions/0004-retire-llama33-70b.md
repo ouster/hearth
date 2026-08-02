@@ -1,7 +1,7 @@
 # ADR 0004 — Retire llama3.3:70b as `local-big`
 
 Date: 2026-08-02
-Status: accepted
+Status: accepted — **role assignment superseded by ADR 0005**
 
 ## Context
 
@@ -58,6 +58,16 @@ Rationale:
 - `bench.sh` should still be run to compare quality, and may yet argue for
   `qwen3-coder:30b` taking over `local-code` from `qwen2.5-coder:32b` as well.
   That is a separate decision on separate evidence.
+
+## Superseded in part
+
+This ADR assigned `qwen3-coder:30b` to `local-big`. ADR 0005 later moved it to
+`local-code` (replacing qwen2.5-coder:32b) and gave `local-big` to
+`gpt-oss:20b` as the reasoning role. The reasoning here — that a 42 GB model
+which cannot stay resident is unusable regardless of quality — stands unchanged;
+only the destination role moved.
+
+Live assignment is always `litellm/config.yaml` and `docs/MODELS.md`.
 
 ## Rollback
 
