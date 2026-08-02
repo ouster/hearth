@@ -1,0 +1,215 @@
+# Prompt injection threat model
+
+Last updated: 2026-08-02. Controls in §4 verified on macOS 26.4 by
+`scripts/sandbox-probe.sh` (10 passed, 0 failed).
+
+## 1. The claim this document rests on
+
+**Prompt injection cannot be detected reliably, and we do not try.**
+
+As of 2026 the strongest published defences still miss roughly one in ten
+optimisation-based attacks, and adaptive attacks bypass essentially every
+recommended defence. OWASP's 2026 data has prompt injection as the leading
+agentic-AI security failure in production, with coding agents driving most of
+the new attack volume — **aider is named among the five agents responsible**,
+and it is the one used daily here.
+
+The consequence for design: there is no filter to install, no delimiter scheme
+to adopt, and no classifier worth running. The only defences that hold are
+**capability restrictions** — reducing what an agent is able to do, so that a
+successful injection has nowhere to go.
+
+Anything in this repo that looks like injection *detection* is a bug.
+
+## 2. Why the existing privacy boundary does not help
+
+This is the important structural point, and it is easy to get wrong.
+
+The gateway is the control plane for **where data goes on purpose**. The
+`private` key cannot reach cloud roles, so a prompt cannot route client data to
+Google. That boundary is real and it works.
+
+Injection attacks do not use that path at all.
+
+```mermaid
+flowchart LR
+    web["web pages<br/>via SearXNG"]
+    repo["repo files<br/>vendored deps"]
+    mcpsrc["auslaw-mcp<br/>UNAUDITED"]
+
+    agent["aider / Zed agent"]
+    wd[("working dir<br/>writable")]
+    secrets[("~/.ssh · .env<br/>keychain")]
+
+    gw{{"LiteLLM :4000<br/>key scope · spend · audit"}}
+    localm["local models"]
+    cloudm["cloud models"]
+    outside["any other host<br/>github · pypi · attacker"]
+
+    web --> agent
+    repo --> agent
+    mcpsrc --> agent
+
+    agent -->|"the ONLY egress"| gw
+    gw --> localm
+    gw -.->|"refused for private key"| cloudm
+
+    agent --> wd
+    secrets -.->|"readable — accepted"| agent
+    agent x--x outside
+
+    classDef okCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
+    classDef badCls fill:#FBE9E7,stroke:#A32B18,color:#7A1F11
+    classDef warnCls fill:#FAEEDA,stroke:#854F0B,color:#633806
+    class gw,localm okCls
+    class outside badCls
+    class secrets,mcpsrc warnCls
+```
+
+Two boundaries, doing different jobs:
+
+- **`sandbox-exec`** wraps the agent. One arrow leaves it, to the gateway.
+  Everything else — `github`, `pypi`, an attacker's host, DNS itself — is cut.
+- **The gateway** then applies key scope to that one permitted arrow, so even
+  intended traffic cannot reach a cloud model on a `private` key.
+
+An injection that lands still reads whatever it likes (the dashed arrow from
+secrets is deliberate) and can still write into the working directory. What it
+cannot do is get anything out.
+
+An injected agent that reads `~/.ssh/id_rsa` and POSTs it to an attacker
+**never touches LiteLLM**. The virtual key is not in that path. Spend logging
+does not see it. `audit-fallbacks.sh` has no opinion about it.
+
+So: the privacy boundary governs *intentional* routing. The containment
+boundary in §4 governs *everything else*. They are different axes and neither
+substitutes for the other.
+
+| Threat | Key scope | Sandbox |
+|---|---|---|
+| A prompt sends client data to a cloud model | **caught** | not caught |
+| An injected agent exfiltrates a key via curl | not caught | **caught** |
+| An injected agent reads a file it shouldn't | not caught | not caught |
+| An injected agent rewrites source in the repo | not caught | not caught |
+
+Note the bottom two rows. They are not oversights; see §5.
+
+## 3. Surfaces, ranked by capability rather than likelihood
+
+Ranking by likelihood invites guessing. Rank by *what an injection could do if
+it landed*, which is knowable.
+
+| # | Surface | Untrusted content arrives via | If injected, it can | Risk |
+|---|---|---|---|---|
+| 1 | **aider** | files you `/add`, vendored deps, cloned repos, sample data | edit source, run commands, reach the network | **high** |
+| 2 | **Zed agents** | same, plus anything the agent opens itself | same | **high** |
+| 3 | **Claude Code** | repo contents, tool output | broad — but ships its own permission prompts | medium |
+| 4 | **auslaw-mcp** | fetched legislation and practice notes | depends entirely on what the MCP exposes — **unaudited** | unknown |
+| 5 | **SearXNG → Open WebUI** | arbitrary web pages, per message | produce text. No tools are enabled, so it can mislead you but not act | low today |
+
+**Surface 4 is the one with no number next to it.** It touches conveyancing
+work, it fetches from the open web, and nobody has asked what tools it hands a
+model. That is the next thing to audit.
+
+**Surface 5's low rating is conditional and fragile.** The Open WebUI model is
+inert because it has no tools — it can lie to you convincingly, which matters
+for legal research, but it cannot act. **The moment tools, functions, or code
+execution are enabled in Open WebUI, this becomes surface 1 with a web feed
+attached.** Treat enabling them as a decision requiring an ADR, not a settings
+toggle.
+
+## 4. What is actually enforced
+
+`scripts/sandboxed.sh` runs an agent under a `sandbox-exec` profile. Verified
+on macOS 26.4, 2026-08-02:
+
+| Control | State |
+|---|---|
+| Egress to anything but `127.0.0.1:4000` | **blocked** — verified against 1.1.1.1 |
+| DNS resolution | **blocked** — hostnames do not resolve |
+| Writes outside the working directory | **blocked** — verified against `$HOME` |
+| Writes inside the working directory | allowed |
+| Reads | **unrestricted, deliberately** |
+
+Usage:
+
+```bash
+scripts/sandboxed.sh aider                 # confine to $PWD
+scripts/sandboxed.sh --dir ~/dev/x aider   # confine to a named repo
+scripts/sandboxed.sh --print-profile       # audit the profile, any machine
+scripts/sandbox-probe.sh                   # re-verify the controls hold
+```
+
+Re-run the probe after any macOS update. `sandbox-exec` is deprecated and Apple
+could remove or change it without notice; the probe is how you find out that
+happened deliberately rather than by being breached.
+
+### Why reads are open
+
+Restricting reads breaks dylib loading and every language runtime, and read
+confinement is not what stops the attack. An agent under this profile **can
+still read your SSH keys, `.env` files, and browser cookies.** It cannot send
+them anywhere. Exfiltration needs a channel, and there is exactly one open
+channel — the gateway, which speaks the OpenAI API and logs everything.
+
+This is a deliberate trade, not a limitation we failed to notice. Anyone
+reading this document should be able to state it back: *the sandbox protects
+against exfiltration, not against reading.*
+
+### Why the working directory is writable
+
+An agent that cannot write is not an agent. The residual risk is that an
+injected agent **corrupts the repo it was invited into** — plausible, and not
+mitigated by the sandbox. It is mitigated by git: commit before starting an
+agent session, and `git diff` before accepting anything. That is a workflow
+control and it depends on you, which is why it is written down here rather than
+assumed.
+
+### What the sandbox is not
+
+`sandbox-exec` is deprecated, has known weaknesses, and this profile allows
+broad `mach-lookup` and `process-exec` because nothing runs without them. A
+determined attacker with code execution may find leverage there.
+
+This is **not** a VM and not a security boundary of that grade. It raises the
+cost of an attack and closes the one channel that turns a compromise into a
+loss. Do not extend trust to it beyond that. If the threat model ever includes
+a motivated attacker specifically targeting this machine, the answer is a Lima
+VM or a separate user account, not a better SBPL profile.
+
+## 5. Accepted, unmitigated risk
+
+Recorded so nobody mistakes silence for safety.
+
+1. **An injected agent can read any file the user can.** Mitigated only by the
+   absence of an egress channel. If a future change opens egress — even to a
+   package registry — this becomes live. That is why `--also-write` and any
+   network widening need justification.
+2. **An injected agent can corrupt its own repo.** Mitigated by git hygiene,
+   not by the sandbox.
+3. **Claude Code runs unsandboxed** by the same exception recorded in ADR 0001.
+   It relies on Anthropic's own permission prompts.
+4. **auslaw-mcp is unaudited.** Unknown capability, real-data adjacency.
+5. **No confirmation gates** beyond git commits. This costs nothing today
+   because nothing in the stack can send mail or move money. It becomes urgent
+   the day something can.
+
+## 6. Cheapest next checks
+
+In order of value per effort:
+
+1. Audit what tools `auslaw-mcp` exposes to a model. Surface 4 is the only
+   unknown on the list.
+2. Run aider under the sandbox for a week of real work and record what it
+   needed widened. A profile nobody can work under gets switched off.
+3. Confirm Open WebUI still has tools disabled after any upgrade — its settings
+   live in a database that overrides the environment, a trap already documented
+   in `RUNBOOK.md`.
+
+## Sources
+
+- [Prompt injection still drives most agentic AI security failures in production — Help Net Security / OWASP, June 2026](https://www.helpnetsecurity.com/2026/06/11/owasp-prompt-injection-ai-security-failures/)
+- [Adaptive Evaluation of Out-of-Band Defenses Against Prompt Injection in LLM Agents (arXiv)](https://arxiv.org/pdf/2606.26479)
+- [Prompt Injection Prevention for Coding Agents: Defenses That Hold in Production — Fiddler AI](https://www.fiddler.ai/blog/prompt-injection-prevention-coding-agents)
+- [Clarify `sandbox-exec` deprecation timeline — apple/containerization issue #737](https://github.com/apple/containerization/issues/737)
+- [Sandboxing Claude Code on macOS: What I Actually Found — Infralovers, Feb 2026](https://www.infralovers.com/blog/2026-02-15-sandboxing-claude-code-macos/)

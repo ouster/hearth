@@ -165,6 +165,22 @@ Ollama directly and bypass the gateway — reopening the hole Phase 3 closed.
 Title and tag generation is pinned to `local-chat` so background housekeeping
 cannot quietly become cloud spend.
 
+### Do not enable tools in Open WebUI without thinking
+
+Web search feeds arbitrary attacker-controlled page text straight into the
+model's context. That is tolerable **only** because the chat model has no tools:
+it can mislead you convincingly — which matters for legal research — but it
+cannot act.
+
+Enabling tools, functions, or code execution turns this into the highest-risk
+surface in the stack: untrusted web content plus the ability to do something
+with it. Open WebUI also stores these settings in its database, where they
+override the environment and survive container recreation, so a toggle flipped
+once stays flipped invisibly.
+
+Treat enabling them as an ADR-worthy decision, not a settings change. See
+`docs/THREAT-MODEL.md` §3, surface 5.
+
 ### Web search: the env vars are not enough
 
 Open WebUI treats these as config values stored in its **database**, and the
@@ -200,6 +216,33 @@ The LOCAL percentage in `--summary` is the number worth watching — it is the
 proportion of your work that never left the machine. LOCAL/CLOUD is derived from
 `config.yaml`, so it stays accurate when models are swapped.
 
+## Running agents contained
+
+```bash
+scripts/sandboxed.sh aider              # confine to $PWD
+scripts/sandboxed.sh --dir ~/dev/x aider
+scripts/sandboxed.sh --print-profile    # audit the profile, no Mac required
+scripts/sandbox-probe.sh                # re-verify the controls still hold
+```
+
+Inside a sandboxed session the agent can reach **only** the gateway. That means
+`pip install`, `npm install`, `git push` and any `curl` will fail — by design.
+Run those in a normal shell.
+
+**Re-run `sandbox-probe.sh` after every macOS update.** `sandbox-exec` is
+deprecated and Apple can change or remove it without notice. The probe is how
+you find that out on purpose instead of by being breached.
+
+If an agent crashes on a permission error naming a path outside the repo, that
+is the sandbox working. Either add a preset in `sandboxed.sh` (preferred, so it
+is remembered) or widen once with `--also-write PATH`. Every widening is printed
+at startup — if you see a `WIDENED` line you did not expect, stop and find out why.
+
+What this does **not** protect against: an agent reading your keys (reads are
+unrestricted on purpose) or corrupting the repo it was invited into. Commit
+before starting a session and `git diff` before accepting. Full reasoning in
+`docs/THREAT-MODEL.md`.
+
 ## Diagnosing
 
 **Gateway won't start.** Check `litellm.error.log` first. Most common cause is a
@@ -210,7 +253,7 @@ config, not just that model.
 directly with the master key to see the raw error.
 
 **Local role is slow on first call.** Cold load only. The current set totals
-37.5 GB against a ~54 GB budget, so all four stay resident and nothing evicts
+37.5 GB against a ~48 GB GPU ceiling, so all four stay resident and nothing evicts
 anything. `ollama ps` shows what is loaded. If a role is suddenly slow again,
 check that a newly added model has not pushed the set over budget.
 

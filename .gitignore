@@ -11,3 +11,13 @@ bench/results/
 __pycache__/
 *.pyc
 .venv/
+
+# Agent transcripts and caches. aider writes the FULL conversation to
+# .aider.chat.history.md in the working tree. On a repo containing client
+# matter that file is the leak the whole gateway design exists to prevent,
+# arriving by a route that never touches a model. Never commit these.
+.aider*
+.claude/settings.local.json
+.zed/
+
+.aider*

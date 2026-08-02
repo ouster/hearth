@@ -27,9 +27,30 @@ with a local-only config. Privacy becomes a property of which config a port load
 arguably easier to audit than a database row, since "the 4001 config contains no
 cloud models" is a one-line check.
 
-**C. SQLite instead of Postgres.** Rejected outright: Prisma is the ORM regardless
-of backend, so this removes nothing. It also races on budget decrements under
-concurrent requests, and budget enforcement is half the point.
+**C. SQLite instead of Postgres.** Rejected: Prisma is the ORM regardless of
+backend, so this removes none of the weight. LiteLLM's `schema.prisma` declares
+the PostgreSQL provider, so it would mean patching the schema and re-patching on
+every upgrade. A [feature request](https://github.com/BerriAI/litellm/issues/4583)
+making exactly this argument has been open since July 2024 — two years
+unaddressed is a clear signal about priority. The docs say SQLite "may work for
+testing, not recommended for production".
+
+**D. A different gateway entirely — added 2026-08-02.**
+[Routerly](https://github.com/Inebrio/Routerly) is a self-hosted gateway with
+**no database at all** (JSON under `~/.routerly/`), per-project tokens, per-project
+model lists and budget enforcement — i.e. everything Postgres was chosen to
+provide, without Postgres. It also speaks **native Anthropic `/v1/messages`**,
+which LiteLLM does not, meaning Claude Code could route through the gateway
+instead of remaining a documented exception.
+
+Not adopted, for now. It is v0.1.5 with three contributors and one release —
+pre-1.0 software to put in front of provider keys and a privacy boundary. And
+the cost of switching is not the config, it is redoing the leak test, the
+fallback audit, digest pinning and every script touching `/key/*`. That work
+buys the removal of something that currently runs unattended in a container.
+
+Revisit at 1.0, or the first time Postgres causes a problem rather than merely
+offending. See `docs/COMPARISON.md`.
 
 ## Decision
 

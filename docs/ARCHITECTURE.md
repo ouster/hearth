@@ -120,13 +120,34 @@ on a local role (otherwise a merely broken key looks like perfect scoping) and m
 be **refused** on a live cloud role (probing a dormant role proves nothing, since
 "model not found" is also a 4xx).
 
+## The second boundary: containment
+
+The key scoping above governs **where data goes on purpose**. It has no
+jurisdiction over a compromised agent, which does not use that path at all — an
+injected aider that `curl`s a stolen key to an attacker never touches LiteLLM.
+
+`scripts/sandboxed.sh` closes that channel by denying egress to everything
+except the gateway, so an agent that reads a secret has nowhere to send it.
+Verified on macOS 26.4 by `scripts/sandbox-probe.sh`. Reads are deliberately
+unrestricted; the full reasoning and the accepted residual risk are in
+`docs/THREAT-MODEL.md` and ADR 0007.
+
+| Threat | Key scope | Sandbox |
+|---|---|---|
+| A prompt sends client data to a cloud model | **caught** | not caught |
+| An injected agent exfiltrates a key via curl | not caught | **caught** |
+
 ## Known gaps
 
 - ~~Ollama open on the LAN~~ — **closed 2026-08-02**. Bound to 127.0.0.1, verified
   unreachable from the LAN address. See ADR 0003.
+- ~~No agent sandboxing~~ — **closed 2026-08-02** for aider and Zed. Egress and
+  write confinement verified. See ADR 0007.
+- **`auslaw-mcp` is unaudited** — unknown tool surface, adjacent to real client
+  data. Now the largest unknown; see `docs/THREAT-MODEL.md` §3.
 - **Roles are not digest-pinned yet.** Ollama tags are mutable pointers, so a pull
   can change the weights behind a role. Pinning lands with the bench harness.
-- **Resident set** is 37.5 GB of a ~54 GB budget — all four local models stay
+- **Resident set** is 37.5 GB of a ~48 GB GPU ceiling — all four local models stay
   loaded, so switching roles evicts nothing. This replaced a set needing 65.7 GB.
 - **No auto-updater yet.** Discovery and benching are meant to be automatic;
   promotion stays manual by choice.

@@ -3,8 +3,8 @@
 Role → model. This file and `litellm/config.yaml` are the only places a concrete
 model name may appear. Update both together, plus an ADR.
 
-**Hardware envelope:** 64 GB unified, less ~10 GB for macOS and applications,
-leaves **~54 GB for weights**. The resident set matters more than any single
+**Hardware envelope:** 64 GB unified. macOS caps GPU-accessible memory at ~75% above 36 GB,
+so the real ceiling is **~48 GB**, not the full 64. The resident set matters more than any single
 model's size — see the measurement below.
 
 ## Live
@@ -17,7 +17,7 @@ model's size — see the measurement below.
 | `local-embed` | `nomic-embed-text` | 0.3 GB | 2026-08-01 | _pending_ | Local RAG |
 | `cloud-cheap` | `gemini-3.5-flash` | — | 2026-08-01 | n/a | 1M ctx, cheap. Bulk non-sensitive work |
 
-**Resident total: 37.5 GB of ~54 GB.** All four local models stay loaded; no
+**Resident total: 37.5 GB of ~48 GB.** All four local models stay loaded; no
 switch evicts anything.
 
 Digests are **recorded and drift-checked**, not enforced — see below. Run
@@ -88,7 +88,7 @@ Through the gateway, one short prompt each, from cold:
 
 **440 s to 5 s — not a faster model, a resident one.**
 
-The old set needed 65.7 GB against a ~54 GB budget, so something was always
+The old set needed 65.7 GB against a ~48 GB GPU ceiling, so something was always
 evicted and reaching for `local-big` meant reloading 42 GB from disk. The current
 set totals 37.5 GB and stays put.
 

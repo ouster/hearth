@@ -37,6 +37,20 @@ done
 for p in litellm/config.yaml litellm/.env.example bench/tasks docs/decisions; do
   [ -e "${ROOT}/${p}" ] || missing_files="${missing_files} ${p}"
 done
+# Existing-but-not-executable is its own trap: the file is there, the docs are
+# right, and it fails only when you actually try to run it. sandboxed.sh
+# shipped this way once.
+not_exec=""
+for r in "$ROOT"/scripts/*.sh; do
+  [ -f "$r" ] || continue
+  [ -x "$r" ] || not_exec="${not_exec} scripts/$(basename "$r")"
+done
+if [ -n "$not_exec" ]; then
+  bad "present but not executable (chmod +x):${not_exec}"
+else
+  ok "every script in scripts/ is executable"
+fi
+
 if [ -z "$missing_files" ]; then
   ok "all referenced scripts and paths exist"
 else

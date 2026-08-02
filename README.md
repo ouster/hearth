@@ -158,6 +158,8 @@ Start with `docs/ARCHITECTURE.md`, then `docs/ROUTING.md` and `docs/RUNBOOK.md`.
 `docs/IDES.md` covers Zed and aider, including why both.
 `docs/LAPTOP.md` is the start-to-finish guide for a second machine.
 `docs/CLAUDE-PROJECT.md` is the spec to paste into a claude.ai Project.
+`docs/COMPARISON.md` weighs this against other private-AI setups — and names
+the layer we did not build.
 `docs/decisions/` records why things are the way they are, including the
 rejected alternatives.
 

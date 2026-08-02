@@ -128,7 +128,7 @@ litellm/config.yaml and docs/MODELS.md. Nowhere else.
 
 # Hardware envelope
 
-64 GB unified, ~54 GB for weights after macOS and apps. Current resident set is
+64 GB unified, but macOS caps GPU-accessible memory at ~48 GB (75%). Current resident set is
 37.5 GB across four local models, none evicting the others. A 70B dense model at
 Q4 (~42 GB) technically fits but evicts everything else — it measured 440 s to
 first reply and was retired. MoE models are what make the current set work. Say

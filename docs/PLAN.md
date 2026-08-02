@@ -98,6 +98,23 @@ Kept as a record of why the tooling exists.
 3. **Live with it for a week** before building the auto-updater. It is the
    piece most likely to be overbuilt for a problem that turns out to be small.
 
+**Gaps identified 2026-08-02** by comparing against other setups
+(`docs/COMPARISON.md`):
+
+- ~~**No sandboxing.**~~ **Closed 2026-08-02** — `scripts/sandboxed.sh` denies
+  egress to everything but the gateway and confines writes to the working
+  directory. Verified on macOS 26.4, 10/10 checks. ADR 0007.
+- ~~**No prompt-injection threat model.**~~ **Written** — `docs/THREAT-MODEL.md`.
+  Conclusion: detection does not work, so the model exists to say which
+  capabilities to cut rather than what to filter.
+- **`auslaw-mcp` is unaudited.** The one remaining unknown: it fetches from the
+  open web, sits next to real client data, and nobody has asked what tools it
+  hands a model. Highest value per effort of anything left.
+- **No confirmation gates** on consequential actions beyond git commits. Costs
+  nothing today because nothing in the stack can send mail or move money.
+- **`local-embed` indexes nothing** — a local corpus of legislation would keep
+  the most sensitive queries off SearXNG entirely.
+
 Optional, when the need arises:
 
 - Enable `cloud-code` if aider, Cursor or the laptop ever need Claude — needs a

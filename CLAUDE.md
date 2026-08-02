@@ -39,8 +39,8 @@ Read `docs/ROUTING.md` before suggesting any routing change.
    pinning; say so rather than implying roles are immutable. Re-record only after
    re-benching.
 
-7. **Check the RAM envelope.** 64 GB total, ~54 GB for weights after macOS and
-   apps. Current resident set is 37.5 GB. Say when a suggestion will not fit, or
+7. **Check the RAM envelope.** 64 GB total, but macOS caps GPU-accessible memory at ~48 GB
+   (75% above 36 GB) — that is the real ceiling. Current resident set is 37.5 GB. Say when a suggestion will not fit, or
    will evict something that needs to stay loaded — on this machine the resident
    set matters more than any one model's quality.
 
