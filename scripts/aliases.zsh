@@ -35,6 +35,17 @@ alias ask-local='_aider_role local-code private'
 alias ask-big='_aider_role local-big private'
 alias ask-chat='_aider_role local-chat private'   # general questions, not code
 
+# Architect mode: local-big reasons about the change, local-code writes the
+# diff. Both roles stay resident so nothing evicts. Keeps the design decision
+# visible instead of buried in a patch. See docs/IDES.md.
+#
+# Distinct from ask-architect, which just points aider at local-big normally.
+ask-arch() {
+  OPENAI_API_BASE="${AI_STACK_GATEWAY}/v1" \
+  OPENAI_API_KEY="$(_ai_key private)" \
+  aider --architect --model openai/local-big --editor-model openai/local-code "$@"
+}
+
 # `ask` now defaults LOCAL, not cloud. The old `ask` pointed at an Anthropic
 # model with no API key set, so it was broken anyway. Deliberate: the safe
 # default should be the private one, and reaching for cloud should be explicit.

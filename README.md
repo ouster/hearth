@@ -151,6 +151,7 @@ ai-restart
 | `usage.sh` | Which role, which model, local or cloud, tokens and cost |
 
 Start with `docs/ARCHITECTURE.md`, then `docs/ROUTING.md` and `docs/RUNBOOK.md`.
+`docs/IDES.md` covers Zed and aider, including why both.
 `docs/decisions/` records why things are the way they are, including the
 rejected alternatives.
 
