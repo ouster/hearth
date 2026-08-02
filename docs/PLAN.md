@@ -23,7 +23,9 @@ This file tracks progress only. The original plan is preserved in
 | 4 — bench harness | done; **not yet run** |
 | digest pinning | **not implemented** — roles are still tag-backed |
 | 5 — auto-update pipeline | deferred |
-| 6 — Open WebUI | deferred |
+| 6 — Open WebUI | **done** — chat UI on :3000, private-scoped, local-chat default |
+| Web search via SearXNG | **done** — opt-in per message, :8888, verified end to end |
+| `usage.sh` visibility | done — role, tier, model, tokens, LOCAL/CLOUD split |
 | 7 — verification tooling | done — preflight, deploy, healthcheck, audit |
 
 ## What changed from the original plan
@@ -70,10 +72,18 @@ Kept as a record of why the tooling exists.
 
 ## Next
 
-1. `preflight.sh` → `deploy.sh` → `create-keys.sh` → `healthcheck.sh`
-   The leak test must go from SKIPPED to passing. Until then the privacy
-   boundary is documented, not enforced — do not route client work through it.
-2. Phase 3: `OLLAMA_HOST=127.0.0.1`. Ten minutes, breaks LAN clients until
-   they are re-pointed at the gateway.
-3. Run `bench.sh`, decide `local-big`, pin digests.
-4. Live with it for a week before building the auto-updater.
+1. **Run `bench.sh`.** `gpt-oss:20b` earned `local-big` on capacity, not
+   quality. Task 03 (the float-for-currency trap) is the one that matters.
+2. **Digest pinning.** Roles are still tag-backed, so a routine `ollama pull`
+   can change the weights behind one without anything noticing.
+3. **Live with it for a week** before building the auto-updater. It is the
+   piece most likely to be overbuilt for a problem that turns out to be small.
+
+Optional, when the need arises:
+
+- Enable `cloud-code` if aider, Cursor or the laptop ever need Claude — needs a
+  Console API key, which bills separately from the subscription.
+- Enable `cloud-frontier` (OpenRouter) for Kimi K3 and day-zero access to new
+  models. There is no local K3 at any quantisation.
+- A second Open WebUI without search configured, if you want "no web search on
+  client work" to be structural rather than remembered.

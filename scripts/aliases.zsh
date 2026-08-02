@@ -28,9 +28,12 @@ _aider_role() {
 }
 
 # --- private: local models only, safe for client work ---
-alias ask-fast='_aider_role local-fast private'
+# ask-fast now means local-chat: local-fast was retired when qwen3-coder:30b
+# (MoE, ~3B active) made a separate small coder pointless.
+alias ask-fast='_aider_role local-chat private'
 alias ask-local='_aider_role local-code private'
 alias ask-big='_aider_role local-big private'
+alias ask-chat='_aider_role local-chat private'   # general questions, not code
 
 # `ask` now defaults LOCAL, not cloud. The old `ask` pointed at an Anthropic
 # model with no API key set, so it was broken anyway. Deliberate: the safe

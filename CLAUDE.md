@@ -9,9 +9,9 @@ Read `docs/ROUTING.md` before suggesting any routing change.
 
 1. **Concrete model names appear in exactly two files:** `litellm/config.yaml` and
    `docs/MODELS.md`. Everywhere else — aliases, scripts, IDE config, code — uses roles.
-   If you are about to write `qwen2.5-coder:32b` into a shell alias, stop.
+   If you are about to write `qwen3-coder:30b` into a shell alias, stop.
 
-   Live: `local-fast`, `local-code`, `local-big`, `local-embed`, `cloud-cheap`.
+   Live: `local-chat`, `local-code`, `local-big`, `local-embed`, `cloud-cheap`.
    Dormant: `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`,
    `cloud-frontier-fast` — commented out until their keys exist, because a missing
    `os.environ/` var fails the entire config load, not just that model.
@@ -35,8 +35,10 @@ Read `docs/ROUTING.md` before suggesting any routing change.
 6. **Roles pin to digests, not tags.** Ollama tags are mutable pointers. An unpinned
    role can silently change weights on any pull.
 
-7. **Check the RAM envelope.** ~48 GB for weights. Say when a suggestion will not fit
-   or will evict something that needs to stay resident.
+7. **Check the RAM envelope.** 64 GB total, ~54 GB for weights after macOS and
+   apps. Current resident set is 37.5 GB. Say when a suggestion will not fit, or
+   will evict something that needs to stay loaded — on this machine the resident
+   set matters more than any one model's quality.
 
 8. **Routing and model changes get an ADR** in `docs/decisions/` — context, decision,
    consequences, date. Short.

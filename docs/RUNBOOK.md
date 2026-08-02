@@ -4,10 +4,10 @@
 
 | Piece | Where | Managed by |
 |---|---|---|
-| Ollama | `127.0.0.1:11434` (after Phase 3; currently `*:11434`) | Ollama.app |
+| Ollama | `127.0.0.1:11434` — localhost only since ADR 0003 | Ollama.app |
 | LiteLLM gateway | `:4000` | launchd, `com.colinnevin.litellm` |
 | Postgres | `127.0.0.1:5433` | Podman, `ai-stack-postgres` |
-| Open WebUI | `127.0.0.1:8080` (Phase 6) | Docker |
+| Open WebUI | `127.0.0.1:3000` | Podman, `ai-stack-webui` |
 
 Config: `~/dev/ai-stack/litellm/config.yaml` (symlinked from `~/.config/litellm/config.yaml`)
 Launch wrapper: `~/.config/litellm/run-litellm.sh`
@@ -78,6 +78,35 @@ curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
   localhost:4000/spend/logs | python3 -m json.tool | head -50
 ```
 
+## Chat UI and visibility
+
+```bash
+scripts/webui.sh up          # private scope — local roles only
+scripts/webui.sh up --general  # cloud reachable, deliberate
+scripts/webui.sh down
+```
+
+Then `http://127.0.0.1:3000`. First visit creates a local account; signup is
+disabled afterwards. In Settings → Interface, enable **Display "Response Info"**
+to see the model and token count under each reply.
+
+`ENABLE_OLLAMA_API=False` is set deliberately. Left on, Open WebUI would talk to
+Ollama directly and bypass the gateway — reopening the hole Phase 3 closed.
+Title and tag generation is pinned to `local-chat` so background housekeeping
+cannot quietly become cloud spend.
+
+Seeing where requests actually went:
+
+```bash
+scripts/usage.sh             # last 25: role, tier, model, tokens, cost
+scripts/usage.sh --summary   # totals by role, LOCAL vs CLOUD token split
+scripts/usage.sh --keys      # per-key spend against its cap
+```
+
+The LOCAL percentage in `--summary` is the number worth watching — it is the
+proportion of your work that never left the machine. LOCAL/CLOUD is derived from
+`config.yaml`, so it stays accurate when models are swapped.
+
 ## Diagnosing
 
 **Gateway won't start.** Check `litellm.error.log` first. Most common cause is a
@@ -87,10 +116,10 @@ config, not just that model.
 **A role 500s but others work.** Provider issue or a bad model name. `curl` the role
 directly with the master key to see the raw error.
 
-**Local role is slow on first call.** Cold load. `llama3.3:70b` is 42 GB and cannot
-coexist with `local-code` (19 GB) in a 64 GB machine, so switching between them forces
-an eviction and a full reload. `ollama ps` shows what's resident. This is the main
-argument for retiring the 70B.
+**Local role is slow on first call.** Cold load only. The current set totals
+37.5 GB against a ~54 GB budget, so all four stay resident and nothing evicts
+anything. `ollama ps` shows what is loaded. If a role is suddenly slow again,
+check that a newly added model has not pushed the set over budget.
 
 **Everything local fails.** By design local roles do not fall back to cloud, so they
 fail loudly rather than silently shipping your prompt to Google. Check Ollama:

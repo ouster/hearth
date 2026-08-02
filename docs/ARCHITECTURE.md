@@ -7,7 +7,7 @@ Host: Mac Studio M4 Max, 64 GB, macOS 26.4, `192.168.50.154`.
 ```
   Cursor ─┐
   aider ──┤                                    ┌─ Ollama  127.0.0.1:11434
-  scripts─┼──► LiteLLM gateway :4000 ──────────┤   (local-fast/code/big/embed)
+  scripts─┼──► LiteLLM gateway :4000 ──────────┤   (chat/code/big/embed)
   laptop ─┤      (roles, keys, spend)          │
   WebUI ──┘              │                     └─ Gemini / OpenRouter / Moonshot
                          │                        / Fireworks / Anthropic
@@ -32,7 +32,7 @@ the privacy boundary can be *structural* rather than a rule you remember.
 
 ## The three layers
 
-**1. Roles.** `local-fast`, `local-code`, `local-big`, `local-embed`, `cloud-cheap`,
+**1. Roles.** `local-chat`, `local-code`, `local-big`, `local-embed`, `cloud-cheap`,
 plus dormant `cloud-code` and the three `cloud-frontier*` variants. Clients ask for a
 role. Swapping the model behind a role is one config edit and a restart; no alias,
 script, or IDE setting changes. See `docs/MODELS.md`.
@@ -49,7 +49,9 @@ script, or IDE setting changes. See `docs/MODELS.md`.
 A request for a cloud role with the `private` key is refused by the gateway. There
 is no prompt that gets around it, which is the entire point — see `docs/ROUTING.md`.
 
-**3. Fallbacks.** Local roles degrade to *smaller local roles* and never to cloud.
+**3. Fallbacks.** Local roles degrade to *other local roles* and never to cloud.
+`local-big` has none at all — if it is down, fail loudly rather than quietly
+answer with a weaker model.
 The inherited config had `local-ollama → gemini`, so any Ollama timeout silently
 shipped the prompt to Google. Across a privacy boundary a fallback is a leak, not
 resilience. `scripts/audit-fallbacks.sh` fails the build if that reappears.
@@ -97,12 +99,11 @@ be **refused** on a live cloud role (probing a dormant role proves nothing, sinc
 
 ## Known gaps
 
-- **Ollama is on `*:11434` with no auth.** Anything on 192.168.50.0/24 can use the
-  GPU directly, bypassing every rule above. Phase 3 binds it to localhost. This is
-  the largest remaining hole.
+- ~~Ollama open on the LAN~~ — **closed 2026-08-02**. Bound to 127.0.0.1, verified
+  unreachable from the LAN address. See ADR 0003.
 - **Roles are not digest-pinned yet.** Ollama tags are mutable pointers, so a pull
   can change the weights behind a role. Pinning lands with the bench harness.
-- **`local-big` is `llama3.3:70b`** — 42 GB of a 48 GB budget, so it evicts
-  everything else. Candidate replacements are staged; `bench.sh` decides.
+- **Resident set** is 37.5 GB of a ~54 GB budget — all four local models stay
+  loaded, so switching roles evicts nothing. This replaced a set needing 65.7 GB.
 - **No auto-updater yet.** Discovery and benching are meant to be automatic;
   promotion stays manual by choice.

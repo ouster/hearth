@@ -11,7 +11,7 @@ Host: Mac Studio M4 Max, 64 GB, macOS 26.
 Clients address **roles**, never model names:
 
 ```
-local-fast   local-code   local-big   local-embed   cloud-cheap
+local-chat   local-code   local-big   local-embed   cloud-cheap
 ```
 
 Concrete models live in exactly two files — `litellm/config.yaml` and
@@ -43,8 +43,9 @@ Google. Across a privacy boundary a fallback is a leak, not resilience.
 `audit-fallbacks.sh` fails the build if it reappears.
 
 **Nothing is claimed without being measured.** Retiring `llama3.3:70b` came from
-a timed probe (440 s, because 42 GB could not stay resident), not from an
-opinion about model quality. See `docs/decisions/0004`.
+a timed probe — 440 s to first reply, because 42 GB could not stay resident
+alongside the coding model. The replacement answers in 5 s. That was a capacity
+measurement, not an opinion about quality. See `docs/decisions/0004`.
 
 ## Usage
 
@@ -52,8 +53,9 @@ opinion about model quality. See `docs/decisions/0004`.
 source scripts/aliases.zsh
 
 ask                # local-code, private — the default
-ask-fast           # local-fast
-ask-big            # local-big
+ask-chat           # local-chat, general questions
+ask-fast           # alias for local-chat, the fastest local model
+ask-big            # local-big, reasoning
 ask-cloud          # cloud-cheap, explicit reach
 
 ai-health          # every role + the leak test
@@ -75,6 +77,8 @@ ai-restart
 | `lock-ollama.sh` | Bind Ollama to localhost, verify LAN is closed |
 | `diagnose.sh` | What the gateway actually loaded, when it disagrees with you |
 | `bisect-config.sh` | Find which config section breaks model loading |
+| `webui.sh` | Open WebUI chat surface, private-scoped by default |
+| `usage.sh` | Which role, which model, local or cloud, tokens and cost |
 
 Start with `docs/ARCHITECTURE.md`, then `docs/ROUTING.md` and `docs/RUNBOOK.md`.
 `docs/decisions/` records why things are the way they are, including the

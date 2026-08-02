@@ -98,11 +98,11 @@ fi
 
 echo
 echo "Local roles:"
-for r in "${LOCAL_ROLES[@]}"; do probe "$r" "$KEY" "local"; done
+for r in ${LOCAL_ROLES[@]+"${LOCAL_ROLES[@]}"}; do probe "$r" "$KEY" "local"; done
 
 echo
 echo "Cloud roles:"
-for r in "${CLOUD_ROLES[@]}"; do probe "$r" "$KEY" "cloud"; done
+for r in ${CLOUD_ROLES[@]+"${CLOUD_ROLES[@]}"}; do probe "$r" "$KEY" "cloud"; done
 
 echo
 echo "Privacy leak test:"
@@ -119,7 +119,7 @@ echo "Privacy leak test:"
 if [ -z "$PRIVATE_KEY" ]; then
   echo "  SKIPPED — LITELLM_PRIVATE_KEY not set (needs Postgres + virtual keys)"
   echo "  Until this passes, the privacy boundary is documented, not enforced."
-elif [ "${#CLOUD_ROLES[@]}" -eq 0 ] || [ -z "${CLOUD_ROLES[0]:-}" ]; then
+elif [ "${#CLOUD_ROLES[@]:-0}" -eq 0 ] || [ -z "${CLOUD_ROLES[0]:-}" ]; then
   echo "  SKIPPED — no live cloud role to probe against"
 else
   probe_local="${LOCAL_ROLES[0]}"

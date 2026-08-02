@@ -3,72 +3,88 @@
 Role → model. This file and `litellm/config.yaml` are the only places a concrete
 model name may appear. Update both together, plus an ADR.
 
-Hardware envelope: 64 GB unified, **~48 GB budget for weights**.
+**Hardware envelope:** 64 GB unified, less ~10 GB for macOS and applications,
+leaves **~54 GB for weights**. The resident set matters more than any single
+model's size — see the measurement below.
 
-## Current
+## Live
 
-| Role | Model | Size | Set | Pinned digest | Why |
+| Role | Model | Size | Set | Digest | Why |
 |---|---|---|---|---|---|
-| `local-fast` | `qwen2.5-coder:7b` | 4.7 GB | 2026-08-01 | _pending Phase 4_ | inherited, fine for its job |
-| `local-code` | `qwen2.5-coder:32b` | 19 GB | 2026-08-01 | _pending Phase 4_ | inherited default. Near GPT-4o on Aider pass-rate |
-| `local-big` | `qwen3-coder:30b` | 19 GB | 2026-08-02 | _pending Phase 4_ | replaced llama3.3:70b — see ADR 0004. MoE, ~3B active, 256K ctx |
-| `local-embed` | `nomic-embed-text` | 274 MB | 2026-08-01 | _pending Phase 4_ | inherited |
-| `cloud-cheap` | `gemini-3.5-flash` | — | 2026-08-01 | n/a | **LIVE**. Verified current. 1M ctx |
+| `local-chat` | `qwen3:8b` | 5.2 GB | 2026-08-02 | _pending_ | General knowledge, 40K ctx. Open WebUI default |
+| `local-code` | `qwen3-coder:30b` | 19 GB | 2026-08-02 | _pending_ | 30B MoE, ~3B active, 256K ctx. Runs at ~7B speed |
+| `local-big` | `gpt-oss:20b` | 13 GB | 2026-08-02 | _pending_ | Reasoning. Replaced llama3.3:70b — ADR 0004 |
+| `local-embed` | `nomic-embed-text` | 0.3 GB | 2026-08-01 | _pending_ | Local RAG |
+| `cloud-cheap` | `gemini-3.5-flash` | — | 2026-08-01 | n/a | 1M ctx, cheap. Bulk non-sensitive work |
+
+**Resident total: 37.5 GB of ~54 GB.** All four local models stay loaded; no
+switch evicts anything.
+
+Digest pinning is not yet implemented — roles are still tag-backed, so an
+`ollama pull` can change the weights underneath one. See below.
 
 ## Dormant
 
-Commented out in `config.yaml`. A model whose `os.environ/` key is missing fails the
-**entire** config load, so these stay off until their key exists.
+Commented out in `config.yaml`. A model whose `os.environ/` key is missing fails
+the **entire** config load, not just that entry, so these stay off until their
+key exists.
 
-| Role | Model | Blocked on | Note |
-|---|---|---|---|
-| `cloud-code` | `claude-sonnet-5` | Anthropic API key — **deliberately unset** | Claude Code runs on the subscription and doesn't need this. A console API key bills separately from the subscription, so this only earns its place if aider/Cursor/laptop need Claude. |
-| `cloud-frontier` | `kimi-k3` via OpenRouter | OpenRouter key | Primary frontier route when enabled. One key, day-zero new models |
-| `cloud-frontier-direct` | `kimi-k3` via Moonshot | Moonshot key | Same price, best K3 caching |
-| `cloud-frontier-fast` | `kimi-k3` via Fireworks | Fireworks key | Dearest; throughput/LoRA only |
+| Role | Model | Blocked on |
+|---|---|---|
+| `cloud-code` | `claude-sonnet-5` | Anthropic API key — **deliberately unset**. Claude Code runs on the subscription; a Console key bills separately. Only worth opening if aider, Cursor or the laptop need Claude |
+| `cloud-frontier` | `kimi-k3` via OpenRouter | OpenRouter key. Primary frontier route |
+| `cloud-frontier-direct` | `kimi-k3` via Moonshot | Moonshot key. Same price, best K3 caching |
+| `cloud-frontier-fast` | `kimi-k3` via Fireworks | Fireworks key. Dearest; throughput or LoRA only |
 
-Enabling one: uncomment its block in `config.yaml`, add the key to
+To enable one: uncomment its block in `config.yaml`, add the key to
 `~/.config/litellm/env`, add the role to `CLOUD_ALL` in `scripts/create-keys.sh`,
-re-run that script, then `scripts/audit-fallbacks.sh` and `scripts/healthcheck.sh`.
+re-run that script, then `audit-fallbacks.sh` and `healthcheck.sh`.
 
-## Resolved: the `local-big` swap, measured
+There is **no local Kimi K3**. The smallest community quant is ~540 GB at 1.56
+bits, and Ollama cannot load it — support is an open llama.cpp pull request.
+Frontier is cloud-only by necessity, which is what these roles are for.
 
-Measured through the gateway, one short prompt each. Before on 2026-08-02 with
-the inherited models; after on the same day with the current set.
+## Retired
+
+| Model | Was | Removed | Why |
+|---|---|---|---|
+| `llama3.3:70b` | `local-big` | 2026-08-02 | 42 GB, could not stay resident. 440 s to first reply. ADR 0004 |
+| `qwen2.5-coder:32b` | `local-code` | 2026-08-02 | Superseded by the 30B MoE at the same size |
+| `qwen2.5-coder:7b` | `local-fast` | 2026-08-02 | Role retired — the MoE made a separate fast coder redundant. ADR 0005 |
+
+Note on the last one: Qwen3-Coder has **no variant below 30B**, so
+`qwen2.5-coder:7b` remained the best sub-10 GB coding model available. It went
+because the role became unnecessary, not because it was outdated. If a small
+dense coder appears, the role can return.
+
+## The measurement that drove all of this
+
+Through the gateway, one short prompt each, from cold:
 
 | Role | Before | Time | After | Time |
 |---|---|---|---|---|
-| `local-fast` | qwen2.5-coder:7b | 0 s | qwen2.5-coder:7b | 3 s |
 | `local-code` | qwen2.5-coder:32b | 29 s | qwen3-coder:30b | **6 s** |
 | `local-big` | llama3.3:70b | **440 s** | gpt-oss:20b | **5 s** |
 | `cloud-cheap` | gemini-3.5-flash | 2 s | gemini-3.5-flash | 1 s |
 
-**440 s to 5 s.** Not a faster model — a resident one.
+**440 s to 5 s — not a faster model, a resident one.**
 
-64 GB leaves roughly 54 GB for weights after macOS and applications. The old set
-needed 65.7 GB, so something was always evicted, and reaching for `local-big`
-meant reloading 42 GB from disk. The current set totals 42.7 GB and stays
-resident, so switching roles costs nothing.
+The old set needed 65.7 GB against a ~54 GB budget, so something was always
+evicted and reaching for `local-big` meant reloading 42 GB from disk. The current
+set totals 37.5 GB and stays put.
 
-The lesson worth keeping: on a fixed-memory machine, **the resident set matters
-more than any individual model's quality**. A 70B that evicts your coding model
-is slower in practice than a 20B that never leaves RAM, regardless of which
-answers better on a benchmark. MoE architectures are what make the newer set fit
-— ~3B active parameters gives near-30B reasoning at 7B speed.
+The lesson worth keeping: on a fixed-memory machine the **resident set** matters
+more than any individual model's quality. A 70B that evicts your coding model is
+slower in practice than a 20B that never leaves RAM, whatever the benchmarks say.
+MoE architectures are what make the newer set fit — ~3B active parameters gives
+near-30B reasoning at 7B speed.
 
 Disk: 63 GB before, ~37 GB after.
 
-Candidate replacement class: ~30B MoE with ~3B active params (Qwen3-Coder-30B-A3B and
-similar). Roughly 19 GB, 256K context, generates at ~7B speed while reasoning closer to
-a 30B dense model. If it benches at parity, retiring the 70B frees 23 GB **and** removes
-the eviction thrash.
-
-Do not swap on reputation. Bench it (Phase 4), then decide.
-
 ## Cost reference
 
-Checked 2026-08-01. LiteLLM auto-syncs its cost map, so the gateway's numbers stay
-current on their own; these are here for human decisions.
+Verified 2026-08-01. LiteLLM auto-syncs its own cost map; this table is for human
+decisions and does **not** update itself. Re-check before relying on it.
 
 | Kimi K3 via | $/M in | $/M out | Note |
 |---|---|---|---|
@@ -76,31 +92,28 @@ current on their own; these are here for human decisions.
 | OpenRouter | 3.00 | 15.00 | ~92% cache hit reported → effective input ≈ 0.52 |
 | Fireworks serverless | 3.30 | 16.50 | 10% dearer; buys throughput and LoRA |
 
-Two things worth remembering:
-
-- **Fireworks is the most expensive of the three.** This stack originally defaulted to
-  it because it was the provider that came to mind first, not because it won on price.
-  That is exactly the failure mode this registry exists to catch.
-- **Output price is the one that bites.** It is the expensive half of any agentic loop,
-  where token counts compound. Reach for `cloud-code` before K3 unless you specifically
-  need the 1M context or open weights.
-
-Prices verified 2026-08-01. Re-check before any decision that depends on them — the
-gateway's own cost map auto-syncs, but this table does not.
+- **Fireworks is the dearest of the three.** This stack originally defaulted to it
+  because it was the provider that came to mind first, not because it won on
+  price. That is exactly the failure mode this registry exists to catch.
+- **Output price is the one that bites** — it compounds through agentic loops.
 
 ## Digest pinning
 
-Ollama tags are mutable pointers, not versions. `ollama pull qwen2.5-coder:32b`
+Ollama tags are mutable pointers, not versions. `ollama pull qwen3-coder:30b`
 fetches whatever that tag points at today, which may be a different quantisation
-than the one benched. Roles are therefore pinned to digests, and the auto-updater
-stages new pulls under a `candidate-` prefix rather than overwriting.
+than the one you benched. Roles should therefore pin digests, and the auto-updater
+should stage new pulls under a `candidate-` prefix rather than overwriting.
+
+**Not yet implemented.** Until it is, a routine pull can silently change a role.
 
 ## Changing a role
 
-1. Stage-pull the candidate as `candidate-<name>`
+`scripts/swap-role.sh <role> <model>` does steps 1–5 and reverts on failure.
+
+1. Pull the candidate
 2. `scripts/bench.sh` against the incumbent
-3. Confirm it fits the 48 GB budget alongside whatever must coexist
-4. Write an ADR in `docs/decisions/`
-5. Update this table and `litellm/config.yaml` together
-6. Reload gateway, run `scripts/healthcheck.sh`
-7. Previous digest is the rollback
+3. Confirm it fits alongside whatever must stay resident
+4. Update this table and `litellm/config.yaml` together
+5. Deploy, then `audit-fallbacks.sh` and `healthcheck.sh`
+6. Write an ADR in `docs/decisions/`
+7. Delete the old weights only once the replacement has proven itself

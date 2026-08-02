@@ -12,25 +12,30 @@ model_list:
   # ollama_chat/, not ollama/ — the completion-API prefix causes tool-call
   # loops and dropped context. See docs/decisions/0001.
 
-  - model_name: local-fast
-    litellm_params:
-      model: ollama_chat/qwen2.5-coder:7b
-      api_base: http://127.0.0.1:11434
-    # set 2026-08-01 — quick edits, autocomplete, throwaway questions
-
   - model_name: local-code
     litellm_params:
       model: ollama_chat/qwen3-coder:30b
       api_base: http://127.0.0.1:11434
-    # set 2026-08-01 — default coding model, ~19GB
+    # set 2026-08-02 — default coding model. 30B MoE, ~3B active, 19GB,
+    # 256K context. Generates at roughly 7B speed, which is why local-fast
+    # was retired. See docs/decisions/0005.
 
   - model_name: local-big
     litellm_params:
       model: ollama_chat/gpt-oss:20b
       api_base: http://127.0.0.1:11434
-    # set 2026-08-02 — replaced llama3.3:70b. See docs/decisions/0004.
-    # 30B MoE, ~3B active, 19GB, 256K context. The 70B measured 440s to first
-    # reply because 19+42GB will not fit in ~54GB and every switch evicted it.
+    # set 2026-08-02 — reasoning role, ~13GB. Replaced llama3.3:70b, which
+    # measured 440s to first reply because 42GB could not stay resident
+    # alongside the coding model. See docs/decisions/0004.
+
+  - model_name: local-chat
+    litellm_params:
+      model: ollama_chat/qwen3:8b
+      api_base: http://127.0.0.1:11434
+    # set 2026-08-02 — GENERAL knowledge and conversation, 5.2GB, 40K ctx.
+    # Added because every other local role is a coder or reasoning model.
+    # Asking qwen2.5-coder:7b for a history fact got a hallucinated tool call,
+    # not an answer. This is the default for Open WebUI.
 
   - model_name: local-embed
     litellm_params:
@@ -96,8 +101,13 @@ router_settings:
   #
   # scripts/audit-fallbacks.sh fails if a local-* role can reach a cloud model.
   fallbacks:
-    - local-code: ["local-fast"]
-    - local-big:  ["local-code"]
+    # local-fast retired 2026-08-02 — qwen3-coder:30b is MoE (~3B active) and
+    # already generates at roughly 7B speed, so a separate small coder earned
+    # nothing. See docs/decisions/0005.
+    - local-code: ["local-big"]
+    - local-chat: ["local-big"]
+    # local-big has no fallback on purpose: if it is down, fail loudly rather
+    # than silently answering with a weaker model.
     # Re-add these alongside the dormant blocks above:
     # - cloud-code: ["cloud-cheap"]
     # - cloud-frontier: ["cloud-frontier-direct", "cloud-frontier-fast", "cloud-code"]

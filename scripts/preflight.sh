@@ -101,6 +101,44 @@ for m in cfg.get('model_list', []):
 print('\n'.join(problems))
 PY
 )
+  # Docs drift. A registry that disagrees with the config is worse than none —
+  # you trust it and it lies. Every live role must appear in MODELS.md and
+  # ROUTING.md, and no retired role may still be described as current.
+  drift=$("$AI_PY" - "$CFG" "$ROOT" <<'PY'
+import sys, yaml, re, os
+cfg = yaml.safe_load(open(sys.argv[1])) or {}
+root = sys.argv[2]
+live = [m['model_name'] for m in cfg.get('model_list', [])]
+models = {m['model_name']: m['litellm_params']['model'].split('/', 1)[-1] for m in cfg.get('model_list', [])}
+problems = []
+
+for doc in ('docs/MODELS.md', 'docs/ROUTING.md'):
+    p = os.path.join(root, doc)
+    if not os.path.exists(p):
+        problems.append(f"{doc} missing"); continue
+    t = open(p).read()
+    for r in live:
+        if f'`{r}`' not in t:
+            problems.append(f"{doc}: live role {r} not documented")
+
+# MODELS.md must name the actual model behind each live role.
+p = os.path.join(root, 'docs/MODELS.md')
+if os.path.exists(p):
+    t = open(p).read()
+    for role, model in models.items():
+        if f'`{model}`' not in t:
+            problems.append(f"docs/MODELS.md: {role} -> {model} not listed")
+
+print('\n'.join(problems))
+PY
+)
+  if [ -z "$drift" ]; then
+    ok "docs match config (roles and models)"
+  else
+    wrn "documentation drift:"
+    printf '%s\n' "$drift" | sed 's/^/        /'
+  fi
+
   if [ -z "$mi" ]; then
     ok "model_info fields valid"
   else

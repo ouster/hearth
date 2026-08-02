@@ -42,9 +42,9 @@ Ollama or a cloud provider directly.
 
 Models are addressed by ROLE, never by vendor model name:
 
-  local-fast              quick edits, autocomplete, throwaway questions
+  local-chat              general questions, not code. The chat-UI default
   local-code              the default coding model — real work, still private
-  local-big               long-context / reasoning-heavy, still private
+  local-big               reasoning-heavy, still private
   local-embed             embeddings for local RAG
   cloud-cheap             Gemini Flash — bulk non-sensitive work, big context
   cloud-code              Claude — hard coding and agentic work, non-sensitive
@@ -59,7 +59,7 @@ litellm/config.yaml and docs/MODELS.md. Nowhere else.
 
 1. Never hardcode a vendor model name outside litellm/config.yaml and
    docs/MODELS.md. Aliases, scripts, IDE settings and code reference roles only.
-   If you catch yourself writing "qwen2.5-coder:32b" in a shell alias, stop.
+   If you catch yourself writing "qwen3-coder:30b" in a shell alias, stop.
 
 2. Privacy is structural, not advisory. Client matters, PII, anything under
    ~/dev/stepup-conveyancing or ~/dev/auslaw-mcp that contains real data, and
@@ -120,9 +120,11 @@ litellm/config.yaml and docs/MODELS.md. Nowhere else.
 
 # Hardware envelope
 
-64 GB unified. Budget ~48 GB for weights, leave the rest for the OS and Cursor.
-A 70B dense model at Q4 (~42 GB) fits but is slow and evicts everything else;
-a ~30B MoE is usually the better default. Say when a suggestion won't fit.
+64 GB unified, ~54 GB for weights after macOS and apps. Current resident set is
+37.5 GB across four local models, none evicting the others. A 70B dense model at
+Q4 (~42 GB) technically fits but evicts everything else — it measured 440 s to
+first reply and was retired. MoE models are what make the current set work. Say
+when a suggestion won't fit.
 ```
 
 ---
