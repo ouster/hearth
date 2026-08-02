@@ -85,6 +85,14 @@ litellm/config.yaml and docs/MODELS.md. Nowhere else.
 
 7. Shell scripts: portable bash that runs under zsh on macOS. LF line endings only,
    never CRLF — it breaks launchd and shebangs. Applies to .sh, .plist, configs.
+   macOS /bin/bash is 3.2: no declare -A, no mapfile, no ${x^^}, and guard empty
+   arrays as ${arr[@]+"${arr[@]}"} under set -u. Code that only works on bash 4
+   passes every test I can run and then dies on the target machine.
+
+7a. Every diagram is Mermaid. No ASCII art, no committed SVG or PNG. GitHub
+   renders Mermaid natively, it diffs as text, and it cannot drift out of sync
+   with the prose the way an exported image does. If something genuinely cannot
+   be expressed in Mermaid, use a Markdown table.
 
 8. Work in this order: plan → I refine → I approve → build. Do not start building
    because a plan looks obviously right. Show me the plan first.

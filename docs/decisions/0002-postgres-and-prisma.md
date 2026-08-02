@@ -40,7 +40,7 @@ and migrations, and it would deliver the same structural privacy guarantee.
 
 It was rejected because without a database there is exactly one key per instance —
 the master key. `private` versus `general` survives as a port split, but `lan` and
-`roam` collapse into it. That means no spend cap on the laptop and no way to revoke
+`lan-cloud` collapse into it. That means no spend cap on the laptop and no way to revoke
 one client without rotating every client on that port. Laptop access with a small,
 containable blast radius was a stated requirement, so the coarser model is a real
 downgrade rather than a cosmetic one.

@@ -46,7 +46,7 @@ Privacy is structural. Four virtual keys:
 | `private` | `local-*` only | conveyancing work, Open WebUI default |
 | `general` | everything live | this machine — Cursor, aider, scripts |
 | `lan` | `local-*` + `cloud-cheap` | other machines, everyday |
-| `roam` | everything live | laptop, when it needs real cloud models |
+| `lan-cloud` | everything live | laptop, when it needs real cloud models |
 
 A request for a cloud role with the `private` key is rejected by the gateway.
 There is no prompt you can write that gets around it. That is the point.

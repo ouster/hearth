@@ -161,12 +161,12 @@ other machines just need a base URL and a key:
 
 ```bash
 export OPENAI_API_BASE=http://192.168.50.154:4000/v1
-export OPENAI_API_KEY=<the lan or roam key>
+export OPENAI_API_KEY=<the lan or lan-cloud key>
 ```
 
 - `lan` — local roles plus `cloud-cheap`. The everyday key.
-- `roam` — full cloud including frontier. For the laptop when it actually needs
-  Claude or K3.
+- `lan-cloud` — every live cloud role. For a laptop that actually needs Claude
+  or K3. Same LAN, wider scope — the difference is reach, not location.
 
 The dollar figures on these keys are **fuses, not billing** — you are the only user.
 They cap spend on your provider account so that a leaked key or a runaway overnight
@@ -174,7 +174,7 @@ agent loop hits a wall instead of your card. Raise them whenever they get in the
 just don't set `null` on a key that can reach a paid model.
 
 Two keys rather than one so the everyday key stays cheap and a lost laptop has a
-small, visible blast radius. Rotate with `scripts/create-keys.sh` and delete the old
+small, visible blast radius. Both are LAN-only; neither works off this network. Rotate with `scripts/create-keys.sh` and delete the old
 key via the admin API.
 
 This is LAN only. Do not port-forward `:4000` to the internet — key auth is not

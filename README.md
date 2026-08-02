@@ -19,15 +19,85 @@ Concrete models live in exactly two files — `litellm/config.yaml` and
 alias, script, or IDE setting moves. That is the answer to a field where the
 best local coding model changes every few months.
 
+```mermaid
+flowchart LR
+    subgraph host["Mac Studio M4 Max · 64 GB · 192.168.50.154"]
+        direction TB
+
+        subgraph clients["Clients"]
+            aider["aider<br/>ask · ask-chat · ask-big"]
+            webui["Open WebUI :3000<br/>private key"]
+            scripts["scripts / curl"]
+        end
+
+        gw{{"LiteLLM gateway :4000<br/>roles · keys · spend · fallbacks"}}
+
+        subgraph keys["Virtual keys — scope IS the privacy boundary"]
+            kpriv["private<br/>local-* only"]
+            kgen["general<br/>everything live"]
+            klan["lan · lan-cloud<br/>other machines"]
+        end
+
+        subgraph local["Ollama 127.0.0.1:11434 · 37.5 GB resident"]
+            lchat["local-chat<br/>qwen3:8b"]
+            lcode["local-code<br/>qwen3-coder:30b"]
+            lbig["local-big<br/>gpt-oss:20b"]
+            lemb["local-embed<br/>nomic-embed-text"]
+        end
+
+        pg[("Postgres :5433<br/>keys · spend")]
+        searx["SearXNG :8888<br/>opt-in web search"]
+        cc["Claude Code"]
+    end
+
+    subgraph lanbox["Other machines on the LAN"]
+        laptop["MacBook / Linux laptop<br/>no Ollama, no models"]
+    end
+
+    subgraph cloud["Cloud"]
+        gem["cloud-cheap<br/>Gemini 3.5 Flash"]
+        dormant["cloud-code · cloud-frontier<br/>DORMANT, no keys"]
+        anth["Anthropic<br/>subscription"]
+        engines["Google · Bing · DDG"]
+    end
+
+    aider --> gw
+    webui --> gw
+    scripts --> gw
+    laptop -.->|"lan / lan-cloud key"| gw
+
+    gw --- keys
+    gw --> lchat
+    gw --> lcode
+    gw --> lbig
+    gw --> lemb
+    gw --> gem
+    gw -.->|"needs an API key"| dormant
+    gw <--> pg
+
+    webui -.->|"per-message toggle<br/>THE QUERY LEAVES"| searx
+    searx --> engines
+
+    cc ==>|"documented exception<br/>bypasses the gateway"| anth
+
+    kpriv -. "cloud request REFUSED 403" .-x gem
+
+    classDef localCls fill:#1f7a4d,stroke:#0d3d26,color:#fff
+    classDef cloudCls fill:#8a4b1f,stroke:#4d2810,color:#fff
+    classDef gwCls fill:#1f4b8a,stroke:#0d2647,color:#fff
+    classDef offCls fill:#555,stroke:#333,color:#ccc,stroke-dasharray: 4 3
+
+    class lchat,lcode,lbig,lemb localCls
+    class gem,anth,engines cloudCls
+    class gw gwCls
+    class dormant offCls
 ```
-  Cursor ─┐
-  aider ──┤                                 ┌─ Ollama  127.0.0.1:11434
-  scripts─┼──► LiteLLM :4000 ───────────────┤
-  laptop ─┤     roles · keys · spend        └─ Gemini / OpenRouter / Anthropic
-          │              │
-          ▼              ▼
-      Postgres 127.0.0.1:5433 (Podman)
-```
+
+Reading it: **everything funnels through the gateway** except Claude Code, which
+is a recorded exception. The `private` key physically cannot reach a cloud role.
+Ollama listens on localhost only, so the LAN cannot route around any of it. The
+one line that leaves without touching a model is SearXNG — web search is opt-in
+per message, and the query leaves even though the conversation does not.
 
 ## Three guarantees
 
@@ -83,6 +153,124 @@ ai-restart
 Start with `docs/ARCHITECTURE.md`, then `docs/ROUTING.md` and `docs/RUNBOOK.md`.
 `docs/decisions/` records why things are the way they are, including the
 rejected alternatives.
+
+## What each key can actually reach
+
+```mermaid
+flowchart LR
+    priv["private<br/>conveyancing · Open WebUI"]
+    lan["lan<br/>laptops, everyday"]
+    lanc["lan-cloud<br/>laptops, wider scope"]
+    gen["general<br/>this machine"]
+
+    subgraph L["local — never leaves the Mac Studio"]
+        loc["local-chat · local-code<br/>local-big · local-embed"]
+    end
+
+    subgraph C["cloud — leaves the machine"]
+        cheap["cloud-cheap<br/>Gemini 3.5 Flash · LIVE"]
+        dorm["cloud-code · cloud-frontier<br/>DORMANT — no API keys yet"]
+    end
+
+    priv --> loc
+    lan --> loc
+    lanc --> loc
+    gen --> loc
+
+    lan --> cheap
+    lanc --> cheap
+    gen --> cheap
+
+    lanc -.->|"only once a key exists"| dorm
+    gen -.->|"only once a key exists"| dorm
+
+    priv -. "refused · 403" .-x cheap
+
+    classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
+    classDef cloudCls fill:#FAEEDA,stroke:#854F0B,color:#633806
+    classDef offCls fill:#F1EFE8,stroke:#5F5E5A,color:#444441,stroke-dasharray: 4 3
+    classDef keyCls fill:#EEEDFE,stroke:#534AB7,color:#3C3489
+
+    class loc localCls
+    class cheap cloudCls
+    class dorm offCls
+    class priv,lan,lanc,gen keyCls
+```
+
+**`private` is the only key that is genuinely different today.** It reaches the
+four local roles and is refused — HTTP 403 — on anything cloud. That refusal is
+the privacy boundary, and `healthcheck.sh` proves it on every run.
+
+`lan`, `lan-cloud` and `general` currently grant **identical** access, because
+`cloud-cheap` is the only live cloud role — there is nothing extra for a wider
+key to reach. `lan-cloud` is not broken; it is pointed at a shelf that is still
+empty. The dotted edges become solid the day you add an OpenRouter or Anthropic
+key and add the role to `CLOUD_ALL` in `scripts/create-keys.sh`.
+
+Until then, use `lan` for laptops. `scripts/usage.sh --keys` shows the live
+scope of every key, and `private` must always read `LOCAL ONLY`.
+
+## Other machines (macOS and Linux)
+
+Laptops need **no Ollama, no models, no Podman** — they point at the gateway and
+the Studio does the work. Nothing is downloaded; nothing is duplicated.
+
+On the Studio, generate the instructions with the key filled in:
+
+```bash
+scripts/client-setup.sh lan     # local roles + cloud-cheap
+scripts/client-setup.sh lan-cloud    # laptop key, reaches all live cloud roles
+```
+
+Or push it straight to a machine you can ssh to:
+
+```bash
+scripts/client-setup.sh lan-cloud --install colin@macbook
+```
+
+Manually, it is three steps on the client:
+
+```bash
+# 1. the shim (plain shell, works in bash and zsh, macOS and Linux)
+scp colin@192.168.50.154:~/dev/ai-stack/client/ai-stack-client.sh ~/.ai-stack-client.sh
+
+# 2. the key, readable only by you
+printf '%s' 'sk-...' > ~/.ai-stack-key && chmod 600 ~/.ai-stack-key
+
+# 3. wire it in  (~/.zshrc on macOS, ~/.bashrc on Linux)
+echo 'export AI_STACK_GATEWAY=http://192.168.50.154:4000' >> ~/.zshrc
+echo 'source ~/.ai-stack-client.sh'                       >> ~/.zshrc
+```
+
+Then in a new shell:
+
+```bash
+ai-ping                  # is the gateway reachable
+ai-models                # which roles this key may use
+ai-ask "say hello"       # one-shot, no aider needed
+ask "explain this repo"  # aider on local-code, running on the Studio
+```
+
+Clients use the same **role** names, so swapping the model behind `local-code`
+never requires touching a laptop.
+
+Two things to be clear-eyed about:
+
+- **If the Studio is asleep, the laptops have nothing.** That is the trade for
+  not copying 37 GB of weights onto every device.
+- **LAN traffic is plain HTTP.** Fine at home, wrong on cafe or hotel wifi. Off
+  your own network, tunnel instead:
+
+  ```bash
+  ssh -N -L 4000:127.0.0.1:4000 colin@192.168.50.154
+  export AI_STACK_GATEWAY=http://127.0.0.1:4000
+  ```
+
+  Never port-forward `:4000` to the internet. Key auth is not hardening, and a
+  public LiteLLM holding your provider keys becomes somebody else's budget.
+
+Lost a laptop? `scripts/create-keys.sh --force` on the Studio rotates everything,
+then re-run `client-setup.sh` for the machines you still have.
 
 ## Secrets
 

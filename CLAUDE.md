@@ -44,9 +44,16 @@ Read `docs/ROUTING.md` before suggesting any routing change.
    consequences, date. Short.
 
 9. **Shell scripts:** portable bash running under zsh on macOS. LF line endings only.
-   CRLF breaks shebangs and launchd.
+   CRLF breaks shebangs and launchd. **macOS `/bin/bash` is 3.2** — no `declare -A`,
+   no `mapfile`, no `${x^^}`, and guard empty-array expansion as
+   `${arr[@]+"${arr[@]}"}` under `set -u`. Preflight scans for all of these.
 
-10. **Never commit keys.** `master_key`, provider keys, and `.env` stay out of git.
+10. **All diagrams are Mermaid.** No ASCII art, no committed SVG or PNG. GitHub
+    renders Mermaid natively, it diffs as text, and it cannot drift out of sync
+    with the prose the way an exported image does. If a diagram cannot be
+    expressed in Mermaid, use a Markdown table instead.
+
+11. **Never commit keys.** `master_key`, provider keys, and `.env` stay out of git.
     Config references `os.environ/NAME`.
 
 ## Workflow

@@ -4,19 +4,42 @@ Host: Mac Studio M4 Max, 64 GB, macOS 26.4, `192.168.50.154`.
 
 ## Shape
 
-```
-  Cursor ─┐
-  aider ──┤                                    ┌─ Ollama  127.0.0.1:11434
-  scripts─┼──► LiteLLM gateway :4000 ──────────┤   (chat/code/big/embed)
-  laptop ─┤      (roles, keys, spend)          │
-  WebUI ──┘              │                     └─ Gemini / OpenRouter / Moonshot
-                         │                        / Fireworks / Anthropic
-                         ▼
-                  Postgres 127.0.0.1:5433
-                  (virtual keys, spend, model overlay)
+```mermaid
+flowchart LR
+    cursor["Cursor"]
+    aider["aider"]
+    scripts["scripts"]
+    webui["Open WebUI :3000"]
+    laptop["laptops on the LAN"]
 
-  Claude Code ──────────────────────────────────► Anthropic direct
-                  (documented exception — runs on the subscription)
+    gw{{"LiteLLM gateway :4000<br/>roles · keys · spend"}}
+    pg[("Postgres :5433<br/>keys · spend")]
+
+    ollama["Ollama 127.0.0.1:11434<br/>chat · code · big · embed"]
+    cloud["Gemini · OpenRouter<br/>Moonshot · Fireworks · Anthropic"]
+
+    cc["Claude Code"]
+    anth["Anthropic subscription"]
+
+    cursor --> gw
+    aider --> gw
+    scripts --> gw
+    webui --> gw
+    laptop --> gw
+
+    gw --> ollama
+    gw --> cloud
+    gw <--> pg
+
+    cc ==>|"documented exception"| anth
+
+    classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
+    classDef cloudCls fill:#FAEEDA,stroke:#854F0B,color:#633806
+    classDef gwCls fill:#E6F1FB,stroke:#185FA5,color:#0C447C
+
+    class ollama localCls
+    class cloud,anth cloudCls
+    class gw gwCls
 ```
 
 Everything addresses **roles**, never model names. Concrete models appear in
@@ -44,7 +67,7 @@ script, or IDE setting changes. See `docs/MODELS.md`.
 | `private` | `local-*` only | conveyancing work, Open WebUI default |
 | `general` | everything live | this machine — Cursor, aider, scripts |
 | `lan` | `local-*` + `cloud-cheap` | other machines, everyday |
-| `roam` | everything live | laptop, when it needs real cloud models |
+| `lan-cloud` | everything live | laptop, when it needs real cloud models |
 
 A request for a cloud role with the `private` key is refused by the gateway. There
 is no prompt that gets around it, which is the entire point — see `docs/ROUTING.md`.

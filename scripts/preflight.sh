@@ -394,6 +394,29 @@ hdr "Hygiene"
 crlf=$(find "$ROOT/scripts" -name '*.sh' -exec file {} \; 2>/dev/null | grep -c CRLF || true)
 [ "$crlf" -eq 0 ] && ok "no CRLF line endings in scripts" || bad "${crlf} script(s) have CRLF — breaks shebangs and launchd"
 
+# macOS /bin/bash is 3.2. bash-4-only syntax passes review, passes on any Linux
+# CI, and dies on the target machine. `declare -A` in bench.sh got through
+# exactly this way.
+# --exclude this file: it contains the patterns literally, in this grep.
+bash4=$(grep -lnE 'declare -A|local -A|mapfile|readarray|\$\{[A-Za-z_]+\^\^|\$\{[A-Za-z_]+,,' \
+          "$ROOT"/scripts/*.sh 2>/dev/null \
+        | grep -v 'preflight\.sh$' | xargs -n1 basename 2>/dev/null | tr '\n' ' ')
+if [ -z "$bash4" ]; then
+  ok "no bash 4+ syntax (macOS /bin/bash is 3.2)"
+else
+  bad "bash 4+ syntax in: ${bash4}"
+  echo "        These will fail on macOS. Avoid declare -A, mapfile, \${x^^}, \${x,,}."
+fi
+
+# Unguarded empty-array expansion is fatal under `set -u` on bash 3.2 only.
+unguarded=$(grep -lnE '"\$\{[A-Za-z_]+\[@\]\}"' "$ROOT"/scripts/*.sh 2>/dev/null \
+            | grep -v 'preflight\.sh$' \
+            | xargs -I{} sh -c 'grep -q "\[@\]+" {} || basename {}' 2>/dev/null | tr '\n' ' ')
+if [ -n "$unguarded" ]; then
+  wrn "possibly unguarded array expansion in: ${unguarded}"
+  echo "        Use \${arr[@]+\"\${arr[@]}\"} if the array can be empty."
+fi
+
 if [ -L "$LIVE_CFG" ]; then
   tgt=$(readlink "$LIVE_CFG")
   [ "$tgt" = "$CFG" ] && ok "live config symlinked to repo" || wrn "live config symlinked elsewhere: ${tgt}"

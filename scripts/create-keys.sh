@@ -2,6 +2,7 @@
 # Create or update the scoped virtual keys. Idempotent — safe to re-run.
 #
 #   scripts/create-keys.sh          create missing, update existing
+#   scripts/create-keys.sh --prune  also delete keys with unmanaged aliases
 #   scripts/create-keys.sh --force  delete and recreate (new key values)
 #
 # Two purposes, neither of them billing — you are the only user:
@@ -27,8 +28,11 @@ ai_load_env "$ROOT"
 
 GATEWAY="${GATEWAY:-http://127.0.0.1:4000}"
 KEY="${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY not found in ~/.config/litellm/env or litellm/.env}"
-FORCE=false
-[ "${1:-}" = "--force" ] && FORCE=true
+FORCE=false; PRUNE=false
+for a in "$@"; do
+  [ "$a" = "--force" ] && FORCE=true
+  [ "$a" = "--prune" ] && PRUNE=true
+done
 
 # Keep in sync with the UNCOMMENTED roles in litellm/config.yaml.
 # A key listing a role that does not exist in the config will fail.
@@ -120,8 +124,43 @@ sync_key "general" "${LOCAL},${CLOUD_ALL}" '100' \
   "This machine: Cursor, aider, scripts on non-sensitive repos."
 sync_key "lan" "${LOCAL},${CLOUD_CHEAP}" '10' \
   "Other machines, everyday. Local plus cheap cloud."
-sync_key "roam" "${LOCAL},${CLOUD_ALL}" '25' \
+sync_key "lan-cloud" "${LOCAL},${CLOUD_ALL}" '25' \
   "Laptop, when it needs real cloud models. Small cap so a lost laptop is contained."
+
+# While every cloud role except cloud-cheap is dormant, CLOUD_ALL == CLOUD_CHEAP,
+# so lan and lan-cloud currently grant identical access. They diverge the moment
+# a dormant role is enabled. Say so rather than let it look like a bug.
+if [ "$CLOUD_ALL" = "$CLOUD_CHEAP" ]; then
+  echo
+  echo "NOTE: lan and lan-cloud are identical right now — cloud-cheap is the only"
+  echo "      live cloud role. lan-cloud becomes meaningful once you enable a"
+  echo "      dormant role and add it to CLOUD_ALL in this script."
+fi
+
+# Renaming an alias creates a new key and silently leaves the old one live and
+# usable. `roam` -> `lan-cloud` did exactly that.
+ORPHANS=$(printf '%s\n' "$EXISTING" | awk -F'\t' '{print $1}' \
+          | grep -vE '^(private|general|lan|lan-cloud)$' | grep -v '^$' | tr '\n' ' ')
+if [ -n "$ORPHANS" ]; then
+  echo
+  echo "ORPHANED KEYS still active on the gateway:${ORPHANS}"
+  if $PRUNE; then
+    for o in $ORPHANS; do
+      # key_aliases, not the token hash — /key/delete rejects hashes silently,
+      # returning success-shaped output while deleting nothing.
+      r=$(api POST "/key/delete" "{\"key_aliases\":[\"${o}\"]}")
+      if printf '%s' "$r" | grep -qi 'deleted\|success'; then
+        echo "  deleted ${o}"
+      else
+        echo "  could not delete ${o}:"
+        printf '%s' "$r" | head -c 200 | sed 's/^/      /'; echo
+      fi
+    done
+  else
+    echo "  Still valid and usable. Remove them with:"
+    echo "    scripts/create-keys.sh --prune"
+  fi
+fi
 
 echo
 echo "Verify what each key can now reach:"

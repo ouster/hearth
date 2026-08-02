@@ -38,7 +38,7 @@ This file tracks progress only. The original plan is preserved in
   separately from a Claude subscription, and Claude Code already runs on the
   subscription, so the gateway route only earns its place if aider, Cursor or the
   laptop need Claude.
-- **Four keys, not three.** Added `roam` so the laptop can reach cloud models
+- **Four keys, not three.** Added `lan-cloud` so the laptop can reach cloud models
   without widening the everyday `lan` key.
 - **Postgres in Podman, not Docker Desktop.**
 - **`ask` now defaults to local.** The old `ask` pointed at Anthropic with no key
