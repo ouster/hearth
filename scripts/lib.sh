@@ -108,6 +108,53 @@ ai_volume() {
   printf 'hearth-%s' "$kind"
 }
 
+# ---- gateway readiness --------------------------------------------------
+#
+# /health/readiness answers HTTP 503 with {"status":"healthy","db":"disconnected"}
+# when Prisma is down. `curl -s -o /dev/null` exits 0 on a 503, so the obvious
+# check reports a gateway that cannot authenticate a single virtual key as "up".
+# Same false-pass shape as the leak test and the Ollama LAN probe: the failure
+# and the success are indistinguishable at the call site.
+#
+# db:disconnected is not a degraded state you can work through. Virtual keys
+# live in Postgres, so every scoped key 401s — which is the entire LAN.
+#
+# Echoes one of:
+#   ready  db:connected — the only state in which a virtual key works
+#   nodb   answered, but Prisma is down. Every scoped key 401s.
+#   hung   the port accepts connections and readiness did not answer in time.
+#          Observed when Postgres dies under a running gateway: LiteLLM blocks
+#          retrying the connection instead of returning its own 503. Reporting
+#          that as "not responding" sends you to launchctl when the gateway is
+#          fine and the database is not.
+#   down   nothing listening
+ai_gateway_state() {
+  local base="${1:-http://127.0.0.1:4000}" timeout="${2:-5}" body host port
+  body=$(curl -s -m "$timeout" "${base}/health/readiness" 2>/dev/null)
+  if [ -n "$body" ]; then
+    if printf '%s' "$body" | grep -qiE '"db"[[:space:]]*:[[:space:]]*"connected"|"database_status"[[:space:]]*:[[:space:]]*"connected"'; then
+      printf 'ready'; return 0
+    fi
+    printf 'nodb'; return 1
+  fi
+  # No body. Distinguish "hung" from "nothing there" at the TCP layer.
+  host="${base#*://}"; host="${host%%/*}"
+  port="${host##*:}"; [ "$port" = "$host" ] && port=80
+  host="${host%%:*}"
+  if command -v nc >/dev/null 2>&1 && nc -z -w 2 "$host" "$port" >/dev/null 2>&1; then
+    printf 'hung'; return 1
+  fi
+  printf 'down'; return 1
+}
+
+# True only when the gateway can actually serve a scoped key.
+ai_gateway_ready() { [ "$(ai_gateway_state "$@")" = "ready" ]; }
+
+# True when the gateway answered HTTP at all. `hung` is not answering.
+ai_gateway_answering() {
+  case "$(ai_gateway_state "$@")" in ready|nodb) return 0 ;; *) return 1 ;; esac
+}
+
 # macOS system python3 has no PyYAML and you cannot pip into it without
 # --break-system-packages. LiteLLM's own pipx venv already has yaml, so prefer
 # that over asking the user to install anything.

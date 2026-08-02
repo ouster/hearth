@@ -48,7 +48,7 @@ PY
 restart() {
   launchctl kickstart -k "$(ai_litellm_agent)" 2>/dev/null
   for _ in $(seq 1 30); do
-    curl -s -m 3 -o /dev/null "${GATEWAY}/health/readiness" && return 0
+    ai_gateway_ready "$GATEWAY" 3 && return 0
     sleep 1
   done
   return 1

@@ -22,12 +22,16 @@ if [ -z "${HEARTH_GATEWAY:-}" ]; then
   return 1 2>/dev/null || exit 1
 fi
 
+# An explicitly exported HEARTH_KEY wins. The key file is the default, not an
+# override — otherwise `HEARTH_KEY=... ai-ask ...` silently uses the old key.
 HEARTH_KEY="${HEARTH_KEY:-${AI_STACK_KEY:-}}"
 
-if [ -f "$HOME/.hearth-key" ]; then
-  HEARTH_KEY="$(cat "$HOME/.hearth-key")"
-elif [ -f "$HOME/.ai-stack-key" ]; then
-  HEARTH_KEY="$(cat "$HOME/.ai-stack-key")"
+if [ -z "$HEARTH_KEY" ]; then
+  if [ -f "$HOME/.hearth-key" ]; then
+    HEARTH_KEY="$(cat "$HOME/.hearth-key")"
+  elif [ -f "$HOME/.ai-stack-key" ]; then
+    HEARTH_KEY="$(cat "$HOME/.ai-stack-key")"
+  fi
 fi
 
 # OpenAI-compatible, so most tools pick these up with no further config:
@@ -65,20 +69,34 @@ print("roles this key can use:")
 }
 
 ai-ping() {
+  # /health/readiness answers 503 {"db":"disconnected"} when the gateway's
+  # Postgres is down, and curl exits 0 on a 503. Your key lives in that
+  # database, so "answering" and "usable" are different questions — and the
+  # second is the one you care about. Read the body, not the exit code.
   printf 'gateway %s ... ' "$HEARTH_GATEWAY"
-  if curl -s -m 5 -o /dev/null "${HEARTH_GATEWAY}/health/readiness"; then
-    echo "up"
-  else
+  _body=$(curl -s -m 5 "${HEARTH_GATEWAY}/health/readiness" 2>/dev/null)
+  if [ -z "$_body" ]; then
     echo "UNREACHABLE"
     echo "  - is the gateway host awake?"
     echo "  - same network? try: ping ${HEARTH_GATEWAY#http://}"
+  elif printf '%s' "$_body" | grep -qi '"db"[[:space:]]*:[[:space:]]*"connected"'; then
+    echo "up"
+  else
+    echo "DEGRADED — answering, but its database is down"
+    echo "  Your key will return 401 until that is fixed."
+    echo "  On the gateway host: scripts/boot.sh"
   fi
+  unset _body
 }
 
 ai-ask() {
   # One-shot question without aider. ai-ask [role] "question"
+  if [ $# -eq 0 ]; then
+    echo "usage: ai-ask [role] \"question\"" >&2
+    return 2
+  fi
   _r="local-chat"
-  case "$1" in local-*|cloud-*) _r="$1"; shift ;; esac
+  case "${1:-}" in local-*|cloud-*) _r="$1"; shift ;; esac
   curl -s "${HEARTH_GATEWAY}/v1/chat/completions" \
     -H "Authorization: Bearer ${HEARTH_KEY}" \
     -H "Content-Type: application/json" \

@@ -94,11 +94,20 @@ echo "    preflight clean"
 # ---------------------------------------------------------------- deploy
 say "4/5 Restart gateway"
 launchctl kickstart -k "$(ai_litellm_agent)" 2>/dev/null
+gw_up=false
 for _ in $(seq 1 30); do
-  curl -s -m 3 -o /dev/null "http://127.0.0.1:4000/health/readiness" && break
+  if ai_gateway_ready http://127.0.0.1:4000 3; then gw_up=true; break; fi
   sleep 1
 done
-echo "    gateway responding"
+if $gw_up; then
+  echo "    gateway responding (db:connected)"
+else
+  echo "    gateway did not come back — reverting config"
+  echo "    state: $(ai_gateway_state http://127.0.0.1:4000 3)"
+  mv "${CFG}.bak" "$CFG"
+  launchctl kickstart -k "$(ai_litellm_agent)" 2>/dev/null
+  exit 1
+fi
 
 # ---------------------------------------------------------------- verify
 say "5/5 Verify the role answers"
@@ -122,8 +131,11 @@ rm -f "${CFG}.bak"
 say "Old weights"
 echo "    ${OLD_BARE} is no longer referenced by any role."
 if $DELETE_OLD; then
-  still=$(grep -c "ollama_chat/${OLD_BARE}\b" "$CFG" 2>/dev/null || echo 0)
-  if [ "$still" -gt 0 ]; then
+  # grep -c prints "0" AND exits 1 on no match, so `|| echo 0` yields "0\n0"
+  # and the -gt test errors out — which here would fall through to the delete
+  # branch. wc -l has no such opinion. Same trap documented in status.sh.
+  still=$(grep -F "ollama_chat/${OLD_BARE}" "$CFG" 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${still:-0}" -gt 0 ]; then
     echo "    NOT deleting — still used by another role"
   else
     ollama rm "$OLD_BARE" && echo "    deleted ${OLD_BARE}"

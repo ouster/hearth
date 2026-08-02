@@ -43,8 +43,16 @@ case "$CMD" in
     fi
 
     podman info >/dev/null 2>&1 || { echo "podman VM not running: podman machine start"; exit 1; }
-    curl -s -m 5 -o /dev/null http://127.0.0.1:4000/health/readiness \
-      || { echo "gateway not responding on :4000"; exit 1; }
+    # db:connected, not just answering — Open WebUI authenticates with a virtual
+    # key, so a gateway with Postgres down gives it a model list of nothing.
+    case "$(ai_gateway_state http://127.0.0.1:4000 5)" in
+      ready) : ;;
+      nodb)  echo "gateway is up but db:disconnected — the ${SCOPE} key will 401."
+             echo "  fix: scripts/boot.sh"; exit 1 ;;
+      hung)  echo ":4000 is listening but readiness hangs — usually a dead database."
+             echo "  fix: scripts/boot.sh"; exit 1 ;;
+      *)     echo "gateway not responding on :4000"; exit 1 ;;
+    esac
 
     podman volume exists "$VOLUME" 2>/dev/null || podman volume create "$VOLUME" >/dev/null
 

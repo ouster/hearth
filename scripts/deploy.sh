@@ -16,33 +16,46 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CFG="${ROOT}/litellm/config.yaml"
 LIVE="$HOME/.config/litellm/config.yaml"
 BACKUP="$HOME/.config/litellm/config.yaml.pre-hearth"
+# Hosts deployed before the rename hold their only backup under the old name.
+# Looking solely at .pre-hearth means --rollback reports "nothing to restore"
+# on exactly the machines most likely to need it.
+LEGACY_BACKUP="$HOME/.config/litellm/config.yaml.pre-ai-stack"
 AGENT="$(ai_litellm_agent)"
 
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 ok()   { printf '    \033[32mok\033[0m %s\n' "$1"; }
 bad()  { printf '    \033[31mfail\033[0m %s\n' "$1"; }
 
+# Waits for db:connected, not merely for a response. A gateway that answers
+# 503 db:disconnected serves nothing to any virtual key, and calling that
+# "responding" is how a broken deploy gets declared successful.
 wait_ready() {
   printf '    waiting for gateway'
   for _ in $(seq 1 30); do
-    if curl -s -m 3 -o /dev/null "http://127.0.0.1:4000/health/readiness"; then
+    if ai_gateway_ready http://127.0.0.1:4000 3; then
       echo; return 0
     fi
     printf '.'; sleep 1
   done
-  echo; return 1
+  echo
+  [ "$(ai_gateway_state http://127.0.0.1:4000 3)" = "nodb" ] \
+    && bad "gateway is up but db:disconnected — scripts/boot.sh"
+  return 1
 }
 
 rollback() {
   say "Rolling back"
-  if [ -f "$BACKUP" ]; then
+  local src=""
+  [ -f "$BACKUP" ] && src="$BACKUP"
+  [ -z "$src" ] && [ -f "$LEGACY_BACKUP" ] && src="$LEGACY_BACKUP"
+  if [ -n "$src" ]; then
     rm -f "$LIVE"
-    mv "$BACKUP" "$LIVE"
-    ok "restored previous config"
+    mv "$src" "$LIVE"
+    ok "restored previous config from $(basename "$src")"
     launchctl kickstart -k "$AGENT" 2>/dev/null
     wait_ready && ok "gateway back up on the old config" || bad "gateway did not come back — check ~/Library/Logs/litellm.error.log"
   else
-    bad "no backup at ${BACKUP} — nothing to restore"
+    bad "no backup at ${BACKUP} or ${LEGACY_BACKUP} — nothing to restore"
   fi
 }
 

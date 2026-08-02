@@ -46,14 +46,32 @@ function Get-AiStackHeaders {
 }
 
 function ai-ping {
+    # The gateway answers 503 {"db":"disconnected"} when its Postgres is down.
+    # Your key lives in that database, so "answering" is not "usable" — read the
+    # body. -SkipHttpErrorCheck needs PS7, hence the catch-and-inspect fallback.
     Write-Host -NoNewline "gateway $($env:HEARTH_GATEWAY) ... "
+    $body = $null
     try {
-        Invoke-RestMethod -Uri "$($env:HEARTH_GATEWAY)/health/readiness" -TimeoutSec 5 | Out-Null
-        Write-Host "up" -ForegroundColor Green
+        $body = Invoke-RestMethod -Uri "$($env:HEARTH_GATEWAY)/health/readiness" -TimeoutSec 5
     } catch {
+        $resp = $_.Exception.Response
+        if ($resp) {
+            try {
+                $sr = New-Object System.IO.StreamReader($resp.GetResponseStream())
+                $body = $sr.ReadToEnd() | ConvertFrom-Json
+            } catch { $body = $null }
+        }
+    }
+    if (-not $body) {
         Write-Host "UNREACHABLE" -ForegroundColor Red
-        Write-Host "  - is the Mac Studio awake?"
+        Write-Host "  - is the gateway host awake?"
         Write-Host "  - same network? try: Test-NetConnection $($env:HEARTH_GATEWAY -replace 'https?://','') -Port 4000"
+    } elseif ($body.db -eq "connected") {
+        Write-Host "up" -ForegroundColor Green
+    } else {
+        Write-Host "DEGRADED" -ForegroundColor Yellow
+        Write-Host "  Answering, but its database is down — your key will return 401."
+        Write-Host "  On the gateway host: scripts/boot.sh"
     }
 }
 

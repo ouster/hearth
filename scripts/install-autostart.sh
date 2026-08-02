@@ -65,6 +65,12 @@ case "${1:---check}" in
   --apply)
     # launchd PATH is /usr/bin:/bin:/usr/sbin:/sbin — Homebrew podman is
     # invisible without this. boot.sh also prepends these paths; belt + braces.
+    #
+    # AbandonProcessGroup is load-bearing, not tidiness. `podman machine start`
+    # leaves vfkit and gvproxy running in boot.sh's process group, and launchd
+    # kills the whole group when the job exits. Without this the boot log reads
+    # green, the VM dies seconds later, and LiteLLM crash-loops on Prisma P1001
+    # with no clue as to why.
     cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -83,6 +89,8 @@ case "${1:---check}" in
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
     <key>RunAtLoad</key>
+    <true/>
+    <key>AbandonProcessGroup</key>
     <true/>
     <key>StandardOutPath</key>
     <string>${HOME}/Library/Logs/hearth-boot.log</string>

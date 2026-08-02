@@ -29,14 +29,12 @@ else
   down "ollama" "not responding — scripts/install-ollama-service.sh --apply"
 fi
 
-gw_body=$(curl -s -m 3 http://127.0.0.1:4000/health/readiness 2>/dev/null || true)
-if [ -n "$gw_body" ] && printf '%s' "$gw_body" | grep -qiE '"db"[[:space:]]*:[[:space:]]*"connected"|"database_status"[[:space:]]*:[[:space:]]*"connected"'; then
-  up "gateway" ":4000 (db:connected)"
-elif [ -n "$gw_body" ]; then
-  warn "gateway" "responding but db not connected — scripts/boot.sh"
-else
-  down "gateway" "not responding — scripts/boot.sh"
-fi
+case "$(ai_gateway_state http://127.0.0.1:4000 3)" in
+  ready) up   "gateway" ":4000 (db:connected)" ;;
+  nodb)  warn "gateway" "responding but db not connected — every scoped key 401s. scripts/boot.sh" ;;
+  hung)  warn "gateway" ":4000 listening but readiness hangs — usually the database. scripts/boot.sh" ;;
+  *)     down "gateway" "not responding — scripts/boot.sh" ;;
+esac
 
 # Prefer host port checks: `podman info` can fail (API/SSH flap) while
 # published ports are still serving — or the reverse after a fresh stop.
@@ -88,7 +86,7 @@ fi
 
 # ---------------------------------------------------------------- exposure
 echo
-LANIP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "")
+LANIP="$(ai_lan_ip)"
 if [ -n "$LANIP" ]; then
   curl -s -m 2 -o /dev/null "http://${LANIP}:11434/api/tags" 2>/dev/null \
     && down "ollama on LAN" "EXPOSED — scripts/lock-ollama.sh --apply" \

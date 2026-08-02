@@ -89,12 +89,34 @@ SAW_NO_DEPLOYMENTS=0
 echo "Gateway: ${GATEWAY}"
 echo
 echo "Reachability:"
-if curl -s -m 5 -o /dev/null "${GATEWAY}/health/readiness"; then
-  echo "  gateway responding"
-else
-  echo "  gateway NOT responding — check: launchctl list | grep litellm"
-  exit 1
-fi
+case "$(ai_gateway_state "$GATEWAY" 5)" in
+  ready)
+    echo "  gateway responding (db:connected)"
+    ;;
+  nodb)
+    # Not a warning. Virtual keys live in Postgres, so with the DB down every
+    # scoped key 401s and the leak test below proves nothing: the private key
+    # would be "refused" on a cloud role for the wrong reason entirely.
+    echo "  gateway answering but db:disconnected — NOT usable"
+    echo "      Every virtual key returns 401. The privacy leak test cannot run:"
+    echo "      a refusal here means broken auth, not enforced scope."
+    echo "      Fix: scripts/boot.sh    then re-run this."
+    exit 1
+    ;;
+  hung)
+    echo "  gateway is listening but /health/readiness did not answer"
+    echo "      This is what a dead Postgres looks like from here: LiteLLM"
+    echo "      blocks retrying the connection rather than returning 503."
+    echo "      Check the database first, not launchd:  scripts/status.sh"
+    echo "      Fix: scripts/boot.sh"
+    exit 1
+    ;;
+  *)
+    echo "  gateway NOT responding — nothing listening on :4000"
+    echo "      check: launchctl list | grep litellm"
+    exit 1
+    ;;
+esac
 
 echo
 echo "Local roles:"
@@ -119,6 +141,8 @@ echo "Privacy leak test:"
 if [ -z "$PRIVATE_KEY" ]; then
   echo "  SKIPPED — LITELLM_PRIVATE_KEY not set (needs Postgres + virtual keys)"
   echo "  Until this passes, the privacy boundary is documented, not enforced."
+elif [ -z "${LOCAL_ROLES[0]:-}" ]; then
+  echo "  SKIPPED — no local role to use as the positive control"
 elif [ "${#CLOUD_ROLES[@]:-0}" -eq 0 ] || [ -z "${CLOUD_ROLES[0]:-}" ]; then
   echo "  SKIPPED — no live cloud role to probe against"
 else

@@ -21,24 +21,41 @@ export HEARTH_ROOT
 
 HEARTH_GATEWAY="${HEARTH_GATEWAY:-${AI_STACK_GATEWAY:-http://127.0.0.1:4000}}"
 
-# Load keys if present. Falls back to master key so things work pre-Postgres.
-[ -f "${HEARTH_ROOT}/litellm/.env" ] && {
-  set -a; . "${HEARTH_ROOT}/litellm/.env"; set +a
-}
+# Load keys WITHOUT exporting them. `set -a` here would put the master key, all
+# four virtual keys and POSTGRES_PASSWORD into the environment of every process
+# started from this shell — aider, any agent it spawns, any npm postinstall.
+# The aliases below inject only the one key a command needs, per invocation.
+if [ -f "${HEARTH_ROOT}/litellm/.env" ]; then
+  . "${HEARTH_ROOT}/litellm/.env"
+fi
 . "${HEARTH_ROOT}/scripts/lib.sh"
 
+# No fallback to the master key. It used to fall back so things worked before
+# Postgres existed, and the cost was that `ask` — labelled private — would run
+# on an unscoped, uncapped, unattributable credential whenever the scoped key
+# was missing. Scope is meant to be structural (see rule 3); a boundary that
+# quietly reverts to intent when a variable is unset is not one. Fail loudly.
 _ai_key() {
-  # $1 = private | general
+  local want val
   case "$1" in
-    private) printf '%s' "${LITELLM_PRIVATE_KEY:-$LITELLM_MASTER_KEY}" ;;
-    *)       printf '%s' "${LITELLM_GENERAL_KEY:-$LITELLM_MASTER_KEY}" ;;
+    private) want=LITELLM_PRIVATE_KEY ;;
+    *)       want=LITELLM_GENERAL_KEY ;;
   esac
+  eval "val=\${${want}:-}"
+  if [ -z "$val" ]; then
+    printf '%s is not set.\n' "$want" >&2
+    printf 'Refusing to fall back to the master key: it can reach every role.\n' >&2
+    printf 'Fix: scripts/create-keys.sh, then paste the value into litellm/.env\n' >&2
+    return 1
+  fi
+  printf '%s' "$val"
 }
 
 _aider_role() {
-  local role="$1" scope="$2"; shift 2
+  local role="$1" scope="$2" key; shift 2
+  key="$(_ai_key "$scope")" || return 1
   OPENAI_API_BASE="${HEARTH_GATEWAY}/v1" \
-  OPENAI_API_KEY="$(_ai_key "$scope")" \
+  OPENAI_API_KEY="$key" \
   aider --model "openai/${role}" "$@"
 }
 
@@ -56,8 +73,9 @@ alias ask-chat='_aider_role local-chat private'   # general questions, not code
 #
 # Distinct from ask-architect, which just points aider at local-big normally.
 ask-arch() {
+  local key; key="$(_ai_key private)" || return 1
   OPENAI_API_BASE="${HEARTH_GATEWAY}/v1" \
-  OPENAI_API_KEY="$(_ai_key private)" \
+  OPENAI_API_KEY="$key" \
   aider --architect --model openai/local-big --editor-model openai/local-code "$@"
 }
 

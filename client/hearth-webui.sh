@@ -60,12 +60,21 @@ case "${1:-status}" in
     need_runtime
     [ -n "$KEY" ] || { echo "No key. Put the lan key in ~/.hearth-key"; exit 1; }
 
-    if ! curl -s -m 5 -o /dev/null "${GATEWAY}/health/readiness"; then
+    # Read the body: the gateway answers 503 {"db":"disconnected"} when its
+    # Postgres is down, curl exits 0 on that, and your key lives in that
+    # database. Starting the UI against it produces an empty model picker and
+    # no explanation.
+    gw_body=$(curl -s -m 5 "${GATEWAY}/health/readiness" 2>/dev/null)
+    if [ -z "$gw_body" ]; then
       echo "Gateway ${GATEWAY} is unreachable."
-      echo "  - is the Mac Studio awake and on the same network?"
+      echo "  - is the gateway host awake and on the same network?"
+      exit 1
+    elif ! printf '%s' "$gw_body" | grep -qi '"db"[[:space:]]*:[[:space:]]*"connected"'; then
+      echo "Gateway ${GATEWAY} is answering but its database is down."
+      echo "  Your key will return 401. On the gateway host: scripts/boot.sh"
       exit 1
     fi
-    echo "gateway: ${GATEWAY} — reachable"
+    echo "gateway: ${GATEWAY} — reachable (db:connected)"
 
     [ "$RT" = "podman" ] && { podman info >/dev/null 2>&1 || podman machine start; }
     $RT volume create "$VOLUME" >/dev/null 2>&1 || true

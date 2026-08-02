@@ -368,6 +368,27 @@ else
   [ -f "$ENVF" ] && bad ".env is NOT gitignored — keys would be committed" || true
 fi
 
+# Gitignore stops keys reaching GitHub. It does nothing about the other account
+# on the machine. The default umask is 022, so every one of these files is
+# created world-readable and stays that way unless someone thinks to chmod it.
+# Any *.bak left by an editor or a migration is the same secret with none of
+# the attention.
+mode_bad=""
+for f in "$ENVF" "$LIVE_ENV" "$ROOT"/litellm/.env.bak "$ROOT"/litellm/.env.*.bak; do
+  [ -f "$f" ] || continue
+  m=$(stat -f '%OLp' "$f" 2>/dev/null || stat -c '%a' "$f" 2>/dev/null)
+  case "$m" in
+    600|400) ;;
+    *) mode_bad="${mode_bad} $(basename "$f")(${m})" ;;
+  esac
+done
+if [ -n "$mode_bad" ]; then
+  bad "secret files readable by other users:${mode_bad}"
+  echo "        fix: chmod 600 litellm/.env ~/.config/litellm/env"
+else
+  ok "secret files are 0600"
+fi
+
 if grep -qE '^\s*master_key:\s*["'"'"']?sk-' "$CFG" 2>/dev/null; then
   bad "master_key is hardcoded in config.yaml — use os.environ/"
 else
@@ -378,13 +399,32 @@ fi
 hdr "Runtime"
 
 if lsof -nP -iTCP:4000 -sTCP:LISTEN >/dev/null 2>&1; then
-  ok "something is listening on :4000 (existing gateway)"
+  case "$(ai_gateway_state http://127.0.0.1:4000 5)" in
+    ready) ok "gateway on :4000 (db:connected)" ;;
+    nodb)  bad "gateway on :4000 answers db:disconnected — every virtual key 401s"
+           echo "        Deploying now restarts it into the same broken state."
+           echo "        fix: scripts/boot.sh" ;;
+    hung)  bad ":4000 is listening but readiness hangs — usually a dead database"
+           echo "        fix: scripts/boot.sh" ;;
+    *)     wrn ":4000 is listening but /health/readiness gave nothing" ;;
+  esac
 else
   wrn ":4000 not listening — gateway is down"
 fi
 
+# Postgres down is a FAILURE, not a warning, whenever the config declares
+# database_url. Virtual keys are the privacy boundary — the `private` key's
+# model scope is what stops client data reaching a cloud role — and that scope
+# is enforced from rows in this database. Without it every scoped key 401s and
+# the only credential that still works is the unscoped master key. "Safe to
+# deploy" is the wrong thing to print in that state.
 if lsof -nP -iTCP:5433 -sTCP:LISTEN >/dev/null 2>&1; then
   ok "postgres listening on :5433"
+elif [ "${db_on:-no}" = "yes" ]; then
+  bad "postgres not up but config declares database_url — virtual keys cannot work"
+  echo "        Scoped keys are the privacy boundary; without them only the"
+  echo "        master key works, and it is unscoped."
+  echo "        fix: scripts/boot.sh   (or scripts/db.sh up)"
 else
   wrn "postgres not up — run scripts/db.sh up (needed for virtual keys)"
 fi

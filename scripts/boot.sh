@@ -38,14 +38,8 @@ host_tcp_open() {
   (echo >/dev/tcp/"$host"/"$port") >/dev/null 2>&1
 }
 
-# LiteLLM /health/readiness can answer HTTP 200 while Prisma is down
-# ({"db":"disconnected"}). That is not a successful boot.
-gateway_db_connected() {
-  local body
-  body=$(curl -s -m 3 http://127.0.0.1:4000/health/readiness 2>/dev/null) || return 1
-  # Accept common shapes: "db":"connected" or "database_status":"connected"
-  printf '%s' "$body" | grep -qiE '"db"[[:space:]]*:[[:space:]]*"connected"|"database_status"[[:space:]]*:[[:space:]]*"connected"'
-}
+# Readiness is db-aware and lives in lib.sh — see ai_gateway_state there.
+gateway_db_connected() { ai_gateway_ready http://127.0.0.1:4000 3; }
 
 wait_podman_info() {
   local i
@@ -146,7 +140,7 @@ fi
 if gateway_db_connected; then
   log "gateway ready (db:connected)"
 else
-  if curl -s -m 3 -o /dev/null http://127.0.0.1:4000/health/readiness 2>/dev/null; then
+  if ai_gateway_answering http://127.0.0.1:4000 3; then
     log "gateway answering but db not connected — kicking launchd"
   else
     log "gateway not up yet — kicking launchd"
