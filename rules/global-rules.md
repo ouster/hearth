@@ -51,6 +51,11 @@ Markdown table.
 - **Verify against the environment that will actually run the code.** A variable
   exported in your interactive shell is not set for launchd, systemd, or a
   container. Check the service's environment, not yours.
+- **Where config is both env vars and a settings UI, the stored value usually
+  wins.** Env vars typically seed a *fresh* database and are ignored thereafter,
+  so a persisted volume keeps whatever was written on first run. Reading the
+  environment tells you what was *intended*, not what is *in effect* — check the
+  running config, or start from a clean state.
 - **A positive control is half of any negative test.** "The restricted key was
   refused" proves nothing on its own — a broken key refuses everything. It must
   also *succeed* at what it is allowed to do.

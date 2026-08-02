@@ -58,7 +58,7 @@ case "$CMD" in
         -e RAG_WEB_SEARCH_ENGINE=searxng
         -e SEARXNG_QUERY_URL="http://${SEARCH_HOST}:8888/search?q=<query>"
       )
-      echo "search: SearXNG detected — web search available (opt-in per chat)"
+      echo "search: SearXNG detected — env vars set (see the note after startup)"
     else
       echo "search: none (start it with scripts/searxng.sh up)"
     fi
@@ -124,6 +124,23 @@ case "$CMD" in
     Settings -> Advanced Params -> Function Calling: Default, NOT Native
       Native tool calling makes small local models invent tool calls instead
       of answering. That is what produced query_knowledge_files loops.
+
+  WEB SEARCH — the env vars above are NOT sufficient on their own.
+    Open WebUI stores these as config values in its database, and the DATABASE
+    VALUE TAKES PRECEDENCE over the environment. The env vars only seed a fresh
+    database. This container reuses the ai-stack-webui-data volume, so whatever
+    was written on first run wins — which is why the toggle can be missing even
+    though 'podman exec ai-stack-webui env' shows it enabled.
+
+    Turn it on where it actually counts:
+      Admin Panel -> Settings -> Web Search -> Enable Web Search
+      Engine: searxng
+      Query URL: http://host.containers.internal:8888/search?q=<query>
+
+    The toggle then appears in the chat input, per message. If it later vanishes,
+    it is usually a stale access token — sign out and back in.
+
+    To start genuinely fresh instead: scripts/webui.sh destroy (loses chat history).
 
   For the fuller picture — which role, which actual model, local or cloud,
   tokens and cost — use:  scripts/usage.sh

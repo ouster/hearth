@@ -95,6 +95,29 @@ Ollama directly and bypass the gateway — reopening the hole Phase 3 closed.
 Title and tag generation is pinned to `local-chat` so background housekeeping
 cannot quietly become cloud spend.
 
+### Web search: the env vars are not enough
+
+Open WebUI treats these as config values stored in its **database**, and the
+database value **takes precedence over the environment**. Environment variables
+only seed a *fresh* database. Because `webui.sh up` recreates the container but
+keeps the `ai-stack-webui-data` volume, whatever was written on first run wins —
+so the toggle can be absent even though `podman exec ai-stack-webui env` clearly
+shows `ENABLE_WEB_SEARCH=True`.
+
+Enable it where it actually counts:
+
+```
+Admin Panel -> Settings -> Web Search -> Enable Web Search
+  Engine:    searxng
+  Query URL: http://host.containers.internal:8888/search?q=<query>
+```
+
+The toggle then appears in the chat input, per message. If it later disappears,
+that is usually a stale access token — sign out and back in.
+
+This is a general trap with any tool that has both env config and a settings UI:
+checking the environment tells you what was *intended*, not what is *in effect*.
+
 Seeing where requests actually went:
 
 ```bash
