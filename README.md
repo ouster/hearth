@@ -197,18 +197,37 @@ flowchart LR
     class priv,lan,lanc,gen keyCls
 ```
 
+### Today — only `private` is actually different
+
+| Key | local roles (4) | `cloud-cheap` | `cloud-code`, `cloud-frontier` |
+|---|---|---|---|
+| `private` | yes | **blocked** | **blocked** |
+| `lan` | yes | yes | blocked |
+| `lan-cloud` | yes | yes | nothing to reach |
+| `general` | yes | yes | nothing to reach |
+
+### After you add an OpenRouter or Anthropic key
+
+| Key | local roles (4) | `cloud-cheap` | `cloud-code`, `cloud-frontier` |
+|---|---|---|---|
+| `private` | yes | **blocked** | **blocked** |
+| `lan` | yes | yes | blocked |
+| `lan-cloud` | yes | yes | **yes — now it differs** |
+| `general` | yes | yes | **yes** |
+
 **`private` is the only key that is genuinely different today.** It reaches the
 four local roles and is refused — HTTP 403 — on anything cloud. That refusal is
-the privacy boundary, and `healthcheck.sh` proves it on every run.
+the privacy boundary, and `healthcheck.sh` proves it on every run, with a
+positive control so a merely broken key can't pass as a well-scoped one.
 
 `lan`, `lan-cloud` and `general` currently grant **identical** access, because
 `cloud-cheap` is the only live cloud role — there is nothing extra for a wider
 key to reach. `lan-cloud` is not broken; it is pointed at a shelf that is still
-empty. The dotted edges become solid the day you add an OpenRouter or Anthropic
-key and add the role to `CLOUD_ALL` in `scripts/create-keys.sh`.
+empty. It diverges the day you add a provider key and add the role to
+`CLOUD_ALL` in `scripts/create-keys.sh`.
 
-Until then, use `lan` for laptops. `scripts/usage.sh --keys` shows the live
-scope of every key, and `private` must always read `LOCAL ONLY`.
+Until then use `lan` for laptops. `scripts/usage.sh --keys` shows the live scope
+of every key, and `private` must always read `LOCAL ONLY`.
 
 ## Other machines (macOS and Linux)
 
