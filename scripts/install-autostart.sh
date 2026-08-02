@@ -63,6 +63,8 @@ case "${1:---check}" in
   --check) check ;;
 
   --apply)
+    # launchd PATH is /usr/bin:/bin:/usr/sbin:/sbin — Homebrew podman is
+    # invisible without this. boot.sh also prepends these paths; belt + braces.
     cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -72,8 +74,14 @@ case "${1:---check}" in
     <string>${LABEL}</string>
     <key>ProgramArguments</key>
     <array>
+        <string>/bin/bash</string>
         <string>${ROOT}/scripts/boot.sh</string>
     </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>StandardOutPath</key>
@@ -83,8 +91,10 @@ case "${1:---check}" in
 </dict>
 </plist>
 EOF
-    launchctl unload "$PLIST" 2>/dev/null
-    launchctl load "$PLIST" 2>/dev/null
+    # Prefer modern bootstrap; fall back to load for older macOS.
+    uid="$(id -u)"
+    launchctl bootout "gui/${uid}/${LABEL}" 2>/dev/null || launchctl unload "$PLIST" 2>/dev/null || true
+    launchctl bootstrap "gui/${uid}" "$PLIST" 2>/dev/null || launchctl load "$PLIST" 2>/dev/null
     echo "installed ${PLIST}"
     echo "log: ~/Library/Logs/hearth-boot.log"
     echo

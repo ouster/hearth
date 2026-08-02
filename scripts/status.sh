@@ -29,28 +29,47 @@ else
   down "ollama" "not responding — scripts/install-ollama-service.sh --apply"
 fi
 
-if curl -s -m 3 -o /dev/null http://127.0.0.1:4000/health/readiness 2>/dev/null; then
-  up "gateway" ":4000"
+gw_body=$(curl -s -m 3 http://127.0.0.1:4000/health/readiness 2>/dev/null || true)
+if [ -n "$gw_body" ] && printf '%s' "$gw_body" | grep -qiE '"db"[[:space:]]*:[[:space:]]*"connected"|"database_status"[[:space:]]*:[[:space:]]*"connected"'; then
+  up "gateway" ":4000 (db:connected)"
+elif [ -n "$gw_body" ]; then
+  warn "gateway" "responding but db not connected — scripts/boot.sh"
 else
   down "gateway" "not responding — scripts/boot.sh"
 fi
 
-if command -v podman >/dev/null 2>&1; then
-  if podman info >/dev/null 2>&1; then
+# Prefer host port checks: `podman info` can fail (API/SSH flap) while
+# published ports are still serving — or the reverse after a fresh stop.
+host_port() {
+  if command -v nc >/dev/null 2>&1; then
+    nc -z -w 1 127.0.0.1 "$1" >/dev/null 2>&1
+  else
+    (echo >/dev/tcp/127.0.0.1/"$1") >/dev/null 2>&1
+  fi
+}
+
+export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+if command -v podman >/dev/null 2>&1 || [ -x /opt/homebrew/bin/podman ]; then
+  PODMAN="$(command -v podman 2>/dev/null || echo /opt/homebrew/bin/podman)"
+  if "$PODMAN" info >/dev/null 2>&1; then
     up "podman machine" "running"
-    for spec in postgres:5433 searxng:8888 webui:3000; do
-      kind="${spec%%:*}"; port="${spec##*:}"
-      name="$(ai_container "$kind")"
-      if podman container exists "$name" 2>/dev/null; then
-        st=$(podman inspect -f '{{.State.Status}}' "$name" 2>/dev/null)
-        [ "$st" = "running" ] && up "$kind" ":${port}" || down "$kind" "$st — podman start ${name}"
-      else
-        warn "$kind" "not created"
-      fi
-    done
+  elif host_port 5433 || host_port 8888 || host_port 3000; then
+    warn "podman machine" "API down but host ports still open"
   else
     down "podman machine" "stopped — everything containerised is down"
   fi
+  for spec in postgres:5433 searxng:8888 webui:3000; do
+    kind="${spec%%:*}"; port="${spec##*:}"
+    name="$(ai_container "$kind")"
+    if host_port "$port"; then
+      up "$kind" ":${port}"
+    elif "$PODMAN" info >/dev/null 2>&1 && "$PODMAN" container exists "$name" 2>/dev/null; then
+      st=$("$PODMAN" inspect -f '{{.State.Status}}' "$name" 2>/dev/null)
+      down "$kind" "${st:-unknown} — podman start ${name}"
+    else
+      down "$kind" "not reachable on :${port}"
+    fi
+  done
 fi
 
 # ---------------------------------------------------------------- resident

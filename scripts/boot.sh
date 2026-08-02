@@ -6,43 +6,106 @@
 #
 # What actually needs help:
 #
-#   LiteLLM   launchd KeepAlive — comes back on its own
+#   LiteLLM   launchd KeepAlive — comes back on its own, but crash-loops
+#             with Prisma P1001 until Postgres is reachable on the host
 #   Ollama    the app, if "Open at Login" is set
 #   Podman    the VM does NOT start itself. This is the gap.
 #   containers restart policies only apply once the VM is running
 #
-# LiteLLM will crash-loop until Postgres answers, and launchd restarts it every
-# 10s, so the order below is a nicety rather than a requirement — but a clean
-# start beats a minute of restart noise in the log.
+# launchd gives agents a stripped PATH (/usr/bin:/bin:/usr/sbin:/sbin).
+# Homebrew podman lives at /opt/homebrew/bin — without that on PATH this
+# script used to log "podman not installed" and skip containers, leaving
+# LiteLLM crash-looping forever.
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
 
+# launchd / non-interactive shells: ensure Homebrew tools are visible.
+export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+
 log() { printf '[hearth boot] %s\n' "$1"; }
 
+# Host TCP reachability — Podman port forwards can lag behind in-container
+# pg_isready. LiteLLM connects via 127.0.0.1:5433, so that is the real gate.
+host_tcp_open() {
+  local host="$1" port="$2"
+  if command -v nc >/dev/null 2>&1; then
+    nc -z -w 1 "$host" "$port" >/dev/null 2>&1
+    return $?
+  fi
+  # bash /dev/tcp fallback
+  (echo >/dev/tcp/"$host"/"$port") >/dev/null 2>&1
+}
+
+# LiteLLM /health/readiness can answer HTTP 200 while Prisma is down
+# ({"db":"disconnected"}). That is not a successful boot.
+gateway_db_connected() {
+  local body
+  body=$(curl -s -m 3 http://127.0.0.1:4000/health/readiness 2>/dev/null) || return 1
+  # Accept common shapes: "db":"connected" or "database_status":"connected"
+  printf '%s' "$body" | grep -qiE '"db"[[:space:]]*:[[:space:]]*"connected"|"database_status"[[:space:]]*:[[:space:]]*"connected"'
+}
+
+wait_podman_info() {
+  local i
+  for i in $(seq 1 60); do
+    podman info >/dev/null 2>&1 && return 0
+    sleep 1
+  done
+  return 1
+}
+
 # ---------------------------------------------------------------- podman VM
-if command -v podman >/dev/null 2>&1; then
-  if podman info >/dev/null 2>&1; then
+PODMAN="$(command -v podman 2>/dev/null || true)"
+if [ -z "$PODMAN" ]; then
+  for cand in /opt/homebrew/bin/podman /usr/local/bin/podman; do
+    [ -x "$cand" ] && PODMAN="$cand" && break
+  done
+fi
+
+if [ -n "$PODMAN" ]; then
+  if "$PODMAN" info >/dev/null 2>&1; then
     log "podman machine already running"
   else
     log "starting podman machine"
-    podman machine start >/dev/null 2>&1 && log "  ok" || log "  FAILED"
+    if "$PODMAN" machine start >/dev/null 2>&1; then
+      log "  ok"
+    else
+      # "already running" races show up as non-zero; re-check.
+      "$PODMAN" info >/dev/null 2>&1 && log "  ok (already up)" || log "  FAILED"
+    fi
   fi
 
-  # Containers carry --restart unless-stopped, but that only takes effect once
-  # the VM is up, and a container stopped before shutdown stays stopped.
-  for kind in postgres searxng webui; do
-    c="$(ai_container "$kind")"
-    if podman container exists "$c" 2>/dev/null; then
-      state=$(podman inspect -f '{{.State.Status}}' "$c" 2>/dev/null)
-      if [ "$state" = "running" ]; then
-        log "${c}: running"
+  if ! wait_podman_info; then
+    log "podman API still unreachable after start — skipping containers"
+  else
+    # Containers carry --restart unless-stopped, but that only takes effect once
+    # the VM is up, and a container stopped before shutdown stays stopped.
+    for kind in postgres searxng webui; do
+      c="$(ai_container "$kind")"
+      if "$PODMAN" container exists "$c" 2>/dev/null; then
+        state=$("$PODMAN" inspect -f '{{.State.Status}}' "$c" 2>/dev/null)
+        if [ "$state" = "running" ]; then
+          log "${c}: running"
+        else
+          if "$PODMAN" start "$c" >/dev/null 2>&1; then
+            log "${c}: started"
+          else
+            # Improper/stopped-odd state after reboot: stop then start.
+            log "${c}: start failed — retrying after stop"
+            "$PODMAN" stop "$c" >/dev/null 2>&1 || true
+            sleep 1
+            "$PODMAN" start "$c" >/dev/null 2>&1 \
+              && log "${c}: started" \
+              || log "${c}: FAILED to start"
+          fi
+        fi
       else
-        podman start "$c" >/dev/null 2>&1 && log "${c}: started" || log "${c}: FAILED to start"
+        log "${c}: not created"
       fi
-    fi
-  done
+    done
+  fi
 else
   log "podman not installed — skipping containers"
 fi
@@ -63,23 +126,46 @@ else
 fi
 
 # ---------------------------------------------------------------- gateway
-# Postgres needs to be accepting connections before LiteLLM will hold a start.
-for _ in $(seq 1 30); do
-  podman exec "$(ai_container postgres)" pg_isready -U litellm -d litellm >/dev/null 2>&1 && break
+# Wait until the HOST can reach Postgres. In-container pg_isready alone is not
+# enough — LiteLLM uses the published port on 127.0.0.1:5433.
+log "waiting for postgres on 127.0.0.1:5433"
+pg_ready=0
+for _ in $(seq 1 90); do
+  if host_tcp_open 127.0.0.1 5433; then
+    pg_ready=1
+    break
+  fi
   sleep 1
 done
-
-if curl -s -m 5 -o /dev/null http://127.0.0.1:4000/health/readiness 2>/dev/null; then
-  log "gateway responding"
+if [ "$pg_ready" = 1 ]; then
+  log "postgres reachable on host :5433"
 else
-  log "gateway not up yet — kicking launchd"
+  log "postgres NOT reachable on host :5433 — gateway will fail until it is"
+fi
+
+if gateway_db_connected; then
+  log "gateway ready (db:connected)"
+else
+  if curl -s -m 3 -o /dev/null http://127.0.0.1:4000/health/readiness 2>/dev/null; then
+    log "gateway answering but db not connected — kicking launchd"
+  else
+    log "gateway not up yet — kicking launchd"
+  fi
   launchctl kickstart -k "$(ai_litellm_agent)" 2>/dev/null
-  for _ in $(seq 1 30); do
-    curl -s -m 2 -o /dev/null http://127.0.0.1:4000/health/readiness && break
+  for _ in $(seq 1 45); do
+    gateway_db_connected && break
     sleep 2
   done
-  curl -s -m 2 -o /dev/null http://127.0.0.1:4000/health/readiness \
-    && log "gateway responding" || log "gateway STILL DOWN — see ~/Library/Logs/litellm.error.log"
+  if gateway_db_connected; then
+    log "gateway ready (db:connected)"
+  else
+    body=$(curl -s -m 3 http://127.0.0.1:4000/health/readiness 2>/dev/null || true)
+    if [ -n "$body" ]; then
+      log "gateway STILL NOT READY — readiness: ${body}"
+    else
+      log "gateway STILL DOWN — see ~/Library/Logs/litellm.error.log"
+    fi
+  fi
 fi
 
 log "done"
