@@ -18,8 +18,12 @@
 
 set -euo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "${ROOT}/scripts/lib.sh"
+ai_load_env "$ROOT"
+
 GATEWAY="${GATEWAY:-http://127.0.0.1:4000}"
-KEY="${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY not set}"
+KEY="${LITELLM_MASTER_KEY:?LITELLM_MASTER_KEY not found in ~/.config/litellm/env or litellm/.env}"
 
 # Keep in sync with the UNCOMMENTED roles in litellm/config.yaml.
 # A key listing a role that does not exist in the config will fail to create.

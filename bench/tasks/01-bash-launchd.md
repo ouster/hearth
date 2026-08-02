@@ -1,0 +1,17 @@
+---
+id: 01-bash-launchd
+category: shell
+auto_check: bash-syntax
+---
+
+Write a bash script for macOS that checks whether a launchd user agent named
+`com.example.service` is loaded, and if it is not, loads it from
+`~/Library/LaunchAgents/com.example.service.plist`.
+
+Requirements:
+- Portable bash that runs under zsh on macOS
+- `set -euo pipefail`
+- Exit non-zero with a clear message if the plist does not exist
+- No zsh-only syntax
+
+Output only the script, no commentary.

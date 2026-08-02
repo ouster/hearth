@@ -16,37 +16,29 @@ model_list:
     litellm_params:
       model: ollama_chat/qwen2.5-coder:7b
       api_base: http://127.0.0.1:11434
-    model_info:
-      tier: local
-      set_on: "2026-08-01"
-      note: "quick edits, autocomplete, throwaway questions"
+    # set 2026-08-01 — quick edits, autocomplete, throwaway questions
 
   - model_name: local-code
     litellm_params:
-      model: ollama_chat/qwen2.5-coder:32b
+      model: ollama_chat/qwen3-coder:30b
       api_base: http://127.0.0.1:11434
-    model_info:
-      tier: local
-      set_on: "2026-08-01"
-      note: "default coding model, ~19GB"
+    # set 2026-08-01 — default coding model, ~19GB
 
   - model_name: local-big
     litellm_params:
-      model: ollama_chat/llama3.3:70b
+      model: ollama_chat/gpt-oss:20b
       api_base: http://127.0.0.1:11434
-    model_info:
-      tier: local
-      set_on: "2026-08-01"
-      note: "FLAGGED — 42GB, dated. Bench a 30B MoE before keeping. See PLAN Phase 4."
+    # set 2026-08-02 — replaced llama3.3:70b. See docs/decisions/0004.
+    # 30B MoE, ~3B active, 19GB, 256K context. The 70B measured 440s to first
+    # reply because 19+42GB will not fit in ~54GB and every switch evicted it.
 
   - model_name: local-embed
     litellm_params:
       model: ollama/nomic-embed-text
       api_base: http://127.0.0.1:11434
     model_info:
-      tier: local
-      mode: embedding
-      set_on: "2026-08-01"
+      mode: embedding      # a REAL ModelInfo field — keep
+    # set 2026-08-01
 
   # ---------- CLOUD: ACTIVE ----------
   # Only GOOGLE_API_KEY exists today, so this is the only live cloud role.
@@ -55,10 +47,7 @@ model_list:
     litellm_params:
       model: gemini/gemini-3.5-flash
       api_key: os.environ/GOOGLE_API_KEY
-    model_info:
-      tier: cloud
-      set_on: "2026-08-01"
-      note: "1M context, cheap. Bulk non-sensitive work."
+    # set 2026-08-01 — 1M context, cheap. Bulk non-sensitive work.
 
   # ---------- CLOUD: DORMANT ----------
   # Uncomment one block at a time, add the key to ~/.config/litellm/env,
@@ -73,10 +62,7 @@ model_list:
   #   litellm_params:
   #     model: anthropic/claude-sonnet-5
   #     api_key: os.environ/ANTHROPIC_API_KEY
-  #   model_info:
-  #     tier: cloud
-  #     set_on: "2026-08-01"
-  #     note: "hard coding + agentic. The old alias used claude-sonnet-4-6, a generation behind."
+  #   # set 2026-08-01 — see docs/MODELS.md
 
   # cloud-frontier — PRIMARY frontier route once you have an OpenRouter key.
   # One key, day-zero access to new models: the churn hedge. $3/$15 for K3.
@@ -85,28 +71,19 @@ model_list:
   #   litellm_params:
   #     model: openrouter/moonshotai/kimi-k3
   #     api_key: os.environ/OPENROUTER_API_KEY
-  #   model_info:
-  #     tier: cloud
-  #     set_on: "2026-08-01"
-  #     note: "$3/$15. ~92% cache hit reported → effective input ~$0.52/M."
+  #   # set 2026-08-01 — see docs/MODELS.md
 
   # - model_name: cloud-frontier-direct
   #   litellm_params:
   #     model: moonshot/kimi-k3
   #     api_key: os.environ/MOONSHOT_API_KEY
-  #   model_info:
-  #     tier: cloud
-  #     set_on: "2026-08-01"
-  #     note: "$3/$15 from the source. Best caching for K3 specifically."
+  #   # set 2026-08-01 — see docs/MODELS.md
 
   # - model_name: cloud-frontier-fast
   #   litellm_params:
   #     model: fireworks_ai/accounts/fireworks/models/kimi-k3
   #     api_key: os.environ/FIREWORKS_API_KEY
-  #   model_info:
-  #     tier: cloud
-  #     set_on: "2026-08-01"
-  #     note: "$3.30/$16.50 — dearest of the three. Throughput or LoRA only."
+  #   # set 2026-08-01 — see docs/MODELS.md
 
 router_settings:
   num_retries: 2
@@ -130,7 +107,13 @@ litellm_settings:
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY   # was hardcoded in the inherited config
-  # Virtual keys, spend caps and store_model_in_db need Postgres.
-  # Uncomment after scripts/db.sh up — see docs/RUNBOOK.md.
-  # database_url: os.environ/DATABASE_URL
-  # store_model_in_db: true
+
+  # Postgres backs virtual keys, spend caps and store_model_in_db.
+  # DATABASE_URL must be in ~/.config/litellm/env — launchd does not read the
+  # repo's .env, and preflight checks that specific distinction.
+  database_url: os.environ/DATABASE_URL
+
+  # Lets the auto-updater promote a model via the admin API instead of editing
+  # yaml and restarting. config.yaml stays the git-tracked base layer; DB rows
+  # overlay it on refresh.
+  store_model_in_db: false

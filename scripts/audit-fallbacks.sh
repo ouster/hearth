@@ -7,9 +7,13 @@
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "${ROOT}/scripts/lib.sh"
 CFG="${1:-${ROOT}/litellm/config.yaml}"
 
-python3 - "$CFG" <<'PY'
+# Exit 2 = could not run (tooling). Exit 1 = real leak. Never confuse the two.
+ai_python_or_die || exit 2
+
+"$AI_PY" - "$CFG" <<'PY'
 import sys, yaml
 cfg = yaml.safe_load(open(sys.argv[1]))
 

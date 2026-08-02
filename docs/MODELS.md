@@ -11,7 +11,7 @@ Hardware envelope: 64 GB unified, **~48 GB budget for weights**.
 |---|---|---|---|---|---|
 | `local-fast` | `qwen2.5-coder:7b` | 4.7 GB | 2026-08-01 | _pending Phase 4_ | inherited, fine for its job |
 | `local-code` | `qwen2.5-coder:32b` | 19 GB | 2026-08-01 | _pending Phase 4_ | inherited default. Near GPT-4o on Aider pass-rate |
-| `local-big` | `llama3.3:70b` | 42 GB | 2026-08-01 | _pending Phase 4_ | **flagged for replacement** |
+| `local-big` | `qwen3-coder:30b` | 19 GB | 2026-08-02 | _pending Phase 4_ | replaced llama3.3:70b — see ADR 0004. MoE, ~3B active, 256K ctx |
 | `local-embed` | `nomic-embed-text` | 274 MB | 2026-08-01 | _pending Phase 4_ | inherited |
 | `cloud-cheap` | `gemini-3.5-flash` | — | 2026-08-01 | n/a | **LIVE**. Verified current. 1M ctx |
 
@@ -31,12 +31,32 @@ Enabling one: uncomment its block in `config.yaml`, add the key to
 `~/.config/litellm/env`, add the role to `CLOUD_ALL` in `scripts/create-keys.sh`,
 re-run that script, then `scripts/audit-fallbacks.sh` and `scripts/healthcheck.sh`.
 
-## Open flag: `local-big`
+## Resolved: the `local-big` swap, measured
 
-`llama3.3:70b` costs 42 GB of a 48 GB budget. Consequences:
+Measured through the gateway, one short prompt each. Before on 2026-08-02 with
+the inherited models; after on the same day with the current set.
 
-- It cannot coexist with `local-code` (19 GB). Switching roles evicts and cold-reloads.
-- It is a dense 2024-era model being asked to compete with 2026 MoEs.
+| Role | Before | Time | After | Time |
+|---|---|---|---|---|
+| `local-fast` | qwen2.5-coder:7b | 0 s | qwen2.5-coder:7b | 3 s |
+| `local-code` | qwen2.5-coder:32b | 29 s | qwen3-coder:30b | **6 s** |
+| `local-big` | llama3.3:70b | **440 s** | gpt-oss:20b | **5 s** |
+| `cloud-cheap` | gemini-3.5-flash | 2 s | gemini-3.5-flash | 1 s |
+
+**440 s to 5 s.** Not a faster model — a resident one.
+
+64 GB leaves roughly 54 GB for weights after macOS and applications. The old set
+needed 65.7 GB, so something was always evicted, and reaching for `local-big`
+meant reloading 42 GB from disk. The current set totals 42.7 GB and stays
+resident, so switching roles costs nothing.
+
+The lesson worth keeping: on a fixed-memory machine, **the resident set matters
+more than any individual model's quality**. A 70B that evicts your coding model
+is slower in practice than a 20B that never leaves RAM, regardless of which
+answers better on a benchmark. MoE architectures are what make the newer set fit
+— ~3B active parameters gives near-30B reasoning at 7B speed.
+
+Disk: 63 GB before, ~37 GB after.
 
 Candidate replacement class: ~30B MoE with ~3B active params (Qwen3-Coder-30B-A3B and
 similar). Roughly 19 GB, 256K context, generates at ~7B speed while reasoning closer to

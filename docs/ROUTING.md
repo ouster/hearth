@@ -25,28 +25,35 @@ This is enforced by key scope, not by discipline — see below.
 
 ## Roles
 
-| Role | Use for |
-|---|---|
-| `local-fast` | quick edits, autocomplete, throwaway questions |
-| `local-code` | default. Real coding, still private |
-| `local-big` | long context, reasoning-heavy, still private |
-| `local-embed` | embeddings for local RAG |
-| `cloud-cheap` | bulk non-sensitive work, big context |
-| `cloud-code` | hard coding and agentic work |
-| `cloud-frontier` | very large open models. Expensive — deliberate use only |
+| Role | Use for | State |
+|---|---|---|
+| `local-fast` | quick edits, autocomplete, throwaway questions | live |
+| `local-code` | default. Real coding, still private | live |
+| `local-big` | long context, reasoning-heavy, still private | live |
+| `local-embed` | embeddings for local RAG | live |
+| `cloud-cheap` | bulk non-sensitive work, big context | live |
+| `cloud-code` | hard coding and agentic work | dormant — no Anthropic key by choice |
+| `cloud-frontier` | very large open models via OpenRouter | dormant |
+| `cloud-frontier-direct` | same, via Moonshot. Best K3 caching | dormant |
+| `cloud-frontier-fast` | same, via Fireworks. Dearest | dormant |
 
 ## Enforcement
 
-Privacy is structural. Three virtual keys:
+Privacy is structural. Four virtual keys:
 
 | Key | Reaches | Used by |
 |---|---|---|
 | `private` | `local-*` only | conveyancing work, Open WebUI default |
-| `general` | everything | Cursor, Claude Code, aider on public repos |
-| `lan` | `local-*` + `cloud-cheap` | other machines, tight budget |
+| `general` | everything live | this machine — Cursor, aider, scripts |
+| `lan` | `local-*` + `cloud-cheap` | other machines, everyday |
+| `roam` | everything live | laptop, when it needs real cloud models |
 
-A request for `cloud-code` with the `private` key is rejected by the gateway.
+A request for a cloud role with the `private` key is rejected by the gateway.
 There is no prompt you can write that gets around it. That is the point.
+
+The dollar caps on these keys are fuses, not billing — you are the only user.
+They stop a leaked key or a runaway overnight agent loop from running up your
+provider account.
 
 ## The fallback rule
 

@@ -1,157 +1,79 @@
-# ai-stack — build plan v1
+# Build status
 
-Status: **awaiting approval**
-Date: 2026-08-01
-Host: Mac Studio M4 Max, 64 GB, macOS 26.4, 192.168.50.154
+Last updated: 2026-08-02
 
----
+**Not the source of truth.** For current reality read, in this order:
+`litellm/config.yaml` → `docs/MODELS.md` → `docs/ARCHITECTURE.md` → `docs/RUNBOOK.md`.
+This file tracks progress only. The original plan is preserved in
+`docs/decisions/0001-inherited-state.md`.
 
-## Decisions taken
+## Where things stand
 
-| Question | Decision |
+| Phase | State |
 |---|---|
-| Home base | Git repo `~/dev/ai-stack` + Claude Project pointing at its docs |
-| Goals | Privacy routing, cost control, model-churn resilience, frontier access |
-| Auto-update | Discover + bench automatically; **promotion requires approval** |
-| Chat UI | Open WebUI in v1 |
-| Ollama exposure | Bind to localhost; LAN clients go through the gateway |
-| Name | `ai-stack`, not `local-ai-stack` — half the design is cloud |
+| 0 — capture inherited state | done — ADR 0001 |
+| 1 — repo scaffold | done |
+| 2 — role-based gateway config | **deployed and serving** |
+| Postgres via Podman on :5433 | done, running |
+| Virtual keys | done — four created, scoped |
+| Leak test | **passing** — boundary enforced, not just documented |
+| Aliases switched to roles | done |
+| 3 — lock Ollama to localhost | **done** — LAN unreachable, verified |
+| llama3.3:70b retired | done — ADR 0004. 440 s to 5 s |
+| 4 — bench harness | done; **not yet run** |
+| digest pinning | **not implemented** — roles are still tag-backed |
+| 5 — auto-update pipeline | deferred |
+| 6 — Open WebUI | deferred |
+| 7 — verification tooling | done — preflight, deploy, healthcheck, audit |
 
----
+## What changed from the original plan
 
-## Current state
+- **Frontier providers: three, not one.** Fireworks was the original default purely
+  because it was the provider first mentioned. Verified 2026-08-01, it is the
+  dearest: $3.30/$16.50 versus $3.00/$15.00 from both OpenRouter and Moonshot
+  direct. OpenRouter is now primary — one key, day-zero access to new models.
+- **`cloud-code` is dormant by choice.** No Anthropic API key. A Console key bills
+  separately from a Claude subscription, and Claude Code already runs on the
+  subscription, so the gateway route only earns its place if aider, Cursor or the
+  laptop need Claude.
+- **Four keys, not three.** Added `roam` so the laptop can reach cloud models
+  without widening the everyday `lan` key.
+- **Postgres in Podman, not Docker Desktop.**
+- **`ask` now defaults to local.** The old `ask` pointed at Anthropic with no key
+  set, so it was broken. The safe default on a privacy-first stack should be the
+  private one; cloud is now the explicit reach (`ask-cloud`).
+- **Deployment does not touch launchd.** `run-litellm.sh` already loads
+  `~/.config/litellm/config.yaml`, so that path becomes a symlink into the repo.
+  Rollback is one `mv`.
 
-Working today:
+## Bugs the harness caught before deploy
 
-- Ollama 0.32.5, models under `/Users/Shared/Ollama/models` (63 GB on disk)
-- LiteLLM 1.85.1 on `:4000` under launchd, master key auth on
-- Existing route: `local-ollama` → `qwen2.5-coder:32b`, fallback `gemini/gemini-3.5-flash`
-- aider 0.85.2 with four aliases
+Kept as a record of why the tooling exists.
 
-Problems this plan fixes:
+1. **Fallback leak** in the inherited config — `local-ollama → gemini` meant any
+   Ollama timeout silently sent the prompt to Google.
+2. **`ollama/` vs `ollama_chat/`** — the completion-API prefix causes tool-call
+   loops and dropped context.
+3. **Preflight reported a fake leak** when PyYAML was missing. A check that cannot
+   run must never look like a finding; ERROR and FAIL are now distinct exit codes.
+4. **Env check read the wrong environment** — it consulted the interactive shell,
+   but launchd only sources `~/.config/litellm/env`. A false green.
+5. **Model presence check was tag-naive** — `nomic-embed-text` did not match
+   `nomic-embed-text:latest`.
+6. **launchd detection** used `launchctl list | grep`, which misses gui-domain
+   agents; it reported "not loaded" while the gateway was serving traffic.
+7. **`db.sh` went missing** from disk and nothing noticed. Preflight now verifies
+   every referenced script exists.
+8. **Leak test could false-pass** — it probed a dormant role, where "model not
+   found" also returns 4xx. Now probes a live cloud role and adds a positive
+   control, since a merely broken key also refuses everything.
 
-1. **Aider bypasses the gateway.** All four aliases hit Ollama or Anthropic directly, so
-   there is no spend tracking, no logging, and no enforceable privacy boundary.
-2. **Ollama is open on the LAN.** `*:11434`, no auth. Any device on 192.168.50.0/24 can
-   use the GPU directly and skip every rule below.
-3. **Models are named in aliases.** Swapping a model means editing shell config, Cursor
-   settings and scripts. Nothing has a single swap point.
-4. **Tags are mutable.** `qwen2.5-coder:32b` can silently become different weights on any
-   `ollama pull`. Roles are not pinned.
-5. **RAM budget is oversubscribed.** `llama3.3:70b` (42 GB) + `qwen2.5-coder:32b` (19 GB)
-   = 61 GB of a 64 GB machine. They cannot coexist; switching roles forces an eviction and
-   a cold reload. Needs a `keep_alive` policy, and 70B probably needs replacing.
+## Next
 
----
-
-## Target roles
-
-Concrete models live **only** in `litellm/config.yaml` and `docs/MODELS.md`.
-
-| Role | Initial backing | Notes |
-|---|---|---|
-| `local-fast` | `qwen2.5-coder:7b` | quick edits, autocomplete |
-| `local-code` | `qwen2.5-coder:32b` | default coding model, ~19 GB |
-| `local-big` | `llama3.3:70b` | **flagged** — 42 GB for dated quality; a ~30B MoE with 256K context is likely better *and* smaller. Bench before keeping. |
-| `local-embed` | `nomic-embed-text` | local RAG |
-| `cloud-cheap` | Gemini Flash | existing fallback, keep |
-| `cloud-code` | Claude (current Sonnet) | hard coding / agentic |
-| `cloud-frontier` | Kimi K3 via Fireworks | $3.30/M in, $16.50/M out — expensive, use deliberately |
-
-## Virtual keys
-
-Privacy enforced by key scope, so the wrong route is impossible rather than discouraged.
-
-| Key | Can reach | Used by |
-|---|---|---|
-| `private` | `local-*` only | conveyancing work, Open WebUI default, anything touching client data |
-| `general` | all roles | Cursor, Claude Code, aider on non-sensitive repos |
-| `lan` | `local-*` + `cloud-cheap` | other machines on 192.168.50.0/24, tight budget |
-
----
-
-## Phases
-
-### Phase 0 — capture and back up
-Read the existing launchd plist and LiteLLM config, commit them verbatim as
-`docs/decisions/0001-inherited-state.md` before changing anything. `git init`.
-**Needs from you:** the two files (command below).
-
-### Phase 1 — repo scaffold
-`CLAUDE.md`, `AGENTS.md`, `docs/{ARCHITECTURE,ROUTING,MODELS,RUNBOOK}.md`,
-`litellm/`, `scripts/`, `bench/`. `.gitignore` for keys; `.gitattributes` for LF.
-
-### Phase 2 — gateway config
-Role groups, three virtual keys with budgets, spend tracking, `store_model_in_db`
-so promotions can happen via API without a restart. Cost-map auto-sync enabled
-(`/schedule/model_cost_map_reload?hours=6`) — prices and context windows stay
-current with zero manual work.
-
-### Phase 3 — lock down and rewire
-`OLLAMA_HOST=127.0.0.1:11434`, launchd updated. Replace the four aider aliases with
-role-based ones through the gateway. Point Cursor and Claude Code at `:4000`.
-Reconfigure LAN machines with the `lan` key.
-**Breaking:** other machines stop working until re-pointed. Do this when you have ten minutes.
-
-### Phase 4 — bench harness
-`bench/tasks/` seeded with prompts from your actual work (auslaw-mcp, stepup-conveyancing,
-shell scripting). Scoring script. Every role pinned to a **digest**, not a tag.
-
-### Phase 5 — auto-update pipeline
-Weekly launchd job:
-1. Diff Ollama library + Fireworks/OpenRouter model lists against `docs/MODELS.md`
-2. Filter to what fits the 48 GB weight budget
-3. Stage-pull candidates under a `candidate-` prefix
-4. Bench against the incumbent
-5. Write `reports/YYYY-MM-DD.md` — ranked, with a one-line promote command
-6. Notify; **nothing is promoted without you**
-
-Promotion writes an ADR and re-pins the digest. Rollback is the previous digest.
-
-### Phase 6 — Open WebUI
-Local chat UI on the gateway, defaulting to the `private` key so it physically cannot
-reach a cloud model. A separate model selector entry exposes cloud roles when you want them.
-
-### Phase 7 — verify
-- Healthcheck hits every role and reports latency + first-token time
-- **Leak test:** attempt `cloud-code` with the `private` key, confirm rejection
-- Confirm LAN access works through the gateway and direct `:11434` is refused
-- Confirm cost tracking increments
-
----
-
-## Risks
-
-| Risk | Mitigation |
-|---|---|
-| Gateway becomes a single point of failure | LiteLLM fallbacks already configured; runbook documents direct-Ollama break-glass |
-| Rewiring breaks a working setup | Phase 0 captures current state; each phase reversible |
-| Auto-updater fills the disk | Staging pulls capped, candidates purged after benching |
-| Bench is unrepresentative | Tasks seeded from your real repos, not synthetic |
-| 70B eviction thrash | `keep_alive` policy; likely retire 70B after Phase 4 |
-
----
-
-## Open question
-
-Anthropic key location is still unknown — not in your shell env, but `ask` works. It is
-either in aider config, a dotenv, or the launchd plist. Phase 0 resolves this. Do not
-want to move key handling blind.
-
-## To unblock Phase 0
-
-```bash
-{
-echo "=== PLIST ==="; ls -1 ~/Library/LaunchAgents/ | grep -i -E 'litellm|ollama'
-for p in ~/Library/LaunchAgents/*litellm*.plist ~/Library/LaunchAgents/*ollama*.plist; do
-  [ -f "$p" ] && echo "--- $p ---" && sed -E 's/(sk-[A-Za-z0-9_-]+|fw_[A-Za-z0-9_-]+|AIza[A-Za-z0-9_-]+)/<REDACTED>/g' "$p"
-done
-echo "=== CONFIG ==="; CFG=$(ps -p 4082 -o command= | grep -oE '\-\-config [^ ]+' | cut -d' ' -f2)
-echo "config path: ${CFG:-none on cmdline}"
-[ -n "$CFG" ] && sed -E 's/(sk-[A-Za-z0-9_-]+|fw_[A-Za-z0-9_-]+|AIza[A-Za-z0-9_-]+)/<REDACTED>/g' "$CFG"
-echo "=== AIDER CFG ==="
-for f in ~/.aider.conf.yml ~/.aider.model.settings.yml ~/.env; do
-  [ -f "$f" ] && echo "--- $f ---" && sed -E 's/(sk-[A-Za-z0-9_-]+|AIza[A-Za-z0-9_-]+)/<REDACTED>/g' "$f"
-done
-} 2>&1
-```
+1. `preflight.sh` → `deploy.sh` → `create-keys.sh` → `healthcheck.sh`
+   The leak test must go from SKIPPED to passing. Until then the privacy
+   boundary is documented, not enforced — do not route client work through it.
+2. Phase 3: `OLLAMA_HOST=127.0.0.1`. Ten minutes, breaks LAN clients until
+   they are re-pointed at the gateway.
+3. Run `bench.sh`, decide `local-big`, pin digests.
+4. Live with it for a week before building the auto-updater.

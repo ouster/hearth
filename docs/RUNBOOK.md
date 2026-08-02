@@ -9,9 +9,22 @@
 | Postgres | `127.0.0.1:5433` | Podman, `ai-stack-postgres` |
 | Open WebUI | `127.0.0.1:8080` (Phase 6) | Docker |
 
-Config: `~/dev/ai-stack/litellm/config.yaml`
+Config: `~/dev/ai-stack/litellm/config.yaml` (symlinked from `~/.config/litellm/config.yaml`)
 Launch wrapper: `~/.config/litellm/run-litellm.sh`
 Logs: `~/Library/Logs/litellm.log`, `litellm.error.log`
+
+### Two env files — know which is which
+
+**`~/.config/litellm/env`** is the only one launchd reads. Provider keys,
+`LITELLM_MASTER_KEY`, `DATABASE_URL` go here.
+
+**`~/dev/ai-stack/litellm/.env`** is read by `scripts/*.sh` only —
+`POSTGRES_PASSWORD`, the virtual keys, and a copy of `DATABASE_URL` for `db.sh`.
+
+launchd reads neither the repo `.env` nor `~/.zshrc`. A var exported in your shell
+will pass a careless check and then fail at runtime; `preflight.sh` deliberately
+checks the service environment and flags "set in your shell but NOT in
+~/.config/litellm/env" as a failure.
 
 ## First-time setup
 

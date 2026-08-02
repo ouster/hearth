@@ -8,10 +8,13 @@ Read `docs/ROUTING.md` before suggesting any routing change.
 ## Hard rules
 
 1. **Concrete model names appear in exactly two files:** `litellm/config.yaml` and
-   `docs/MODELS.md`. Everywhere else — aliases, scripts, IDE config, code — uses roles
-   (`local-fast`, `local-code`, `local-big`, `local-embed`, `cloud-cheap`, `cloud-code`,
-   `cloud-frontier`). If you are about to write `qwen2.5-coder:32b` into a shell alias,
-   stop.
+   `docs/MODELS.md`. Everywhere else — aliases, scripts, IDE config, code — uses roles.
+   If you are about to write `qwen2.5-coder:32b` into a shell alias, stop.
+
+   Live: `local-fast`, `local-code`, `local-big`, `local-embed`, `cloud-cheap`.
+   Dormant: `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`,
+   `cloud-frontier-fast` — commented out until their keys exist, because a missing
+   `os.environ/` var fails the entire config load, not just that model.
 
 2. **Local roles never fall back to cloud roles.** A fallback is an invisible route
    change; across a privacy boundary it is a leak. If every local role is down, fail

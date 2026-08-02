@@ -1,0 +1,19 @@
+---
+id: 02-python-mcp-tool
+category: python
+auto_check: python-syntax
+---
+
+Write a Python function `search_cases(query: str, limit: int = 10) -> list[dict]`
+for an MCP server that queries a local SQLite database `cases.db`, table `cases`
+with columns `id, citation, court, year, summary`.
+
+Requirements:
+- Parameterised queries only, no string interpolation into SQL
+- Case-insensitive substring match against `citation` and `summary`
+- Results ordered by `year` descending
+- Returns a list of dicts, not sqlite3.Row
+- Closes the connection on both success and failure
+- Type hints throughout
+
+Output only the code, no commentary.
