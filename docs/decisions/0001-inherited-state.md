@@ -5,7 +5,7 @@ Status: accepted (record only)
 
 ## Context
 
-State of the stack before ai-stack existed. Recorded verbatim so every later change
+State of the stack before hearth existed. Recorded verbatim so every later change
 has a baseline and a rollback target.
 
 ## What was running

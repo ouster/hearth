@@ -8,7 +8,7 @@ Keep this file as the source of truth; when the instructions change here, re-pas
 ## Title
 
 ```
-AI Stack — Local + Cloud
+Hearth — Local + Cloud
 ```
 
 ## Description
@@ -16,8 +16,8 @@ AI Stack — Local + Cloud
 ```
 Private-first AI infrastructure on a Mac Studio M4 Max. Ollama + LiteLLM as a single
 gateway for local models, with Claude and Fireworks as cloud tiers. Routing rules,
-model registry, cost control, and the plumbing that connects Claude Code, Cursor and
-aider to all of it. Built to be re-pointed at new models without rewriting anything.
+model registry, cost control, and the plumbing that connects aider, Zed and
+Open WebUI to all of it. Built to be re-pointed at new models without rewriting anything.
 ```
 
 ---
@@ -27,16 +27,16 @@ aider to all of it. Built to be re-pointed at new models without rewriting anyth
 ```
 # Context
 
-Colin. Solo developer, also runs Step Up Conveyancing (AU). Mac Studio M4 Max,
-64 GB unified memory, macOS 26. Uses Claude Code and Cursor heavily, aider from the
-terminal. Ollama serves models to this machine and to other machines on the LAN.
+Solo developer running a private-first local + cloud LLM gateway. Uses aider,
+Zed, and Open WebUI. Ollama serves models on this machine and to other machines
+on the LAN via LiteLLM.
 
 This project covers the AI stack itself — not the applications built on it.
-Source of truth is the repo at ~/dev/ai-stack.
+Source of truth is the hearth repo.
 
 # Architecture (assume this unless I say otherwise)
 
-LiteLLM is the single gateway. Every client — aider, Cursor, Claude Code, scripts,
+LiteLLM is the single gateway. Every client — aider, Zed, Open WebUI, scripts,
 other machines on the LAN — talks OpenAI-compatible to LiteLLM. Nothing talks to
 Ollama or a cloud provider directly.
 
@@ -61,12 +61,12 @@ litellm/config.yaml and docs/MODELS.md. Nowhere else.
    docs/MODELS.md. Aliases, scripts, IDE settings and code reference roles only.
    If you catch yourself writing "qwen3-coder:30b" in a shell alias, stop.
 
-2. Privacy is structural, not advisory. Client matters, PII, anything under
-   ~/dev/stepup-conveyancing or ~/dev/auslaw-mcp that contains real data, and
-   anything I flag as sensitive: local roles only. This is enforced by a
-   LiteLLM virtual key scoped to local-* models, so the wrong route should be
-   impossible rather than merely discouraged. If you are writing code or config
-   that could send that class of data to a cloud endpoint, refuse and say why.
+2. Privacy is structural, not advisory. Client matters, PII, any repo I have
+   flagged as holding real data, and anything else I mark sensitive: local
+   roles only. This is enforced by a LiteLLM virtual key scoped to local-*
+   models, so the wrong route should be impossible rather than merely
+   discouraged. If you are writing code or config that could send that class
+   of data to a cloud endpoint, refuse and say why.
 
 3. Treat your own knowledge of models as stale. The field moves faster than your
    training data. Before asserting a price, a context window, a benchmark result,
@@ -104,16 +104,11 @@ litellm/config.yaml and docs/MODELS.md. Nowhere else.
 10. When something is uncertain, say so plainly and tell me the cheapest way to
     find out. Do not fill gaps with confident-sounding guesses.
 
-11. Claude Code is a documented exception. Cursor, aider, Open WebUI and LAN clients
-    all go through the gateway. Claude Code may talk to Anthropic directly when the
-    gateway would cost it agent features — that trade is recorded in an ADR, not
-    made silently. It still never touches sensitive data.
-
 # Repo layout
 
-  ~/dev/ai-stack/
-    CLAUDE.md              rules for Claude Code in this repo
-    AGENTS.md              shared agent rules (Cursor, aider read this too)
+  <hearth-repo>/
+    CLAUDE.md              rules for agents working in this repo
+    AGENTS.md              shared agent rules (Zed, aider read this too)
     docs/
       ARCHITECTURE.md      how the gateway is wired
       ROUTING.md           the decision table: what goes local vs cloud

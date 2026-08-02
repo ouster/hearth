@@ -21,10 +21,8 @@ PLIST="$HOME/Library/LaunchAgents/com.user.setollamahost.plist"
 LABEL="com.user.setollamahost"
 BIND="127.0.0.1:11434"
 
-lanip() { ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null; }
-
 check() {
-  local ip; ip="$(lanip)"
+  local ip; ip="$(ai_lan_ip)"
   echo "Current exposure:"
   echo "  launchctl OLLAMA_HOST : $(launchctl getenv OLLAMA_HOST || echo '<unset — defaults to 0.0.0.0:11434>')"
   echo -n "  listening             : "
@@ -104,7 +102,7 @@ EOF
     echo "After:"
     check
 
-    ip="$(lanip)"
+    ip="$(ai_lan_ip)"
     if [ -n "$ip" ] && curl -s -m 3 -o /dev/null "http://${ip}:11434/api/tags" 2>/dev/null; then
       cat <<'EOF'
 
@@ -126,15 +124,15 @@ Done. Ollama is now local-only.
 
 LAN machines must be repointed at the gateway. On each one:
 
-  export OPENAI_API_BASE=http://$(lanip):4000/v1
+  export OPENAI_API_BASE=http://${ip:-<LAN-IP>}:4000/v1
   export OPENAI_API_KEY=<the lan key from litellm/.env>
 
-They then address roles — local-fast, local-code, local-big, cloud-cheap —
+They then address roles — local-chat, local-code, local-big, cloud-cheap —
 rather than model names, and their usage is logged and capped.
 
 Verify from another machine:
-  curl http://$(lanip):11434/api/tags          # should now FAIL
-  curl http://$(lanip):4000/v1/models \\
+  curl http://${ip:-<LAN-IP>}:11434/api/tags          # should now FAIL
+  curl http://${ip:-<LAN-IP>}:4000/v1/models \\
     -H "Authorization: Bearer <lan key>"       # should list roles
 EOF
     ;;

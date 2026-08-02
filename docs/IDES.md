@@ -49,7 +49,7 @@ aider --architect \
 diff. Both resident, both private, no eviction. Add it as an alias:
 
 ```bash
-alias ask-arch='OPENAI_API_BASE="${AI_STACK_GATEWAY}/v1" \
+alias ask-arch='OPENAI_API_BASE="${HEARTH_GATEWAY}/v1" \
   OPENAI_API_KEY="$(_ai_key private)" \
   aider --architect --model openai/local-big --editor-model openai/local-code'
 ```
@@ -88,7 +88,7 @@ Agent Settings, or directly in `settings.json`:
 {
   "language_models": {
     "openai_compatible": {
-      "ai-stack": {
+      "hearth": {
         "api_url": "http://127.0.0.1:4000/v1",
         "available_models": [
           { "name": "local-code", "max_tokens": 262144 },
@@ -102,7 +102,7 @@ Agent Settings, or directly in `settings.json`:
 }
 ```
 
-On a laptop use the Studio's LAN address instead of `127.0.0.1`.
+On a laptop use the gateway host's LAN address instead of `127.0.0.1`.
 
 **Check the context windows before trusting them.** The values above are right
 for qwen3-coder (256K), qwen3 (40K) and Gemini (1M), but `gpt-oss:20b` is a
@@ -126,11 +126,11 @@ Worth re-running after any role change so context windows stay honest.
 ### On a laptop
 
 Full walkthrough in `docs/LAPTOP.md`. In short — Zed installs normally and edits
-local files; only inference comes from the Studio. Two changes from the block
+local files; only inference comes from the gateway host. Two changes from the block
 above:
 
 ```json
-"api_url": "http://192.168.50.154:4000/v1"
+"api_url": "http://HOST:4000/v1"
 ```
 
 and use the **`lan`** key rather than `private`.
@@ -142,13 +142,13 @@ it writes the model list with correct context windows.
 it runs on, so either:
 
 - clone the repo to the laptop and work normally through git, or
-- use Zed's **SSH remote projects** to open a directory on the Studio directly —
+- use Zed's **SSH remote projects** to open a directory on the gateway host directly —
   editing happens over SSH, the model call still goes to `:4000`.
 
-The second keeps one copy of the work and pairs well with the Studio being the
+The second keeps one copy of the work and pairs well with the gateway host being the
 machine that never sleeps. It also means the laptop needs no toolchain.
 
-If the Studio is asleep, Zed still opens and edits — you just lose the AI panel
+If the gateway host is asleep, Zed still opens and edits — you just lose the AI panel
 until it wakes. That degrades more gracefully than aider, which needs the
 gateway to start at all.
 
@@ -160,8 +160,7 @@ one that can.
 
 That is the closest thing shipping today to an assistant that helps without
 taking over, and it is why Zed earns its place over JetBrains here — JetBrains
-only supports chat on local models, and Cursor's agent is unreliable against a
-custom base URL.
+only supports chat on local models.
 
 Suggested split:
 
@@ -212,8 +211,5 @@ Not recommended here, recorded so the question does not come round again.
 | Editor | State |
 |---|---|
 | JetBrains | Native LiteLLM support, free tier, but **chat only** on local models — no agent, no next-edit |
-| Cursor | Rejects non-HTTPS base URLs; agent mode unreliable with custom endpoints |
 | VS Code + Continue | Works fully, but an extension rather than built in |
-
-Claude Code stays on the Anthropic subscription and off the gateway — a
-documented exception, not an oversight.
+| Cursor | Not used here — rejects non-HTTPS base URLs; agent mode unreliable with custom endpoints |

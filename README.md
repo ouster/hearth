@@ -1,383 +1,183 @@
-# ai-stack
+# Hearth
 
-Private-first LLM gateway for a single developer. Ollama and LiteLLM locally,
-Gemini/Claude/OpenRouter as cloud tiers, with the privacy boundary enforced by
-key scope rather than by remembering to be careful.
+Local-first LLM gateway for a single developer (or a small LAN).
+Inference that still works when vendors get expensive, overloaded, or unavailable.
 
-Host: Mac Studio M4 Max, 64 GB, macOS 26.
+Ollama serves local models. LiteLLM is the only front door. Cloud providers
+(Gemini, optionally Claude / OpenRouter / Moonshot / Fireworks) sit behind the
+same OpenAI-compatible API. Privacy is enforced by **virtual key scope**, not
+by remembering to be careful.
 
-## The idea
+## Why
 
-Clients address **roles**, never model names:
+Model names change every few months. Hardcoding `qwen2.5-coder:32b` into shell
+aliases, IDE settings, and laptop configs means every upgrade is a scavenger
+hunt. This stack addresses **roles** instead:
 
 ```
 local-chat   local-code   local-big   local-embed   cloud-cheap
 ```
 
-Concrete models live in exactly two files — `litellm/config.yaml` and
-`docs/MODELS.md`. Swapping the model behind a role is one config change; no
-alias, script, or IDE setting moves. That is the answer to a field where the
-best local coding model changes every few months.
+Concrete models live in exactly two files — [`litellm/config.yaml`](litellm/config.yaml)
+and [`docs/MODELS.md`](docs/MODELS.md). Swap a model once; every client keeps working.
 
 ```mermaid
-flowchart LR
-    subgraph host["Mac Studio M4 Max · 64 GB · 192.168.50.154"]
-        direction TB
-
-        subgraph clients["Clients"]
-            aider["aider<br/>ask · ask-chat · ask-big"]
-            webui["Open WebUI :3000<br/>private key"]
-            scripts["scripts / curl"]
-        end
-
-        gw{{"LiteLLM gateway :4000<br/>roles · keys · spend · fallbacks"}}
-
-        subgraph keys["Virtual keys — scope IS the privacy boundary"]
-            kpriv["private<br/>local-* only"]
-            kgen["general<br/>everything live"]
-            klan["lan · lan-cloud<br/>other machines"]
-        end
-
-        subgraph local["Ollama 127.0.0.1:11434 · 37.5 GB resident"]
-            lchat["local-chat<br/>qwen3:8b"]
-            lcode["local-code<br/>qwen3-coder:30b"]
-            lbig["local-big<br/>gpt-oss:20b"]
-            lemb["local-embed<br/>nomic-embed-text"]
-        end
-
-        pg[("Postgres :5433<br/>keys · spend")]
-        searx["SearXNG :8888<br/>opt-in web search"]
-        cc["Claude Code"]
+flowchart TB
+    subgraph clients["Clients"]
+        hostApps["aider / Zed / scripts / Open WebUI"]
+        laptop["LAN laptop<br/>no local models"]
     end
 
-    subgraph lanbox["Other machines on the LAN"]
-        laptop["MacBook / Linux laptop<br/>no Ollama, no models"]
+    gw{{"LiteLLM :4000<br/>roles / keys / spend"}}
+
+    subgraph local["Local - stays on the host"]
+        ollama["Ollama 127.0.0.1:11434"]
+        pg[("Postgres :5433")]
     end
 
-    subgraph cloud["Cloud"]
-        gem["cloud-cheap<br/>Gemini 3.5 Flash"]
-        dormant["cloud-code · cloud-frontier<br/>DORMANT, no keys"]
-        anth["Anthropic<br/>subscription"]
-        engines["Google · Bing · DDG"]
+    subgraph leave["Leaves the host"]
+        cloud["cloud-cheap etc."]
+        searx["SearXNG<br/>opt-in search"]
+        web["search engines"]
     end
 
-    aider --> gw
-    webui --> gw
-    scripts --> gw
-    laptop -.->|"lan / lan-cloud key"| gw
-
-    gw --- keys
-    gw --> lchat
-    gw --> lcode
-    gw --> lbig
-    gw --> lemb
-    gw --> gem
-    gw -.->|"needs an API key"| dormant
+    hostApps -->|"private or general key"| gw
+    laptop -->|"lan / lan-cloud key"| gw
+    gw --> ollama
     gw <--> pg
+    gw -->|"general / lan keys"| cloud
+    gw -.->|"private key: refused"| cloud
+    hostApps -.->|"Open WebUI only"| searx
+    searx --> web
 
-    webui -.->|"per-message toggle<br/>THE QUERY LEAVES"| searx
-    searx --> engines
-
-    cc ==>|"documented exception<br/>bypasses the gateway"| anth
-
-    kpriv -. "cloud request REFUSED 403" .-x gem
-
-    classDef localCls fill:#1f7a4d,stroke:#0d3d26,color:#fff
-    classDef cloudCls fill:#8a4b1f,stroke:#4d2810,color:#fff
-    classDef gwCls fill:#1f4b8a,stroke:#0d2647,color:#fff
-    classDef offCls fill:#555,stroke:#333,color:#ccc,stroke-dasharray: 4 3
-
-    class lchat,lcode,lbig,lemb localCls
-    class gem,anth,engines cloudCls
+    classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
+    classDef leaveCls fill:#FAEEDA,stroke:#854F0B,color:#633806
+    classDef gwCls fill:#E6F1FB,stroke:#185FA5,color:#0C447C
+    class ollama,pg localCls
+    class cloud,searx,web leaveCls
     class gw gwCls
-    class dormant offCls
 ```
-
-Reading it: **everything funnels through the gateway** except Claude Code, which
-is a recorded exception. The `private` key physically cannot reach a cloud role.
-Ollama listens on localhost only, so the LAN cannot route around any of it. The
-one line that leaves without touching a model is SearXNG — web search is opt-in
-per message, and the query leaves even though the conversation does not.
 
 ## Three guarantees
 
-**Privacy is structural.** The `private` virtual key's model list contains no
-cloud roles, so a cloud request with it is refused by the gateway. Ollama binds
-to localhost, so nothing on the LAN can route around it. `healthcheck.sh` proves
-both halves — the key must *succeed* on a local role and be *refused* on a live
-cloud one, because a merely broken key refuses everything and looks identical.
+1. **Privacy is structural.** The `private` key can only reach `local-*` roles.
+   Ollama binds to localhost, so the LAN cannot bypass the gateway.
+   `scripts/healthcheck.sh` proves both halves (positive control + refusal).
+2. **Local roles never fall back to cloud.** A timeout that silently ships a
+   prompt to Google is a leak. `scripts/audit-fallbacks.sh` fails the build if
+   that reappears.
+3. **Nothing is claimed without being measured.** Role changes get an ADR and a
+   bench. Digests are recorded so silent `ollama pull` drift is detectable.
 
-**Local roles never fall back to cloud.** The inherited config had
-`local-ollama → gemini`, so any Ollama timeout silently shipped the prompt to
-Google. Across a privacy boundary a fallback is a leak, not resilience.
-`audit-fallbacks.sh` fails the build if it reappears.
+## Requirements
 
-**Nothing is claimed without being measured.** Retiring `llama3.3:70b` came from
-a timed probe — 440 s to first reply, because 42 GB could not stay resident
-alongside the coding model. The replacement answers in 5 s. That was a capacity
-measurement, not an opinion about quality. See `docs/decisions/0004`.
+- macOS (Apple Silicon recommended) or Linux host
+- [Ollama](https://ollama.com)
+- [LiteLLM](https://docs.litellm.ai) (pipx works well)
+- [Podman](https://podman.io) for Postgres / Open WebUI / SearXNG
+- Enough RAM for your resident model set (see `docs/MODELS.md`)
+
+## Quick start
+
+```bash
+git clone <this-repo> hearth && cd hearth
+
+# 1. Secrets
+cp litellm/.env.example litellm/.env
+cp litellm/service-env.example ~/.config/litellm/env   # if you don't have one
+# Edit both: LITELLM_MASTER_KEY, DATABASE_URL / POSTGRES_PASSWORD, GOOGLE_API_KEY, …
+
+# 2. Database + gateway
+brew install podman   # once
+podman machine init --cpus 2 --memory 2048 --disk-size 20 && podman machine start
+scripts/db.sh up
+scripts/deploy.sh           # symlink config, restart, verify
+scripts/create-keys.sh      # paste private/general/lan/lan-cloud into litellm/.env
+scripts/healthcheck.sh
+
+# 3. Shell aliases on the host
+echo "source $PWD/scripts/aliases.zsh" >> ~/.zshrc
+```
+
+Point LiteLLM's launchd agent at this repo's config (or use whatever process
+supervisor you prefer). Default label is `com.hearth.litellm`; scripts also
+discover an already-installed personal label. Override with
+`HEARTH_LITELLM_LABEL` if needed.
+
+Full ops detail: [`docs/RUNBOOK.md`](docs/RUNBOOK.md). Architecture:
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Usage
 
 ```bash
 source scripts/aliases.zsh
 
-ask                # local-code, private — the default
+ask                # local-code, private key — default
 ask-chat           # local-chat, general questions
-ask-fast           # alias for local-chat, the fastest local model
 ask-big            # local-big, reasoning
 ask-cloud          # cloud-cheap, explicit reach
+ask-arch           # architect mode: local-big plans, local-code edits
 
-ai-health          # every role + the leak test
+ai-health          # every role + leak test
 ai-audit           # fallback leak check
-ai-status          # is everything up
-ai-restart
+ai-restart         # kick the launchd agent
 ```
 
-## Operations
+Editors (aider + Zed): [`docs/IDES.md`](docs/IDES.md).
 
-| Script | Purpose |
-|---|---|
-| `preflight.sh` | Read-only. Exit 2 = check couldn't run, 1 = real problem |
-| `deploy.sh` | Cut over, verify, auto-rollback. Never touches launchd |
-| `healthcheck.sh` | Every live role + the two-part leak test |
-| `audit-fallbacks.sh` | Fails if a local role can reach cloud |
-| `swap-role.sh` | Repoint a role: pull, edit, verify, then delete old weights |
-| `bench.sh` | Compare candidates on real tasks before promoting |
-| `db.sh` | Postgres under Podman: `up`, `migrate`, `psql`, `destroy` |
-| `lock-ollama.sh` | Bind Ollama to localhost, verify LAN is closed |
-| `diagnose.sh` | What the gateway actually loaded, when it disagrees with you |
-| `bisect-config.sh` | Find which config section breaks model loading |
-| `webui.sh` | Open WebUI chat surface, private-scoped by default |
-| `usage.sh` | Which role, which model, local or cloud, tokens and cost |
-| `status.sh` | One glance: is everything up right now |
-| `install-autostart.sh` | Make the stack survive a reboot; report sleep settings |
-| `boot.sh` | Start Podman, containers, gateway in order. Run by the boot agent |
+## LAN clients
 
-Start with `docs/ARCHITECTURE.md`, then `docs/ROUTING.md` and `docs/RUNBOOK.md`.
-`docs/IDES.md` covers Zed and aider, including why both.
-`docs/LAPTOP.md` is the start-to-finish guide for a second machine.
-`docs/CLAUDE-PROJECT.md` is the spec to paste into a claude.ai Project.
-`docs/COMPARISON.md` weighs this against other private-AI setups — and names
-the layer we did not build.
-`docs/decisions/` records why things are the way they are, including the
-rejected alternatives.
-
-## What each key can actually reach
-
-```mermaid
-flowchart LR
-    priv["private<br/>conveyancing · Open WebUI"]
-    lan["lan<br/>laptops, everyday"]
-    lanc["lan-cloud<br/>laptops, wider scope"]
-    gen["general<br/>this machine"]
-
-    subgraph L["local — never leaves the Mac Studio"]
-        loc["local-chat · local-code<br/>local-big · local-embed"]
-    end
-
-    subgraph C["cloud — leaves the machine"]
-        cheap["cloud-cheap<br/>Gemini 3.5 Flash · LIVE"]
-        dorm["cloud-code · cloud-frontier<br/>DORMANT — no API keys yet"]
-    end
-
-    priv --> loc
-    lan --> loc
-    lanc --> loc
-    gen --> loc
-
-    lan --> cheap
-    lanc --> cheap
-    gen --> cheap
-
-    lanc -.->|"only once a key exists"| dorm
-    gen -.->|"only once a key exists"| dorm
-
-    priv -. "refused · 403" .-x cheap
-
-    classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
-    classDef cloudCls fill:#FAEEDA,stroke:#854F0B,color:#633806
-    classDef offCls fill:#F1EFE8,stroke:#5F5E5A,color:#444441,stroke-dasharray: 4 3
-    classDef keyCls fill:#EEEDFE,stroke:#534AB7,color:#3C3489
-
-    class loc localCls
-    class cheap cloudCls
-    class dorm offCls
-    class priv,lan,lanc,gen keyCls
-```
-
-### Today — only `private` is actually different
-
-| Key | local roles (4) | `cloud-cheap` | `cloud-code`, `cloud-frontier` |
-|---|---|---|---|
-| `private` | yes | **blocked** | **blocked** |
-| `lan` | yes | yes | blocked |
-| `lan-cloud` | yes | yes | nothing to reach |
-| `general` | yes | yes | nothing to reach |
-
-### After you add an OpenRouter or Anthropic key
-
-| Key | local roles (4) | `cloud-cheap` | `cloud-code`, `cloud-frontier` |
-|---|---|---|---|
-| `private` | yes | **blocked** | **blocked** |
-| `lan` | yes | yes | blocked |
-| `lan-cloud` | yes | yes | **yes — now it differs** |
-| `general` | yes | yes | **yes** |
-
-**`private` is the only key that is genuinely different today.** It reaches the
-four local roles and is refused — HTTP 403 — on anything cloud. That refusal is
-the privacy boundary, and `healthcheck.sh` proves it on every run, with a
-positive control so a merely broken key can't pass as a well-scoped one.
-
-`lan`, `lan-cloud` and `general` currently grant **identical** access, because
-`cloud-cheap` is the only live cloud role — there is nothing extra for a wider
-key to reach. `lan-cloud` is not broken; it is pointed at a shelf that is still
-empty. It diverges the day you add a provider key and add the role to
-`CLOUD_ALL` in `scripts/create-keys.sh`.
-
-Until then use `lan` for laptops. `scripts/usage.sh --keys` shows the live scope
-of every key, and `private` must always read `LOCAL ONLY`.
-
-## Other machines (macOS and Linux)
-
-Laptops need **no Ollama, no models, no Podman** — they point at the gateway and
-the Studio does the work. Nothing is downloaded; nothing is duplicated.
-
-On the Studio, generate the instructions with the key filled in:
+Laptops need **no Ollama and no model downloads**. On the gateway host:
 
 ```bash
-scripts/client-setup.sh lan     # local roles + cloud-cheap
-scripts/client-setup.sh lan-cloud    # laptop key, reaches all live cloud roles
+scripts/client-setup.sh lan              # prints copy-paste instructions
+scripts/client-setup.sh lan --install user@laptop
+scripts/client-setup.sh lan --windows    # PowerShell path
 ```
 
-Or push it straight to a machine you can ssh to:
+Clients must set `HEARTH_GATEWAY` (there is no hardcoded host IP). Details:
+[`docs/LAPTOP.md`](docs/LAPTOP.md).
+
+Off your home LAN, tunnel:
 
 ```bash
-scripts/client-setup.sh lan-cloud --install colin@macbook
+ssh -N -L 4000:127.0.0.1:4000 USER@HOST
+export HEARTH_GATEWAY=http://127.0.0.1:4000
 ```
 
-Manually, it is three steps on the client:
+Never port-forward `:4000` to the internet.
 
-```bash
-# 1. the shim (plain shell, works in bash and zsh, macOS and Linux)
-scp colin@192.168.50.154:~/dev/ai-stack/client/ai-stack-client.sh ~/.ai-stack-client.sh
+## Keys
 
-# 2. the key, readable only by you
-printf '%s' 'sk-...' > ~/.ai-stack-key && chmod 600 ~/.ai-stack-key
-
-# 3. wire it in  (~/.zshrc on macOS, ~/.bashrc on Linux)
-echo 'export AI_STACK_GATEWAY=http://192.168.50.154:4000' >> ~/.zshrc
-echo 'source ~/.ai-stack-client.sh'                       >> ~/.zshrc
-```
-
-Then in a new shell:
-
-```bash
-ai-ping                  # is the gateway reachable
-ai-models                # which roles this key may use
-ai-ask "say hello"       # one-shot, no aider needed
-ask "explain this repo"  # aider on local-code, running on the Studio
-```
-
-Clients use the same **role** names, so swapping the model behind `local-code`
-never requires touching a laptop.
-
-### The chat UI on a laptop
-
-Each machine runs **its own** Open WebUI against the shared gateway, so chat
-history stays local to the device. Inference still happens on the Studio.
-
-```bash
-# on the laptop — needs podman or docker
-scp colin@192.168.50.154:~/dev/ai-stack/client/webui-client.sh ~/webui-client.sh
-chmod +x ~/webui-client.sh
-~/webui-client.sh up          # then http://127.0.0.1:3000
-```
-
-It reads the same `~/.ai-stack-key` and `$AI_STACK_GATEWAY` as the shell client,
-checks the gateway is reachable before starting, and binds to localhost — a
-client that serves other clients is a surprise nobody wants.
-
-| | Own instance (this) | Browsing the Studio's |
+| Key | Reaches | Use for |
 |---|---|---|
-| Chat history | local to the device | shared across machines |
-| Needs on laptop | podman or docker | nothing |
-| Web search | not available | works |
+| `private` | `local-*` only | sensitive work, Open WebUI default |
+| `general` | everything live | this machine, non-sensitive repos |
+| `lan` | `local-*` + `cloud-cheap` | everyday laptop access |
+| `lan-cloud` | everything live | laptop when it needs frontier / Claude |
 
-**Web search from a laptop instance** needs SearXNG forwarded, since it's bound
-to the Studio's localhost:
+Dollar caps are **fuses**, not billing — they stop a leaked key or runaway agent
+loop from draining your provider account.
 
-```bash
-~/webui-client.sh tunnel          # prints the ssh line
-ssh -N -L 8888:127.0.0.1:8888 colin@192.168.50.154   # leave running
-~/webui-client.sh up              # detects the tunnel, wires search
+## Security notes
+
+- Web search via SearXNG is opt-in per message. The **search query leaves** even
+  when the model stays local. See `docs/ROUTING.md`.
+- Prompt-injection / agent containment: `docs/THREAT-MODEL.md`, ADR 0007.
+- Untrusted MCP servers need their own audit before an agent can call them.
+
+## Layout
+
+```
+CLAUDE.md / AGENTS.md   rules for coding agents in this repo
+docs/                   architecture, routing, models, runbook, ADRs
+litellm/config.yaml     the only file that names concrete models
+scripts/                deploy, healthcheck, bench, client setup, …
+client/                 shims for other machines (bash + PowerShell)
+bench/tasks/            fixed prompts for comparing models
+pins/digests.tsv        recorded Ollama digests for drift detection
 ```
 
-`up` only configures search if the tunnel is actually up, then verifies the
-*container* can reach it — the container needs `host.containers.internal`
-(podman) or `host.docker.internal` (docker), not `127.0.0.1`, so checking from
-the host would prove nothing.
+## License
 
-You still have to switch it on in Admin Panel → Settings → Web Search, because
-Open WebUI's database overrides the env vars.
-
-If you'd rather have no container on the laptop after all, browse the Studio's
-instance instead — `scripts/webui.sh up --lan`, or an SSH tunnel on `3000`,
-which keeps it localhost-only and encrypted.
-
-### Windows
-
-The `.sh` shim is POSIX shell, so native PowerShell can't run it. Three routes:
-
-```bash
-scripts/client-setup.sh lan --windows    # prints all three
-```
-
-- **WSL or Git Bash** — the `.sh` works unchanged, nothing else needed.
-- **Native PowerShell** — `client/ai-stack-client.ps1` gives the same
-  `ask` / `ask-chat` / `ask-big` / `ai-ping` / `ai-models` commands on
-  PowerShell 5.1 or 7+, no WSL. Dot-source it from `$PROFILE`.
-- **Nothing at all** — point any OpenAI-compatible tool at
-  `http://<studio>:4000/v1` with the key and a role name as the model.
-
-Two Windows-specific gotchas the script covers: there's no `chmod`, so the key
-file is locked with `icacls`; and PowerShell's execution policy will silently
-refuse to load the profile until you set `RemoteSigned` for the current user.
-
-Two things to be clear-eyed about:
-
-- **If the Studio is asleep, the laptops have nothing.** That is the trade for
-  not copying 37 GB of weights onto every device.
-- **LAN traffic is plain HTTP.** Fine at home, wrong on cafe or hotel wifi. Off
-  your own network, tunnel instead:
-
-  ```bash
-  ssh -N -L 4000:127.0.0.1:4000 colin@192.168.50.154
-  export AI_STACK_GATEWAY=http://127.0.0.1:4000
-  ```
-
-  Never port-forward `:4000` to the internet. Key auth is not hardening, and a
-  public LiteLLM holding your provider keys becomes somebody else's budget.
-
-Lost a laptop? `scripts/create-keys.sh --force` on the Studio rotates everything,
-then re-run `client-setup.sh` for the machines you still have.
-
-## Secrets
-
-Two environment files, deliberately:
-
-- `~/.config/litellm/env` — the only one launchd reads. Provider keys,
-  master key, `DATABASE_URL`. Template: `litellm/service-env.example`
-- `litellm/.env` — scripts only. `POSTGRES_PASSWORD`, virtual keys. Gitignored
-
-launchd reads neither the repo `.env` nor `~/.zshrc`. `preflight.sh` checks the
-service environment specifically, because a variable set in your shell will look
-fine and then fail at runtime.
-
-## Status
-
-Live: gateway with five roles, four scoped keys, leak test passing, Ollama bound
-to localhost, Open WebUI with opt-in SearXNG web search, digest drift detection.
-
-Outstanding: read the bench results for task 03 before trusting `gpt-oss:20b` as
-`local-big`, and an approval-gated model auto-updater. See `docs/PLAN.md`.
+MIT — see [LICENSE](LICENSE).

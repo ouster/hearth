@@ -1,7 +1,7 @@
 #!/bin/bash
-# Run Open WebUI ON THIS MACHINE, pointed at the ai-stack gateway.
+# Run Open WebUI ON THIS MACHINE, pointed at the hearth gateway.
 #
-#   ./webui-client.sh up | tunnel | down | status | logs | destroy
+#   ./hearth-webui.sh up | tunnel | down | status | logs | destroy
 #
 # Each machine gets its OWN chat history — the database lives in a local
 # volume and nothing is shared with the Studio. Inference still happens on the
@@ -11,25 +11,30 @@
 # is browsing the Studio's instance, which shares everything.
 #
 # Config comes from the same two places as the shell client:
-#   $AI_STACK_GATEWAY   e.g. http://192.168.50.154:4000
-#   $HOME/.ai-stack-key
+#   $HEARTH_GATEWAY   e.g. http://192.168.1.10:4000  (required)
+#   $HOME/.hearth-key
+#   $HEARTH_SSH       optional user@host for the SearXNG tunnel
 #
 # Portable: bash 3.2 compatible, macOS and Linux. On Windows use Docker Desktop
 # and run the equivalent `docker run` — see the README.
 
 set -uo pipefail
 
-NAME=ai-stack-webui-client
-VOLUME=ai-stack-webui-client-data
+NAME=hearth-webui-client
+VOLUME=hearth-webui-client-data
 IMAGE=ghcr.io/open-webui/open-webui:main
 PORT="${WEBUI_PORT:-3000}"
 
-GATEWAY="${AI_STACK_GATEWAY:-http://192.168.50.154:4000}"
-KEY="${AI_STACK_KEY:-}"
-[ -z "$KEY" ] && [ -f "$HOME/.ai-stack-key" ] && KEY="$(cat "$HOME/.ai-stack-key")"
+GATEWAY="${HEARTH_GATEWAY:-}"
+if [ -z "$GATEWAY" ]; then
+  echo "hearth: set HEARTH_GATEWAY first (e.g. export HEARTH_GATEWAY=http://HOST:4000)" >&2
+  exit 1
+fi
+KEY="${HEARTH_KEY:-}"
+[ -z "$KEY" ] && [ -f "$HOME/.hearth-key" ] && KEY="$(cat "$HOME/.hearth-key")"
 
-STUDIO_HOST="${AI_STACK_SSH:-}"
-[ -z "$STUDIO_HOST" ] && STUDIO_HOST="$(printf '%s' "$GATEWAY" | sed -E 's#https?://##; s#:.*##')"
+GATEWAY_HOST="$(printf '%s' "$GATEWAY" | sed -E 's#https?://##; s#:.*##')"
+STUDIO_HOST="${HEARTH_SSH:-$GATEWAY_HOST}"
 
 # podman preferred, docker accepted. They use different names for "the host",
 # and getting it wrong means search silently fails on every query.
@@ -53,7 +58,7 @@ need_runtime() {
 case "${1:-status}" in
   up)
     need_runtime
-    [ -n "$KEY" ] || { echo "No key. Put the lan key in ~/.ai-stack-key"; exit 1; }
+    [ -n "$KEY" ] || { echo "No key. Put the lan key in ~/.hearth-key"; exit 1; }
 
     if ! curl -s -m 5 -o /dev/null "${GATEWAY}/health/readiness"; then
       echo "Gateway ${GATEWAY} is unreachable."
@@ -89,7 +94,7 @@ case "${1:-status}" in
       -e OPENAI_API_KEY="$KEY" \
       -e ENABLE_OLLAMA_API=False \
       -e ENABLE_SIGNUP=False \
-      -e WEBUI_NAME="ai-stack ($(hostname -s))" \
+      -e WEBUI_NAME="hearth ($(hostname -s))" \
       -e DEFAULT_MODELS="local-chat" \
       -e TASK_MODEL_EXTERNAL="local-chat" \
       -v "${VOLUME}:/app/backend/data" \

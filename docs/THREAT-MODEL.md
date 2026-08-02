@@ -32,38 +32,46 @@ Google. That boundary is real and it works.
 Injection attacks do not use that path at all.
 
 ```mermaid
-flowchart LR
-    web["web pages<br/>via SearXNG"]
-    repo["repo files<br/>vendored deps"]
-    mcpsrc["auslaw-mcp<br/>UNAUDITED"]
+flowchart TB
+    subgraph inputs["Untrusted inputs into the agent"]
+        web["web pages via SearXNG"]
+        repo["repo files / vendored deps"]
+        mcpsrc["untrusted MCP - UNAUDITED"]
+    end
 
-    agent["aider / Zed agent"]
-    wd[("working dir<br/>writable")]
-    secrets[("~/.ssh · .env<br/>keychain")]
+    subgraph sandbox["sandbox-exec - one egress allowed"]
+        agent["aider / Zed agent"]
+        wd["working dir - writable"]
+    end
 
-    gw{{"LiteLLM :4000<br/>key scope · spend · audit"}}
+    secrets["~/.ssh, .env, keychain<br/>readable - accepted"]
+
+    gw{{"LiteLLM :4000<br/>key scope / spend / audit"}}
     localm["local models"]
     cloudm["cloud models"]
-    outside["any other host<br/>github · pypi · attacker"]
+    outside["blocked: github / pypi / attacker"]
 
     web --> agent
     repo --> agent
     mcpsrc --> agent
+    secrets -.-> agent
 
-    agent -->|"the ONLY egress"| gw
-    gw --> localm
-    gw -.->|"refused for private key"| cloudm
-
+    agent -->|"only permitted egress"| gw
     agent --> wd
-    secrets -.->|"readable — accepted"| agent
-    agent x--x outside
+    agent -.->|"blocked by sandbox"| outside
+
+    gw --> localm
+    gw -.->|"private key refused"| cloudm
 
     classDef okCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
     classDef badCls fill:#FBE9E7,stroke:#A32B18,color:#7A1F11
     classDef warnCls fill:#FAEEDA,stroke:#854F0B,color:#633806
+    classDef boxCls fill:#EEEDFE,stroke:#534AB7,color:#3C3489
+
     class gw,localm okCls
     class outside badCls
     class secrets,mcpsrc warnCls
+    class agent,wd boxCls
 ```
 
 Two boundaries, doing different jobs:
@@ -103,15 +111,14 @@ it landed*, which is knowable.
 |---|---|---|---|---|
 | 1 | **aider** | files you `/add`, vendored deps, cloned repos, sample data | edit source, run commands, reach the network | **high** |
 | 2 | **Zed agents** | same, plus anything the agent opens itself | same | **high** |
-| 3 | **Claude Code** | repo contents, tool output | broad — but ships its own permission prompts | medium |
-| 4 | **auslaw-mcp** | fetched legislation and practice notes | depends entirely on what the MCP exposes — **unaudited** | unknown |
-| 5 | **SearXNG → Open WebUI** | arbitrary web pages, per message | produce text. No tools are enabled, so it can mislead you but not act | low today |
+| 3 | **untrusted MCP** | fetched docs / tools from an unaudited server | depends entirely on what the MCP exposes — **unaudited** | unknown |
+| 4 | **SearXNG → Open WebUI** | arbitrary web pages, per message | produce text. No tools are enabled, so it can mislead you but not act | low today |
 
-**Surface 4 is the one with no number next to it.** It touches conveyancing
-work, it fetches from the open web, and nobody has asked what tools it hands a
-model. That is the next thing to audit.
+**Surface 3 is the one with no number next to it.** It can sit next to real
+  client data, it fetches from the open web, and nobody has asked what tools it
+  hands a model. That is the next thing to audit.
 
-**Surface 5's low rating is conditional and fragile.** The Open WebUI model is
+**Surface 4's low rating is conditional and fragile.** The Open WebUI model is
 inert because it has no tools — it can lie to you convincingly, which matters
 for legal research, but it cannot act. **The moment tools, functions, or code
 execution are enabled in Open WebUI, this becomes surface 1 with a web feed
@@ -187,10 +194,8 @@ Recorded so nobody mistakes silence for safety.
    network widening need justification.
 2. **An injected agent can corrupt its own repo.** Mitigated by git hygiene,
    not by the sandbox.
-3. **Claude Code runs unsandboxed** by the same exception recorded in ADR 0001.
-   It relies on Anthropic's own permission prompts.
-4. **auslaw-mcp is unaudited.** Unknown capability, real-data adjacency.
-5. **No confirmation gates** beyond git commits. This costs nothing today
+3. **Untrusted MCP servers are unaudited.** Unknown capability, real-data adjacency.
+4. **No confirmation gates** beyond git commits. This costs nothing today
    because nothing in the stack can send mail or move money. It becomes urgent
    the day something can.
 
@@ -198,7 +203,7 @@ Recorded so nobody mistakes silence for safety.
 
 In order of value per effort:
 
-1. Audit what tools `auslaw-mcp` exposes to a model. Surface 4 is the only
+1. Audit what tools each MCP exposes to a model. Surface 3 is the only
    unknown on the list.
 2. Run aider under the sandbox for a week of real work and record what it
    needed widened. A profile nobody can work under gets switched off.

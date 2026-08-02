@@ -14,15 +14,14 @@
 # local; the search terms do not.
 #
 # So: never enable web search on a conversation involving client matters, PII,
-# or anything under stepup-conveyancing. "Summarise this settlement statement"
-# is safe; "search for <client name> <address>" is a disclosure. See
-# docs/ROUTING.md.
+# or any flagged-sensitive repo. "Summarise this document" is safe; "search for
+# <client name> <address>" is a disclosure. See docs/ROUTING.md.
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-
-NAME=ai-stack-searxng
-VOLUME=ai-stack-searxng-config
+. "${ROOT}/scripts/lib.sh"
+NAME="$(ai_container searxng)"
+VOLUME="$(ai_volume searxng-config)"
 IMAGE=docker.io/searxng/searxng:latest
 PORT=8888
 
@@ -40,7 +39,7 @@ case "${1:-status}" in
         --restart unless-stopped \
         -p "127.0.0.1:${PORT}:8080" \
         -e "BASE_URL=http://127.0.0.1:${PORT}/" \
-        -e "INSTANCE_NAME=ai-stack" \
+        -e "INSTANCE_NAME=hearth" \
         -v "${VOLUME}:/etc/searxng" \
         "$IMAGE" >/dev/null
       echo "created ${NAME}"
@@ -67,7 +66,7 @@ case "${1:-status}" in
       fi
 
       podman exec -i "$NAME" sh -c 'cat > /etc/searxng/settings.yml' <<EOF
-# Managed by ~/dev/ai-stack/scripts/searxng.sh — regenerated on 'up'.
+# Managed by ~/dev/hearth/scripts/searxng.sh — regenerated on 'up'.
 use_default_settings: true
 
 server:

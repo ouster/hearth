@@ -121,7 +121,7 @@ echo
 sync_key "private" "${LOCAL}" 'null' \
   "Local only. Conveyancing work, Open WebUI default. Never add cloud roles."
 sync_key "general" "${LOCAL},${CLOUD_ALL}" '100' \
-  "This machine: Cursor, aider, scripts on non-sensitive repos."
+  "This machine: aider, Zed, scripts on non-sensitive repos."
 sync_key "lan" "${LOCAL},${CLOUD_CHEAP}" '10' \
   "Other machines, everyday. Local plus cheap cloud."
 sync_key "lan-cloud" "${LOCAL},${CLOUD_ALL}" '25' \

@@ -75,8 +75,7 @@ Verified on macOS 26.4, 2026-08-02: 10 passed, 0 failed.
 - An injected agent can still read any file the user can, and can still corrupt
   the repo it was invited into. The second is mitigated by git hygiene, not by
   this decision.
-- Claude Code continues to run unsandboxed under the exception in ADR 0001.
-- `auslaw-mcp` is unaudited and is now the largest unknown on the list.
+- Untrusted MCP servers remain unaudited and are now the largest unknown on the list.
 
 ## Alternatives rejected
 

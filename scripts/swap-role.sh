@@ -93,7 +93,7 @@ echo "    preflight clean"
 
 # ---------------------------------------------------------------- deploy
 say "4/5 Restart gateway"
-launchctl kickstart -k "gui/$(id -u)/com.colinnevin.litellm" 2>/dev/null
+launchctl kickstart -k "$(ai_litellm_agent)" 2>/dev/null
 for _ in $(seq 1 30); do
   curl -s -m 3 -o /dev/null "http://127.0.0.1:4000/health/readiness" && break
   sleep 1

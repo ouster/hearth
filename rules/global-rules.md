@@ -1,6 +1,6 @@
 # Global engineering rules
 
-Portable rules that apply to every project, not just ai-stack. Installed into
+Portable rules that apply to every project, not just hearth. Installed into
 `~/.claude/CLAUDE.md` by `scripts/install-global-rules.sh`, and pasted into
 Cursor's Settings → Rules → User Rules.
 

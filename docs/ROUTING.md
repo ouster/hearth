@@ -6,10 +6,9 @@ The decision table. When in doubt, local.
 
 Route to `local-*` roles, always:
 
-- Anything under `~/dev/stepup-conveyancing` containing real matter data
-- Anything under `~/dev/auslaw-mcp` containing real client or case data
+- Any repo or path you have flagged as holding real client / matter data
 - Client names, addresses, contact details, settlement figures, ID documents
-- Anything covered by Australian Privacy Principles obligations
+- Anything covered by privacy-law obligations (e.g. Australian Privacy Principles)
 - Credentials, keys, `.env` contents, database dumps
 - Anything you would not paste into a public forum
 
@@ -43,8 +42,8 @@ Privacy is structural. Four virtual keys:
 
 | Key | Reaches | Used by |
 |---|---|---|
-| `private` | `local-*` only | conveyancing work, Open WebUI default |
-| `general` | everything live | this machine — Cursor, aider, scripts |
+| `private` | `local-*` only | sensitive work, Open WebUI default |
+| `general` | everything live | this machine — aider, Zed, scripts |
 | `lan` | `local-*` + `cloud-cheap` | other machines, everyday |
 | `lan-cloud` | everything live | laptop, when it needs real cloud models |
 

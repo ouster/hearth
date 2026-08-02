@@ -36,9 +36,8 @@ This file tracks progress only. The original plan is preserved in
   dearest: $3.30/$16.50 versus $3.00/$15.00 from both OpenRouter and Moonshot
   direct. OpenRouter is now primary — one key, day-zero access to new models.
 - **`cloud-code` is dormant by choice.** No Anthropic API key. A Console key bills
-  separately from a Claude subscription, and Claude Code already runs on the
-  subscription, so the gateway route only earns its place if aider, Cursor or the
-  laptop need Claude.
+  separately from a Claude subscription, so the gateway route only earns its
+  place if aider, Zed or a laptop should reach Claude through the gateway.
 - **Four keys, not three.** Added `lan-cloud` so the laptop can reach cloud models
   without widening the everyday `lan` key.
 - **Postgres in Podman, not Docker Desktop.**
@@ -107,9 +106,9 @@ Kept as a record of why the tooling exists.
 - ~~**No prompt-injection threat model.**~~ **Written** — `docs/THREAT-MODEL.md`.
   Conclusion: detection does not work, so the model exists to say which
   capabilities to cut rather than what to filter.
-- **`auslaw-mcp` is unaudited.** The one remaining unknown: it fetches from the
-  open web, sits next to real client data, and nobody has asked what tools it
-  hands a model. Highest value per effort of anything left.
+- **Untrusted MCP servers are unaudited.** Any MCP that fetches from the open
+  web and sits next to real client data needs a tool-surface audit before an
+  agent is allowed to call it. Highest value per effort of anything left.
 - **No confirmation gates** on consequential actions beyond git commits. Costs
   nothing today because nothing in the stack can send mail or move money.
 - **`local-embed` indexes nothing** — a local corpus of legislation would keep
@@ -117,8 +116,8 @@ Kept as a record of why the tooling exists.
 
 Optional, when the need arises:
 
-- Enable `cloud-code` if aider, Cursor or the laptop ever need Claude — needs a
-  Console API key, which bills separately from the subscription.
+- Enable `cloud-code` if aider, Zed or a laptop should reach Claude — needs a
+  Console API key, which bills separately from any subscription.
 - Enable `cloud-frontier` (OpenRouter) for Kimi K3 and day-zero access to new
   models. There is no local K3 at any quantisation.
 - A second Open WebUI without search configured, if you want "no web search on

@@ -6,7 +6,7 @@ Status: accepted
 ## Context
 
 Ollama listened on `*:11434` — all interfaces, no authentication of any kind.
-Any device on 192.168.50.0/24 could use the GPU, enumerate the model list, and
+Any device on the LAN subnet could use the GPU, enumerate the model list, and
 send arbitrary prompts.
 
 That is not merely an exposure. It is a hole straight through the entire design:
@@ -29,7 +29,7 @@ local roles plus `cloud-cheap` and carries a spend cap.
 
 ## Consequences
 
-- **Breaking for other machines.** Anything pointed at `http://192.168.50.154:11434`
+- **Breaking for other machines.** Anything pointed at `http://<LAN-IP>:11434`
   stops working until repointed at the gateway. `scripts/lock-ollama.sh --apply`
   prints the exact client configuration.
 - LAN traffic is now logged, capped and scoped, and addresses roles rather than

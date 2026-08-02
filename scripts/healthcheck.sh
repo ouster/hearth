@@ -171,10 +171,30 @@ fi
 
 echo
 echo "Direct Ollama bypass check:"
-if curl -s -m 5 -o /dev/null "http://192.168.50.154:11434/api/tags" 2>/dev/null; then
-  echo "  WARNING — Ollama still reachable on the LAN, bypassing the gateway"
+# Same false-pass class as the leak test: an unreachable address and a closed
+# port produce identical curl failures. Probe THIS machine's LAN IP, or report
+# inconclusive — never a hardcoded foreign address.
+LANIP="$(ai_lan_ip)"
+LISTEN="$(lsof -nP -iTCP:11434 -sTCP:LISTEN 2>/dev/null | awk 'NR>1{print $9}' | tr '\n' ' ')"
+if [ -n "$LISTEN" ]; then
+  echo "  listening on: ${LISTEN}"
+  case " $LISTEN " in
+    *" *:11434 "*|*" 0.0.0.0:11434 "*|*" [::]:11434 "*)
+      echo "  *** OPEN — Ollama bound to all interfaces, bypasses the gateway ***"
+      fail=$((fail+1))
+      ;;
+  esac
+fi
+if [ -z "$LANIP" ]; then
+  echo "  INCONCLUSIVE — no LAN IP (set HEARTH_LAN_IP or connect to a network)"
+  echo "      Unreachable and secure look the same; not counted as a pass."
+  fail=$((fail+1))
+elif curl -s -m 5 -o /dev/null "http://${LANIP}:11434/api/tags" 2>/dev/null; then
+  echo "  *** LEAK — Ollama reachable at ${LANIP}:11434, bypassing the gateway ***"
+  fail=$((fail+1))
 else
-  echo "  Ollama not reachable from the LAN address"
+  echo "  Ollama not reachable from LAN address ${LANIP}"
+  pass=$((pass+1))
 fi
 
 echo
@@ -183,13 +203,13 @@ echo "${pass} passed, ${fail} failed"
 # Only fires when the gateway genuinely reported an empty router. Showing this
 # after a plain cold-load timeout sends you chasing the wrong fault.
 if [ "${SAW_NO_DEPLOYMENTS}" -eq 1 ]; then
-  cat <<'EOF'
+  cat <<EOF
 
 If every role reported "no healthy deployments", the config is probably fine
 and the router is not. In order of likelihood:
 
   1. The gateway started before the database schema existed.
-       launchctl kickstart -k gui/$(id -u)/com.colinnevin.litellm
+       launchctl kickstart -k $(ai_litellm_agent)
 
   2. store_model_in_db: true makes some LiteLLM versions serve ONLY database
      rows and ignore config.yaml's model_list. With an empty DB that means no

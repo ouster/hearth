@@ -17,8 +17,9 @@
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "${ROOT}/scripts/lib.sh"
 
-log() { printf '[ai-stack boot] %s\n' "$1"; }
+log() { printf '[hearth boot] %s\n' "$1"; }
 
 # ---------------------------------------------------------------- podman VM
 if command -v podman >/dev/null 2>&1; then
@@ -31,7 +32,8 @@ if command -v podman >/dev/null 2>&1; then
 
   # Containers carry --restart unless-stopped, but that only takes effect once
   # the VM is up, and a container stopped before shutdown stays stopped.
-  for c in ai-stack-postgres ai-stack-searxng ai-stack-webui; do
+  for kind in postgres searxng webui; do
+    c="$(ai_container "$kind")"
     if podman container exists "$c" 2>/dev/null; then
       state=$(podman inspect -f '{{.State.Status}}' "$c" 2>/dev/null)
       if [ "$state" = "running" ]; then
@@ -49,9 +51,10 @@ fi
 if curl -s -m 5 -o /dev/null http://127.0.0.1:11434/api/tags 2>/dev/null; then
   log "ollama responding"
 else
-  if [ -f "$HOME/Library/LaunchAgents/com.colinnevin.ollama.plist" ]; then
-    log "ollama not up — kicking the service"
-    launchctl kickstart -k "gui/$(id -u)/com.colinnevin.ollama" 2>/dev/null
+  OLLAMA_LABEL="$(ai_ollama_label)"
+  if [ -f "$HOME/Library/LaunchAgents/${OLLAMA_LABEL}.plist" ]; then
+    log "ollama not up — kicking the service (${OLLAMA_LABEL})"
+    launchctl kickstart -k "gui/$(id -u)/${OLLAMA_LABEL}" 2>/dev/null
   else
     log "ollama NOT responding and no service installed"
     log "  fix properly: scripts/install-ollama-service.sh --apply"
@@ -62,7 +65,7 @@ fi
 # ---------------------------------------------------------------- gateway
 # Postgres needs to be accepting connections before LiteLLM will hold a start.
 for _ in $(seq 1 30); do
-  podman exec ai-stack-postgres pg_isready -U litellm -d litellm >/dev/null 2>&1 && break
+  podman exec "$(ai_container postgres)" pg_isready -U litellm -d litellm >/dev/null 2>&1 && break
   sleep 1
 done
 
@@ -70,7 +73,7 @@ if curl -s -m 5 -o /dev/null http://127.0.0.1:4000/health/readiness 2>/dev/null;
   log "gateway responding"
 else
   log "gateway not up yet — kicking launchd"
-  launchctl kickstart -k "gui/$(id -u)/com.colinnevin.litellm" 2>/dev/null
+  launchctl kickstart -k "$(ai_litellm_agent)" 2>/dev/null
   for _ in $(seq 1 30); do
     curl -s -m 2 -o /dev/null http://127.0.0.1:4000/health/readiness && break
     sleep 2

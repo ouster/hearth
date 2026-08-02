@@ -11,18 +11,17 @@ model's size — see the measurement below.
 
 | Role | Model | Size | Set | Digest | Why |
 |---|---|---|---|---|---|
-| `local-chat` | `qwen3:8b` | 5.2 GB | 2026-08-02 | _pending_ | General knowledge, 40K ctx. **thinking off** — ADR 0006 |
-| `local-code` | `qwen3-coder:30b` | 19 GB | 2026-08-02 | _pending_ | 30B MoE, ~3B active, 256K ctx. Runs at ~7B speed |
-| `local-big` | `gpt-oss:20b` | 13 GB | 2026-08-02 | _pending_ | Reasoning. Replaced llama3.3:70b — ADR 0004 |
-| `local-embed` | `nomic-embed-text` | 0.3 GB | 2026-08-01 | _pending_ | Local RAG |
+| `local-chat` | `qwen3:8b` | 5.2 GB | 2026-08-02 | `500a1f067a9f` | General knowledge, 40K ctx. **thinking off** — ADR 0006 |
+| `local-code` | `qwen3-coder:30b` | 19 GB | 2026-08-02 | `06c1097efce0` | 30B MoE, ~3B active, 256K ctx. Runs at ~7B speed |
+| `local-big` | `gpt-oss:20b` | 13 GB | 2026-08-02 | `17052f91a42e` | Reasoning. Replaced llama3.3:70b — ADR 0004 |
+| `local-embed` | `nomic-embed-text` | 0.3 GB | 2026-08-01 | `0a109f422b47` | Local RAG |
 | `cloud-cheap` | `gemini-3.5-flash` | — | 2026-08-01 | n/a | 1M ctx, cheap. Bulk non-sensitive work |
 
 **Resident total: 37.5 GB of ~48 GB.** All four local models stay loaded; no
 switch evicts anything.
 
-Digests are **recorded and drift-checked**, not enforced — see below. Run
-`scripts/pin-digests.sh` once the bench output has been read, so the recorded
-state is a known-good one.
+Digests are **recorded and drift-checked** in `pins/digests.tsv`, not enforced —
+see below. Re-record with `scripts/pin-digests.sh` after any role change you trust.
 
 ## Dormant
 
@@ -32,7 +31,7 @@ key exists.
 
 | Role | Model | Blocked on |
 |---|---|---|
-| `cloud-code` | `claude-sonnet-5` | Anthropic API key — **deliberately unset**. Claude Code runs on the subscription; a Console key bills separately. Only worth opening if aider, Cursor or the laptop need Claude |
+| `cloud-code` | `claude-sonnet-5` | Anthropic API key — **deliberately unset**. A Console key bills separately from any Claude subscription. Only worth opening if aider, Zed or a laptop should reach Claude through the gateway |
 | `cloud-frontier` | `kimi-k3` via OpenRouter | OpenRouter key. Primary frontier route |
 | `cloud-frontier-direct` | `kimi-k3` via Moonshot | Moonshot key. Same price, best K3 caching |
 | `cloud-frontier-fast` | `kimi-k3` via Fireworks | Fireworks key. Dearest; throughput or LoRA only |

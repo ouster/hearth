@@ -257,8 +257,9 @@ PY
     # Prisma being importable says nothing about whether the SCHEMA was applied.
     # LiteLLM often skips its startup migration on a pip install, giving a
     # healthy gateway that 500s the moment anything touches a virtual key.
-    if podman container exists ai-stack-postgres 2>/dev/null; then
-      tbl=$(podman exec ai-stack-postgres psql -U litellm -d litellm -tAc \
+    PG="$(ai_container postgres)"
+    if podman container exists "$PG" 2>/dev/null; then
+      tbl=$(podman exec "$PG" psql -U litellm -d litellm -tAc \
         "select to_regclass('public.\"LiteLLM_VerificationToken\"')" 2>/dev/null | tr -d '[:space:]')
       if [ -n "$tbl" ]; then
         ok "database schema applied (LiteLLM_VerificationToken present)"
@@ -397,24 +398,26 @@ fi
 
 # `launchctl list | grep` misses agents in the gui domain on modern macOS —
 # it reported "not loaded" while the gateway was demonstrably serving :4000.
-if launchctl print "gui/$(id -u)/com.colinnevin.litellm" >/dev/null 2>&1; then
-  ok "launchd agent loaded"
-elif launchctl list 2>/dev/null | grep -q com.colinnevin.litellm; then
-  ok "launchd agent loaded (legacy list)"
+LITELLM_LABEL="$(ai_litellm_label)"
+if launchctl print "gui/$(id -u)/${LITELLM_LABEL}" >/dev/null 2>&1; then
+  ok "launchd agent loaded (${LITELLM_LABEL})"
+elif launchctl list 2>/dev/null | grep -q "${LITELLM_LABEL}"; then
+  ok "launchd agent loaded (legacy list, ${LITELLM_LABEL})"
 else
   wrn "launchd agent not found — deploy's restart step will not work"
+  echo "        expected label: ${LITELLM_LABEL} (override with HEARTH_LITELLM_LABEL)"
 fi
 
 # ---------------------------------------------------------------- exposure
 hdr "Exposure"
 
-LANIP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "")
-if [ -n "$LANIP" ]; then
-  if curl -s -m 3 -o /dev/null "http://${LANIP}:11434/api/tags" 2>/dev/null; then
-    wrn "ollama reachable at ${LANIP}:11434 with no auth — bypasses every routing rule (Phase 3)"
-  else
-    ok "ollama not reachable from the LAN address"
-  fi
+LANIP="$(ai_lan_ip)"
+if [ -z "$LANIP" ]; then
+  wrn "no LAN IP — cannot verify Ollama is closed to the network (set HEARTH_LAN_IP)"
+elif curl -s -m 3 -o /dev/null "http://${LANIP}:11434/api/tags" 2>/dev/null; then
+  wrn "ollama reachable at ${LANIP}:11434 with no auth — bypasses every routing rule"
+else
+  ok "ollama not reachable from the LAN address (${LANIP})"
 fi
 
 # ---------------------------------------------------------------- hygiene

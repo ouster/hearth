@@ -15,12 +15,12 @@ up()   { printf '  \033[32m●\033[0m %-22s %s\n' "$1" "$2"; }
 down() { printf '  \033[31m○\033[0m %-22s %s\n' "$1" "$2"; }
 warn() { printf '  \033[33m◐\033[0m %-22s %s\n' "$1" "$2"; }
 
-echo "ai-stack"
+echo "hearth"
 echo
 
 # ---------------------------------------------------------------- core
 if curl -s -m 3 -o /dev/null http://127.0.0.1:11434/api/tags 2>/dev/null; then
-  if [ -f "$HOME/Library/LaunchAgents/com.colinnevin.ollama.plist" ]; then
+  if [ -f "$HOME/Library/LaunchAgents/$(ai_ollama_label).plist" ]; then
     up "ollama" "127.0.0.1:11434 (service)"
   else
     up "ollama" "127.0.0.1:11434 (app — will not survive reboot)"
@@ -38,14 +38,14 @@ fi
 if command -v podman >/dev/null 2>&1; then
   if podman info >/dev/null 2>&1; then
     up "podman machine" "running"
-    for c in ai-stack-postgres:5433 ai-stack-searxng:8888 ai-stack-webui:3000; do
-      name="${c%%:*}"; port="${c##*:}"
-      label="${name#ai-stack-}"
+    for spec in postgres:5433 searxng:8888 webui:3000; do
+      kind="${spec%%:*}"; port="${spec##*:}"
+      name="$(ai_container "$kind")"
       if podman container exists "$name" 2>/dev/null; then
         st=$(podman inspect -f '{{.State.Status}}' "$name" 2>/dev/null)
-        [ "$st" = "running" ] && up "$label" ":${port}" || down "$label" "$st — podman start ${name}"
+        [ "$st" = "running" ] && up "$kind" ":${port}" || down "$kind" "$st — podman start ${name}"
       else
-        warn "$label" "not created"
+        warn "$kind" "not created"
       fi
     done
   else

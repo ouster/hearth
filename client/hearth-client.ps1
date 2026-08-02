@@ -1,54 +1,66 @@
-# ai-stack client for Windows PowerShell.
+# hearth client for Windows PowerShell.
 #
 #   notepad $PROFILE
-#   # add:  . "$HOME\.ai-stack-client.ps1"
+#   # add:  . "$HOME\.hearth-client.ps1"
 #
 # PowerShell 5.1 (ships with Windows) and 7+ both work. No WSL needed.
 #
-# Set before dot-sourcing, or edit the defaults below:
-#   $env:AI_STACK_GATEWAY   e.g. http://192.168.50.154:4000
-#   the key goes in         $HOME\.ai-stack-key
+# Required before dot-sourcing:
+#   $env:HEARTH_GATEWAY   e.g. http://192.168.1.10:4000
+#   the key goes in         $HOME\.hearth-key
 #
 # No Ollama here and nothing is downloaded. Every request goes to the gateway
-# on the Mac Studio, which does the inference and the routing. If that machine
-# is off, none of this works — by design.
+# host, which does the inference and the routing. If that machine is off, none
+# of this works — by design.
 
-if (-not $env:AI_STACK_GATEWAY) { $env:AI_STACK_GATEWAY = "http://192.168.50.154:4000" }
+if (-not $env:HEARTH_GATEWAY -and $env:AI_STACK_GATEWAY) {
+    $env:HEARTH_GATEWAY = $env:AI_STACK_GATEWAY
+}
+if (-not $env:HEARTH_GATEWAY) {
+    Write-Host "hearth: set `$env:HEARTH_GATEWAY first (e.g. http://HOST:4000)" -ForegroundColor Yellow
+    Write-Host "          Run scripts/client-setup.sh on the gateway host for copy-paste instructions." -ForegroundColor Yellow
+    return
+}
 
-$script:AiStackKeyFile = Join-Path $HOME ".ai-stack-key"
-if (Test-Path $script:AiStackKeyFile) {
-    $env:AI_STACK_KEY = (Get-Content $script:AiStackKeyFile -Raw).Trim()
+$script:HearthKeyFile = Join-Path $HOME ".hearth-key"
+$script:LegacyKeyFile = Join-Path $HOME ".ai-stack-key"
+if (Test-Path $script:HearthKeyFile) {
+    $env:HEARTH_KEY = (Get-Content $script:HearthKeyFile -Raw).Trim()
+} elseif (Test-Path $script:LegacyKeyFile) {
+    $env:HEARTH_KEY = (Get-Content $script:LegacyKeyFile -Raw).Trim()
+} elseif ($env:AI_STACK_KEY) {
+    $env:HEARTH_KEY = $env:AI_STACK_KEY
 }
 
 # OpenAI-compatible, so most tools pick these up with no further config.
-$env:OPENAI_API_BASE = "$($env:AI_STACK_GATEWAY)/v1"
-$env:OPENAI_BASE_URL = "$($env:AI_STACK_GATEWAY)/v1"
-$env:OPENAI_API_KEY  = $env:AI_STACK_KEY
+$env:OPENAI_API_BASE = "$($env:HEARTH_GATEWAY)/v1"
+$env:OPENAI_BASE_URL = "$($env:HEARTH_GATEWAY)/v1"
+$env:OPENAI_API_KEY  = $env:HEARTH_KEY
 
 function Get-AiStackHeaders {
-    if (-not $env:AI_STACK_KEY) {
+    if (-not $env:HEARTH_KEY) {
         Write-Host "No key. Put it in $($script:AiStackKeyFile)" -ForegroundColor Yellow
         return $null
     }
-    @{ "Authorization" = "Bearer $($env:AI_STACK_KEY)"; "Content-Type" = "application/json" }
+    @{ "Authorization" = "Bearer $($env:HEARTH_KEY)"; "Content-Type" = "application/json" }
 }
 
 function ai-ping {
-    Write-Host -NoNewline "gateway $($env:AI_STACK_GATEWAY) ... "
+    Write-Host -NoNewline "gateway $($env:HEARTH_GATEWAY) ... "
     try {
-        Invoke-RestMethod -Uri "$($env:AI_STACK_GATEWAY)/health/readiness" -TimeoutSec 5 | Out-Null
+        Invoke-RestMethod -Uri "$($env:HEARTH_GATEWAY)/health/readiness" -TimeoutSec 5 | Out-Null
         Write-Host "up" -ForegroundColor Green
     } catch {
         Write-Host "UNREACHABLE" -ForegroundColor Red
         Write-Host "  - is the Mac Studio awake?"
-        Write-Host "  - same network? try: Test-NetConnection $($env:AI_STACK_GATEWAY -replace 'https?://','') -Port 4000"
+        Write-Host "  - same network? try: Test-NetConnection $($env:HEARTH_GATEWAY -replace 'https?://','') -Port 4000"
     }
 }
 
 function ai-models {
     $h = Get-AiStackHeaders; if (-not $h) { return }
     try {
-        $r = Invoke-RestMethod -Uri "$($env:AI_STACK_GATEWAY)/v1/models" -Headers $h -TimeoutSec 15
+        $r = Invoke-RestMethod -Uri "$($env:HEARTH_GATEWAY)/v1/models" -Headers $h -TimeoutSec 15
         Write-Host "roles this key can use:"
         $r.data | ForEach-Object { Write-Host "  $($_.id)" }
     } catch {
@@ -72,7 +84,7 @@ function ai-ask {
     } | ConvertTo-Json -Depth 5
 
     try {
-        $r = Invoke-RestMethod -Uri "$($env:AI_STACK_GATEWAY)/v1/chat/completions" `
+        $r = Invoke-RestMethod -Uri "$($env:HEARTH_GATEWAY)/v1/chat/completions" `
                                -Method Post -Headers $h -Body $body -TimeoutSec 600
         Write-Output $r.choices[0].message.content
     } catch {
@@ -89,4 +101,4 @@ function ask-fast  { ai-ask local-chat  @args }
 function ask-big   { ai-ask local-big   @args }   # reasoning
 function ask-cloud { ai-ask cloud-cheap @args }   # leaves the machine
 
-Write-Host "ai-stack client loaded. Try: ai-ping, ai-models, ask-chat ""say hello""" -ForegroundColor DarkGray
+Write-Host "hearth client loaded. Try: ai-ping, ai-models, ask-chat ""say hello""" -ForegroundColor DarkGray

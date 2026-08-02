@@ -12,10 +12,11 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "${ROOT}/scripts/lib.sh"
 CFG="${ROOT}/litellm/config.yaml"
 LIVE="$HOME/.config/litellm/config.yaml"
-BACKUP="$HOME/.config/litellm/config.yaml.pre-ai-stack"
-AGENT="gui/$(id -u)/com.colinnevin.litellm"
+BACKUP="$HOME/.config/litellm/config.yaml.pre-hearth"
+AGENT="$(ai_litellm_agent)"
 
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 ok()   { printf '    \033[32mok\033[0m %s\n' "$1"; }

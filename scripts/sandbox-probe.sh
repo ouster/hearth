@@ -178,7 +178,7 @@ else
 fi
 
 # 4d. Writes outside must fail. Use a path we then verify did NOT appear.
-OUTSIDE="$HOME/.ai-stack-sandbox-canary"
+OUTSIDE="$HOME/.hearth-sandbox-canary"
 rm -f "$OUTSIDE" 2>/dev/null
 $SB /bin/sh -c "echo escaped > '$OUTSIDE'" 2>/dev/null
 if [ -f "$OUTSIDE" ]; then

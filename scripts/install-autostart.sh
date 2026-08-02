@@ -11,8 +11,9 @@
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "${ROOT}/scripts/lib.sh"
 
-LABEL="com.colinnevin.ai-stack-boot"
+LABEL="$(ai_boot_label)"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
 
 ok()  { printf '  \033[32mOK\033[0m    %s\n' "$1"; }
@@ -22,9 +23,9 @@ check() {
   echo "What survives a reboot:"
   echo
 
-  launchctl print "gui/$(id -u)/com.colinnevin.litellm" >/dev/null 2>&1 \
-    && ok "LiteLLM — launchd agent, KeepAlive" \
-    || gap "LiteLLM — launchd agent not loaded"
+  launchctl print "$(ai_litellm_agent)" >/dev/null 2>&1 \
+    && ok "LiteLLM — launchd agent ($(ai_litellm_label)), KeepAlive" \
+    || gap "LiteLLM — launchd agent not loaded (expected $(ai_litellm_label))"
 
   if [ -f "$HOME/Library/LaunchAgents/com.user.setollamahost.plist" ]; then
     ok "OLLAMA_HOST — set at login (localhost binding survives)"
@@ -32,8 +33,8 @@ check() {
     gap "OLLAMA_HOST — not set at login; Ollama may reopen on all interfaces"
   fi
 
-  if [ -f "$HOME/Library/LaunchAgents/com.colinnevin.ollama.plist" ]; then
-    ok "Ollama — launchd service, KeepAlive"
+  if [ -f "$HOME/Library/LaunchAgents/$(ai_ollama_label).plist" ]; then
+    ok "Ollama — launchd service ($(ai_ollama_label)), KeepAlive"
   elif osascript -e 'tell application "System Events" to get the name of every login item' 2>/dev/null | grep -qi ollama; then
     ok "Ollama — opens at login (app)"
   else
@@ -76,16 +77,16 @@ case "${1:---check}" in
     <key>RunAtLoad</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>${HOME}/Library/Logs/ai-stack-boot.log</string>
+    <string>${HOME}/Library/Logs/hearth-boot.log</string>
     <key>StandardErrorPath</key>
-    <string>${HOME}/Library/Logs/ai-stack-boot.log</string>
+    <string>${HOME}/Library/Logs/hearth-boot.log</string>
 </dict>
 </plist>
 EOF
     launchctl unload "$PLIST" 2>/dev/null
     launchctl load "$PLIST" 2>/dev/null
     echo "installed ${PLIST}"
-    echo "log: ~/Library/Logs/ai-stack-boot.log"
+    echo "log: ~/Library/Logs/hearth-boot.log"
     echo
     echo "Running it now to confirm it works:"
     bash "${ROOT}/scripts/boot.sh"

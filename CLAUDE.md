@@ -1,7 +1,6 @@
-# ai-stack
+# Hearth
 
-Private-first AI gateway. Ollama + LiteLLM local, Claude / Gemini / Fireworks cloud.
-Host: Mac Studio M4 Max, 64 GB.
+Local-first AI gateway. Ollama + LiteLLM local, optional cloud tiers.
 
 Read `docs/ROUTING.md` before suggesting any routing change.
 
@@ -20,10 +19,10 @@ Read `docs/ROUTING.md` before suggesting any routing change.
    change; across a privacy boundary it is a leak. If every local role is down, fail
    loudly. Any change adding a cloud model to a `local-*` fallback list is a bug.
 
-3. **Privacy is structural.** Client matter data, PII, credentials, and anything under
-   `stepup-conveyancing` or `auslaw-mcp` containing real data goes to `local-*` only,
-   enforced by the `private` virtual key's scope. Refuse to write code or config that
-   could route that class of data to a cloud endpoint.
+3. **Privacy is structural.** Client matter data, PII, credentials, and any repo or
+   path the operator has flagged as sensitive goes to `local-*` only, enforced by
+   the `private` virtual key's scope. Refuse to write code or config that could
+   route that class of data to a cloud endpoint.
 
 4. **Your model knowledge is stale.** Before asserting a price, context window,
    benchmark, or that a model exists — search, and give the date of what you found.
@@ -62,8 +61,8 @@ Read `docs/ROUTING.md` before suggesting any routing change.
 
 ## Workflow
 
-Plan → Colin refines → Colin approves → build. Do not start building because a plan
-looks obviously right.
+Plan → operator refines → operator approves → build. Do not start building because
+a plan looks obviously right.
 
 Be concise. No preamble, no restating the question, no long summary of what you did.
 
@@ -71,7 +70,7 @@ Be concise. No preamble, no restating the question, no long summary of what you 
 
 ```
 CLAUDE.md            this file
-AGENTS.md            same rules, for Cursor and aider
+AGENTS.md            same rules, for Zed and aider
 docs/
   PLAN.md            build plan and status
   ARCHITECTURE.md    how the gateway is wired

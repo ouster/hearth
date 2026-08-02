@@ -15,8 +15,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
 ai_load_env "$ROOT"
 
-NAME=ai-stack-webui
-VOLUME=ai-stack-webui-data
+NAME="$(ai_container webui)"
+VOLUME="$(ai_volume webui-data)"
 IMAGE=ghcr.io/open-webui/open-webui:main
 PORT=3000
 
@@ -78,7 +78,7 @@ case "$CMD" in
       -e OPENAI_API_BASE_URL="http://host.containers.internal:4000/v1" \
       -e OPENAI_API_KEY="$KEY" \
       -e ENABLE_OLLAMA_API=False \
-      -e WEBUI_NAME="ai-stack (${SCOPE})" \
+      -e WEBUI_NAME="hearth (${SCOPE})" \
       -e ENABLE_SIGNUP=False \
       -e TASK_MODEL_EXTERNAL="local-chat" \
       -e DEFAULT_MODELS="local-chat" \
@@ -136,9 +136,9 @@ case "$CMD" in
   WEB SEARCH — the env vars above are NOT sufficient on their own.
     Open WebUI stores these as config values in its database, and the DATABASE
     VALUE TAKES PRECEDENCE over the environment. The env vars only seed a fresh
-    database. This container reuses the ai-stack-webui-data volume, so whatever
+    database. This container reuses the hearth-webui-data volume, so whatever
     was written on first run wins — which is why the toggle can be missing even
-    though 'podman exec ai-stack-webui env' shows it enabled.
+    though 'podman exec hearth-webui env' shows it enabled.
 
     Turn it on where it actually counts:
       Admin Panel -> Settings -> Web Search -> Enable Web Search

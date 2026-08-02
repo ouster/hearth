@@ -1,4 +1,4 @@
-# ai-stack gateway
+# hearth gateway
 # The ONLY file that names concrete models. Everything else uses roles.
 # Changes here need a matching entry in docs/MODELS.md and an ADR.
 #
@@ -60,9 +60,8 @@ model_list:
   # kickstart the agent, then run scripts/healthcheck.sh.
 
   # cloud-code — needs a pay-per-token Anthropic API key, which is NOT the same
-  # as a Claude subscription. Claude Code already runs on the subscription and
-  # does not need this. Only worth opening if you want Claude available to
-  # aider, Cursor-via-gateway, scripts, or the laptop.
+  # as a Claude subscription. Only worth opening if you want Claude available to
+  # aider, Zed, scripts, or a laptop through the gateway.
   #
   # - model_name: cloud-code
   #   litellm_params:

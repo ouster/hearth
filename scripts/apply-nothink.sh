@@ -46,7 +46,7 @@ PY
 }
 
 restart() {
-  launchctl kickstart -k "gui/$(id -u)/com.colinnevin.litellm" 2>/dev/null
+  launchctl kickstart -k "$(ai_litellm_agent)" 2>/dev/null
   for _ in $(seq 1 30); do
     curl -s -m 3 -o /dev/null "${GATEWAY}/health/readiness" && return 0
     sleep 1

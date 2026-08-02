@@ -9,8 +9,6 @@
 
 set -euo pipefail
 
-NAME=ai-stack-postgres
-VOLUME=ai-stack-pgdata
 IMAGE=docker.io/library/postgres:16-alpine
 PORT=5433
 
@@ -18,6 +16,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENVF="${ROOT}/litellm/.env"
 . "${ROOT}/scripts/lib.sh"
 ai_load_env "$ROOT"
+
+# Prefer an existing ai-stack-* container/volume so rename does not orphan data.
+NAME="$(ai_container postgres)"
+VOLUME="$(ai_volume pgdata)"
 
 # Diagnose properly. "set POSTGRES_PASSWORD in litellm/.env" is unhelpful when
 # the real problem is that the file does not exist at all.
@@ -155,7 +157,7 @@ case "${1:-status}" in
       echo "OK — LiteLLM_VerificationToken exists."
       echo
       echo "RESTART THE GATEWAY NOW:"
-      echo "  launchctl kickstart -k gui/\$(id -u)/com.colinnevin.litellm"
+      echo "  launchctl kickstart -k $(ai_litellm_agent)"
       echo
       echo "A gateway that started before the schema existed comes up with an"
       echo "uninitialised router — every role reports 'no healthy deployments'"

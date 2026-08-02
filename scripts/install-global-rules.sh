@@ -17,8 +17,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC="${ROOT}/rules/global-rules.md"
 DEST="${CLAUDE_GLOBAL:-$HOME/.claude/CLAUDE.md}"
 
-BEGIN="<!-- BEGIN ai-stack global rules -->"
-END="<!-- END ai-stack global rules -->"
+BEGIN="<!-- BEGIN hearth global rules -->"
+END="<!-- END hearth global rules -->"
 
 [ -f "$SRC" ] || { echo "missing ${SRC}"; exit 1; }
 
@@ -60,7 +60,7 @@ fi
   echo "$BEGIN"
   echo "# Global engineering rules"
   echo
-  echo "Source: ~/dev/ai-stack/rules/global-rules.md — edit there, then re-run"
+  echo "Source: ~/dev/hearth/rules/global-rules.md — edit there, then re-run"
   echo "scripts/install-global-rules.sh. Do not edit between these markers."
   echo
   printf '%s\n' "$BODY"

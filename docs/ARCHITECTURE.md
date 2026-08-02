@@ -1,44 +1,44 @@
 # Architecture
 
-Host: Mac Studio M4 Max, 64 GB, macOS 26.4, `192.168.50.154`.
+Reference host shape: Apple Silicon Mac, 64 GB unified memory, macOS. LAN clients
+reach the gateway; Ollama stays on localhost.
 
 ## Shape
 
 ```mermaid
-flowchart LR
-    cursor["Cursor"]
-    aider["aider"]
-    scripts["scripts"]
-    webui["Open WebUI :3000"]
-    laptop["laptops on the LAN"]
+flowchart TB
+    subgraph onHost["On the gateway host"]
+        aider["aider"]
+        zed["Zed"]
+        scripts["scripts"]
+        webui["Open WebUI :3000"]
+    end
 
-    gw{{"LiteLLM gateway :4000<br/>roles · keys · spend"}}
-    pg[("Postgres :5433<br/>keys · spend")]
+    laptop["LAN laptop"]
 
-    ollama["Ollama 127.0.0.1:11434<br/>chat · code · big · embed"]
-    cloud["Gemini · OpenRouter<br/>Moonshot · Fireworks · Anthropic"]
+    gw{{"LiteLLM :4000<br/>roles / key scope / spend"}}
+    pg[("Postgres :5433")]
 
-    cc["Claude Code"]
-    anth["Anthropic subscription"]
+    ollama["Ollama 127.0.0.1:11434<br/>local-chat / code / big / embed"]
+    cloud["Cloud roles<br/>Gemini live; others dormant"]
 
-    cursor --> gw
     aider --> gw
+    zed --> gw
     scripts --> gw
     webui --> gw
-    laptop --> gw
+    laptop -->|"lan or lan-cloud key"| gw
 
     gw --> ollama
-    gw --> cloud
+    gw -->|"allowed keys only"| cloud
+    gw -.->|"private key refused"| cloud
     gw <--> pg
-
-    cc ==>|"documented exception"| anth
 
     classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
     classDef cloudCls fill:#FAEEDA,stroke:#854F0B,color:#633806
     classDef gwCls fill:#E6F1FB,stroke:#185FA5,color:#0C447C
 
-    class ollama localCls
-    class cloud,anth cloudCls
+    class ollama,pg localCls
+    class cloud cloudCls
     class gw gwCls
 ```
 
@@ -47,11 +47,12 @@ exactly two files: `litellm/config.yaml` and `docs/MODELS.md`.
 
 ## Why a gateway at all
 
-Before this, aider talked to Ollama directly and Cursor talked to cloud providers
-directly. That meant four places to edit when a model changed, no spend visibility,
-no request log, and no way to enforce that client data stayed local. One gateway
-gives a single swap point, one audit trail, and — most importantly — a place where
-the privacy boundary can be *structural* rather than a rule you remember.
+Before this, aider talked to Ollama directly and other tools talked to cloud
+providers directly. That meant several places to edit when a model changed, no
+spend visibility, no request log, and no way to enforce that client data stayed
+local. One gateway gives a single swap point, one audit trail, and — most
+importantly — a place where the privacy boundary can be *structural* rather than
+a rule you remember.
 
 ## The three layers
 
@@ -64,8 +65,8 @@ script, or IDE setting changes. See `docs/MODELS.md`.
 
 | Key | Reaches | Used by |
 |---|---|---|
-| `private` | `local-*` only | conveyancing work, Open WebUI default |
-| `general` | everything live | this machine — Cursor, aider, scripts |
+| `private` | `local-*` only | sensitive work, Open WebUI default |
+| `general` | everything live | this machine — aider, Zed, scripts |
 | `lan` | `local-*` + `cloud-cheap` | other machines, everyday |
 | `lan-cloud` | everything live | laptop, when it needs real cloud models |
 
@@ -81,9 +82,11 @@ resilience. `scripts/audit-fallbacks.sh` fails the build if that reappears.
 
 ## Process supervision
 
-LiteLLM runs under launchd as `com.colinnevin.litellm`, which executes
-`~/.config/litellm/run-litellm.sh`. That script sources `~/.config/litellm/env`
-and starts LiteLLM with `--config ~/.config/litellm/config.yaml`.
+LiteLLM runs under launchd (default label `com.hearth.litellm`; existing
+installs may keep a personal label — scripts resolve via `ai_litellm_label` in
+`scripts/lib.sh`). The agent executes `~/.config/litellm/run-litellm.sh`, which
+sources `~/.config/litellm/env` and starts LiteLLM with
+`--config ~/.config/litellm/config.yaml`.
 
 `~/.config/litellm/config.yaml` is a **symlink** into this repo. That is the whole
 deployment mechanism: the plist and wrapper script are never modified, so rollback
@@ -98,7 +101,7 @@ Postgres.
 | File | Read by | Contains |
 |---|---|---|
 | `~/.config/litellm/env` | launchd, via `run-litellm.sh` | provider keys, `LITELLM_MASTER_KEY`, `DATABASE_URL` |
-| `~/dev/ai-stack/litellm/.env` | `scripts/*.sh` only | `POSTGRES_PASSWORD`, virtual keys, a copy of `DATABASE_URL` |
+| `~/dev/hearth/litellm/.env` | `scripts/*.sh` only | `POSTGRES_PASSWORD`, virtual keys, a copy of `DATABASE_URL` |
 
 **launchd does not read the repo's `.env`, and it does not read `~/.zshrc`.** A
 variable exported in your shell will look fine to a naive check and then fail at
@@ -143,7 +146,7 @@ unrestricted; the full reasoning and the accepted residual risk are in
   unreachable from the LAN address. See ADR 0003.
 - ~~No agent sandboxing~~ — **closed 2026-08-02** for aider and Zed. Egress and
   write confinement verified. See ADR 0007.
-- **`auslaw-mcp` is unaudited** — unknown tool surface, adjacent to real client
+- **Untrusted MCP servers are unaudited** — unknown tool surface, adjacent to real client
   data. Now the largest unknown; see `docs/THREAT-MODEL.md` §3.
 - **Roles are not digest-pinned yet.** Ollama tags are mutable pointers, so a pull
   can change the weights behind a role. Pinning lands with the bench harness.

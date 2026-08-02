@@ -5,20 +5,23 @@
 | Piece | Where | Managed by |
 |---|---|---|
 | Ollama | `127.0.0.1:11434` — localhost only since ADR 0003 | Ollama.app |
-| LiteLLM gateway | `:4000` | launchd, `com.colinnevin.litellm` |
-| Postgres | `127.0.0.1:5433` | Podman, `ai-stack-postgres` |
-| Open WebUI | `127.0.0.1:3000` | Podman, `ai-stack-webui` |
+| LiteLLM gateway | `:4000` | launchd (`com.hearth.litellm` by default) |
+| Postgres | `127.0.0.1:5433` | Podman, `hearth-postgres` |
+| Open WebUI | `127.0.0.1:3000` | Podman, `hearth-webui` |
 
-Config: `~/dev/ai-stack/litellm/config.yaml` (symlinked from `~/.config/litellm/config.yaml`)
+Config: `<repo>/litellm/config.yaml` (symlinked from `~/.config/litellm/config.yaml`)
 Launch wrapper: `~/.config/litellm/run-litellm.sh`
 Logs: `~/Library/Logs/litellm.log`, `litellm.error.log`
+
+Launchd label overrides (optional): `HEARTH_LITELLM_LABEL`, `HEARTH_OLLAMA_LABEL`,
+`HEARTH_BOOT_LABEL`. Scripts auto-discover an already-installed agent.
 
 ### Two env files — know which is which
 
 **`~/.config/litellm/env`** is the only one launchd reads. Provider keys,
 `LITELLM_MASTER_KEY`, `DATABASE_URL` go here.
 
-**`~/dev/ai-stack/litellm/.env`** is read by `scripts/*.sh` only —
+**`<repo>/litellm/.env`** is read by `scripts/*.sh` only —
 `POSTGRES_PASSWORD`, the virtual keys, and a copy of `DATABASE_URL` for `db.sh`.
 
 launchd reads neither the repo `.env` nor `~/.zshrc`. A var exported in your shell
@@ -34,26 +37,29 @@ brew install podman
 podman machine init --cpus 2 --memory 2048 --disk-size 20
 podman machine start
 
-cd ~/dev/ai-stack
+cd /path/to/hearth
 cp litellm/.env.example litellm/.env    # fill in keys + a real POSTGRES_PASSWORD
 scripts/db.sh up
 
 set -a; source litellm/.env; set +a
 scripts/create-keys.sh                  # paste the four keys back into .env
+scripts/deploy.sh                       # symlink + restart + verify
 scripts/healthcheck.sh
 ```
 
-Point the running gateway at this repo without touching launchd — `run-litellm.sh`
-already loads `~/.config/litellm/config.yaml`, so replace that file with a symlink:
+Or point the running gateway at this repo by hand — `run-litellm.sh` already
+loads `~/.config/litellm/config.yaml`, so replace that file with a symlink:
 
 ```bash
-mv ~/.config/litellm/config.yaml ~/.config/litellm/config.yaml.pre-ai-stack
-ln -s ~/dev/ai-stack/litellm/config.yaml ~/.config/litellm/config.yaml
-launchctl kickstart -k gui/$(id -u)/com.colinnevin.litellm
+REPO=/path/to/hearth
+mv ~/.config/litellm/config.yaml ~/.config/litellm/config.yaml.pre-hearth
+ln -s "$REPO/litellm/config.yaml" ~/.config/litellm/config.yaml
+# restart: scripts/aliases.zsh defines ai-restart, or:
+launchctl kickstart -k "gui/$(id -u)/com.hearth.litellm"
 ```
 
 Provider keys go in `~/.config/litellm/env`, which `run-litellm.sh` sources.
-Rollback is `mv` the `.pre-ai-stack` file back and kickstart.
+Rollback is `mv` the `.pre-hearth` file back and kickstart.
 
 ## Surviving a reboot
 
@@ -93,14 +99,14 @@ sudo pmset -a womp 1         # wake on network access
 sudo pmset -c displaysleep 10   # displays can still sleep, that is free
 ```
 
-`womp` is the interesting one — with it a laptop reaching the Studio can wake
+`womp` is the interesting one — with it a laptop reaching the host can wake
 it. Without it, asleep means unavailable.
 
 ## Everyday
 
 ```bash
-# restart the gateway
-launchctl kickstart -k gui/$(id -u)/com.colinnevin.litellm
+# restart the gateway (or: source scripts/aliases.zsh && ai-restart)
+launchctl kickstart -k "gui/$(id -u)/com.hearth.litellm"
 
 # is it up
 curl -s localhost:4000/health/readiness | python3 -m json.tool
@@ -138,15 +144,15 @@ reachable.
 can ssh, and encrypts the traffic:
 
 ```bash
-# on the laptop
-ssh -N -L 3000:127.0.0.1:3000 colin@192.168.50.154
+# on the laptop — USER@HOST is the gateway machine
+ssh -N -L 3000:127.0.0.1:3000 USER@HOST
 # then browse to http://127.0.0.1:3000
 ```
 
 **Alternative: bind to the LAN.**
 
 ```bash
-scripts/webui.sh up --lan     # then http://192.168.50.154:3000
+scripts/webui.sh up --lan     # then http://<LAN-IP>:3000
 ```
 
 Open WebUI has its own login, so this is not wide open. But it is another
@@ -186,8 +192,8 @@ Treat enabling them as an ADR-worthy decision, not a settings change. See
 Open WebUI treats these as config values stored in its **database**, and the
 database value **takes precedence over the environment**. Environment variables
 only seed a *fresh* database. Because `webui.sh up` recreates the container but
-keeps the `ai-stack-webui-data` volume, whatever was written on first run wins —
-so the toggle can be absent even though `podman exec ai-stack-webui env` clearly
+keeps the `hearth-webui-data` volume, whatever was written on first run wins —
+so the toggle can be absent even though `podman exec hearth-webui env` clearly
 shows `ENABLE_WEB_SEARCH=True`.
 
 Enable it where it actually counts:
@@ -296,7 +302,8 @@ The gateway listens on `:4000` across interfaces and is protected by key auth, s
 other machines just need a base URL and a key:
 
 ```bash
-export OPENAI_API_BASE=http://192.168.50.154:4000/v1
+# Prefer: scripts/client-setup.sh lan   (fills in this host's LAN IP)
+export OPENAI_API_BASE=http://<LAN-IP>:4000/v1
 export OPENAI_API_KEY=<the lan or lan-cloud key>
 ```
 

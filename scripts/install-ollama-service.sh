@@ -18,8 +18,11 @@
 # :11434, so it keeps working exactly as before.
 
 set -uo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "${ROOT}/scripts/lib.sh"
 
-LABEL="com.colinnevin.ollama"
+# Fresh installs get com.hearth.ollama; an existing personal label is reused.
+LABEL="$(ai_ollama_label)"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
 BIND="${OLLAMA_BIND:-127.0.0.1:11434}"
 MODELS="${OLLAMA_MODELS:-/Users/Shared/Ollama/models}"

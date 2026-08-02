@@ -33,16 +33,25 @@ if [ -z "$KEY" ]; then
   exit 1
 fi
 
-LANIP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "192.168.50.154")
+LANIP="$(ai_lan_ip)"
+if [ -z "$LANIP" ]; then
+  echo "No LAN IP detected. Connect to a network, or set HEARTH_LAN_IP."
+  exit 1
+fi
 GATEWAY="http://${LANIP}:4000"
+# Path on this host as seen by scp (tilde form when under $HOME).
+HOST_REPO_REMOTE="${ROOT}"
+case "$ROOT" in
+  "$HOME"/*) HOST_REPO_REMOTE="~${ROOT#"$HOME"}" ;;
+esac
 
 if [ "${2:-}" = "--install" ] && [ -n "${3:-}" ]; then
   TARGET="$3"
   echo "Installing to ${TARGET}..."
-  scp "${ROOT}/client/ai-stack-client.sh" "${TARGET}:~/.ai-stack-client.sh" || exit 1
-  ssh "$TARGET" "printf '%s' '${KEY}' > ~/.ai-stack-key && chmod 600 ~/.ai-stack-key"
-  ssh "$TARGET" "grep -q ai-stack-client \$HOME/.zshrc 2>/dev/null || echo 'export AI_STACK_GATEWAY=${GATEWAY}; source ~/.ai-stack-client.sh' >> \$HOME/.zshrc"
-  ssh "$TARGET" "grep -q ai-stack-client \$HOME/.bashrc 2>/dev/null || echo 'export AI_STACK_GATEWAY=${GATEWAY}; source ~/.ai-stack-client.sh' >> \$HOME/.bashrc"
+  scp "${ROOT}/client/hearth-client.sh" "${TARGET}:~/.hearth-client.sh" || exit 1
+  ssh "$TARGET" "printf '%s' '${KEY}' > ~/.hearth-key && chmod 600 ~/.hearth-key"
+  ssh "$TARGET" "grep -q hearth-client \$HOME/.zshrc 2>/dev/null || echo 'export HEARTH_GATEWAY=${GATEWAY}; source ~/.hearth-client.sh' >> \$HOME/.zshrc"
+  ssh "$TARGET" "grep -q hearth-client \$HOME/.bashrc 2>/dev/null || echo 'export HEARTH_GATEWAY=${GATEWAY}; source ~/.hearth-client.sh' >> \$HOME/.bashrc"
   echo "done. On ${TARGET}: open a new shell, then 'ai-ping' and 'ai-models'."
   exit 0
 fi
@@ -50,7 +59,7 @@ fi
 if $WINDOWS; then
 cat <<EOF
 =============================================================
- ai-stack client setup — WINDOWS — ${SCOPE} key (${DESC})
+ hearth client setup — WINDOWS — ${SCOPE} key (${DESC})
 =============================================================
 
 Three ways, easiest first.
@@ -61,19 +70,19 @@ A. WSL or Git Bash — the .sh works unchanged
 B. Native PowerShell (5.1 or 7+, no WSL needed)
 
    1. Copy the client
-      scp $(whoami)@${LANIP}:~/dev/ai-stack/client/ai-stack-client.ps1 \$HOME\.ai-stack-client.ps1
+      scp $(whoami)@${LANIP}:${HOST_REPO_REMOTE}/client/hearth-client.ps1 \$HOME\.hearth-client.ps1
 
    2. Store the key
-      '${KEY}' | Out-File -NoNewline \$HOME\.ai-stack-key
+      '${KEY}' | Out-File -NoNewline \$HOME\.hearth-key
 
       Then lock it down (Windows has no chmod):
-      icacls \$HOME\.ai-stack-key /inheritance:r /grant:r "\$env:USERNAME:(R)"
+      icacls \$HOME\.hearth-key /inheritance:r /grant:r "\$env:USERNAME:(R)"
 
    3. Load it every session
       notepad \$PROFILE
       # add these two lines:
-      \$env:AI_STACK_GATEWAY = "${GATEWAY}"
-      . "\$HOME\.ai-stack-client.ps1"
+      \$env:HEARTH_GATEWAY = "${GATEWAY}"
+      . "\$HOME\.hearth-client.ps1"
 
       If \$PROFILE does not exist:
       New-Item -ItemType File -Path \$PROFILE -Force
@@ -96,19 +105,19 @@ C. Nothing installed at all — just point any OpenAI-compatible tool at:
  Same caveats as any client
 -------------------------------------------------------------
 No Ollama, no models, no containers on this machine — inference happens
-on the Mac Studio. If it is asleep, nothing works.
+on the gateway host. If it is asleep, nothing works.
 
 Traffic is plain HTTP on your LAN. Fine at home, wrong on public wifi.
 Off-network, tunnel instead:
   ssh -N -L 4000:127.0.0.1:4000 $(whoami)@${LANIP}
-  \$env:AI_STACK_GATEWAY = "http://127.0.0.1:4000"
+  \$env:HEARTH_GATEWAY = "http://127.0.0.1:4000"
 EOF
 exit 0
 fi
 
 cat <<EOF
 =============================================================
- ai-stack client setup — ${SCOPE} key (${DESC})
+ hearth client setup — ${SCOPE} key (${DESC})
 =============================================================
 
 Run these ON THE OTHER MACHINE. Works on macOS (zsh) and Linux (bash).
@@ -116,24 +125,24 @@ Run these ON THE OTHER MACHINE. Works on macOS (zsh) and Linux (bash).
 1. Install the client shim
 
    mkdir -p ~/.local
-   scp $(whoami)@${LANIP}:~/dev/ai-stack/client/ai-stack-client.sh ~/.ai-stack-client.sh
+   scp $(whoami)@${LANIP}:${HOST_REPO_REMOTE}/client/hearth-client.sh ~/.hearth-client.sh
 
    (or copy the file by any means — it is plain shell, no dependencies)
 
 2. Store the key, readable only by you
 
-   printf '%s' '${KEY}' > ~/.ai-stack-key
-   chmod 600 ~/.ai-stack-key
+   printf '%s' '${KEY}' > ~/.hearth-key
+   chmod 600 ~/.hearth-key
 
 3. Wire it into your shell
 
    # macOS
-   echo 'export AI_STACK_GATEWAY=${GATEWAY}' >> ~/.zshrc
-   echo 'source ~/.ai-stack-client.sh'       >> ~/.zshrc
+   echo 'export HEARTH_GATEWAY=${GATEWAY}' >> ~/.zshrc
+   echo 'source ~/.hearth-client.sh'       >> ~/.zshrc
 
    # Linux
-   echo 'export AI_STACK_GATEWAY=${GATEWAY}' >> ~/.bashrc
-   echo 'source ~/.ai-stack-client.sh'       >> ~/.bashrc
+   echo 'export HEARTH_GATEWAY=${GATEWAY}' >> ~/.bashrc
+   echo 'source ~/.hearth-client.sh'       >> ~/.bashrc
 
 4. Open a new shell and check
 
@@ -144,16 +153,16 @@ Run these ON THE OTHER MACHINE. Works on macOS (zsh) and Linux (bash).
 5. Optional — aider
 
    pipx install aider-chat      # or: pip install --user aider-chat
-   ask "explain this repo"      # -> local-code, runs on the Mac Studio
+   ask "explain this repo"      # -> local-code, runs on the gateway host
 
 -------------------------------------------------------------
  What this machine does NOT need
 -------------------------------------------------------------
 No Ollama. No models downloaded. No Podman, no Postgres. Inference
-happens on the Mac Studio; the laptop only sends requests.
+happens on the gateway host; the laptop only sends requests.
 
-If the Studio is asleep or off, nothing works. That is the trade for
-not duplicating 37 GB of weights onto every device.
+If that host is asleep or off, nothing works. That is the trade for
+not duplicating tens of GB of weights onto every device.
 
 -------------------------------------------------------------
  Scope of the ${SCOPE} key
@@ -176,7 +185,7 @@ LAN. Fine at home; do NOT use it on cafe or hotel wifi. For that,
 tunnel over SSH instead:
 
   ssh -N -L 4000:127.0.0.1:4000 $(whoami)@${LANIP}
-  export AI_STACK_GATEWAY=http://127.0.0.1:4000
+  export HEARTH_GATEWAY=http://127.0.0.1:4000
 
 and never port-forward :4000 to the internet.
 EOF
