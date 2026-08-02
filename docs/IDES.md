@@ -123,6 +123,35 @@ queries it and writes correct entries into `settings.json`, backing up first.
 
 Worth re-running after any role change so context windows stay honest.
 
+### On a laptop
+
+Full walkthrough in `docs/LAPTOP.md`. In short — Zed installs normally and edits
+local files; only inference comes from the Studio. Two changes from the block
+above:
+
+```json
+"api_url": "http://192.168.50.154:4000/v1"
+```
+
+and use the **`lan`** key rather than `private`.
+
+`zed-litellm` works from the laptop too — point it at the same LAN address and
+it writes the model list with correct context windows.
+
+**Where the code lives is a separate question.** Zed edits files on the machine
+it runs on, so either:
+
+- clone the repo to the laptop and work normally through git, or
+- use Zed's **SSH remote projects** to open a directory on the Studio directly —
+  editing happens over SSH, the model call still goes to `:4000`.
+
+The second keeps one copy of the work and pairs well with the Studio being the
+machine that never sleeps. It also means the laptop needs no toolchain.
+
+If the Studio is asleep, Zed still opens and edits — you just lose the AI panel
+until it wakes. That degrades more gracefully than aider, which needs the
+gateway to start at all.
+
 ### Agent profiles — the reason Zed is here
 
 Zed's agent has **profiles with configurable tool access**. You can define one
