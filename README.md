@@ -79,6 +79,8 @@ flowchart TB
 
 ## Quick start
 
+**Laptop only?** Skip the host bootstrap — see [`docs/LAPTOP.md`](docs/LAPTOP.md).
+
 ```bash
 git clone <this-repo> hearth && cd hearth
 
@@ -127,12 +129,13 @@ Editors (aider + Zed): [`docs/IDES.md`](docs/IDES.md).
 
 ## LAN clients
 
-Laptops need **no Ollama and no model downloads**. On the gateway host:
+Laptops need **no Ollama and no model downloads**. Run this on the
+**gateway host** (it refuses on a laptop clone):
 
 ```bash
-scripts/client-setup.sh lan              # prints copy-paste instructions
-scripts/client-setup.sh lan --install user@laptop
-scripts/client-setup.sh lan --windows    # PowerShell path
+scripts/provision-client.sh lan              # prints copy-paste instructions
+scripts/provision-client.sh lan --install user@laptop
+scripts/provision-client.sh lan --windows    # PowerShell path
 ```
 
 Clients must set `HEARTH_GATEWAY` (there is no hardcoded host IP). Details:

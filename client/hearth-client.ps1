@@ -18,7 +18,7 @@ if (-not $env:HEARTH_GATEWAY -and $env:AI_STACK_GATEWAY) {
 }
 if (-not $env:HEARTH_GATEWAY) {
     Write-Host "hearth: set `$env:HEARTH_GATEWAY first (e.g. http://HOST:4000)" -ForegroundColor Yellow
-    Write-Host "          Run scripts/client-setup.sh on the gateway host for copy-paste instructions." -ForegroundColor Yellow
+    Write-Host "          Run scripts/provision-client.sh on the gateway host for copy-paste instructions." -ForegroundColor Yellow
     return
 }
 
@@ -32,14 +32,20 @@ if (Test-Path $script:HearthKeyFile) {
     $env:HEARTH_KEY = $env:AI_STACK_KEY
 }
 
+if (-not $env:HEARTH_KEY) {
+    Write-Host "hearth: no key — put the lan key in $script:HearthKeyFile" -ForegroundColor Yellow
+    Write-Host "          or run scripts/provision-client.sh on the gateway host." -ForegroundColor Yellow
+    return
+}
+
 # OpenAI-compatible, so most tools pick these up with no further config.
 $env:OPENAI_API_BASE = "$($env:HEARTH_GATEWAY)/v1"
 $env:OPENAI_BASE_URL = "$($env:HEARTH_GATEWAY)/v1"
 $env:OPENAI_API_KEY  = $env:HEARTH_KEY
 
-function Get-AiStackHeaders {
+function Get-HearthHeaders {
     if (-not $env:HEARTH_KEY) {
-        Write-Host "No key. Put it in $($script:AiStackKeyFile)" -ForegroundColor Yellow
+        Write-Host "No key. Put it in $($script:HearthKeyFile)" -ForegroundColor Yellow
         return $null
     }
     @{ "Authorization" = "Bearer $($env:HEARTH_KEY)"; "Content-Type" = "application/json" }
@@ -52,13 +58,14 @@ function ai-ping {
         Write-Host "up" -ForegroundColor Green
     } catch {
         Write-Host "UNREACHABLE" -ForegroundColor Red
-        Write-Host "  - is the Mac Studio awake?"
-        Write-Host "  - same network? try: Test-NetConnection $($env:HEARTH_GATEWAY -replace 'https?://','') -Port 4000"
+        Write-Host "  - is the gateway host awake?"
+        $hostOnly = $env:HEARTH_GATEWAY -replace 'https?://','' -replace '/.*$','' -replace ':\d+$',''
+        Write-Host "  - same network? try: Test-NetConnection $hostOnly -Port 4000"
     }
 }
 
 function ai-models {
-    $h = Get-AiStackHeaders; if (-not $h) { return }
+    $h = Get-HearthHeaders; if (-not $h) { return }
     try {
         $r = Invoke-RestMethod -Uri "$($env:HEARTH_GATEWAY)/v1/models" -Headers $h -TimeoutSec 15
         Write-Host "roles this key can use:"
@@ -73,7 +80,7 @@ function ai-ask {
     # ai-ask local-code "question" -> a specific role
     param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Words)
 
-    $h = Get-AiStackHeaders; if (-not $h) { return }
+    $h = Get-HearthHeaders; if (-not $h) { return }
     $role = "local-chat"
     if ($Words.Count -gt 1 -and $Words[0] -match '^(local|cloud)-') {
         $role = $Words[0]; $Words = $Words[1..($Words.Count - 1)]

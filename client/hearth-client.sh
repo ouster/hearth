@@ -6,7 +6,8 @@
 # Portable: works under bash and zsh, macOS and Linux. No bash 4 syntax, no
 # associative arrays, nothing macOS-specific.
 #
-# Required before sourcing (scripts/client-setup.sh prints these for you):
+# Required before sourcing (scripts/provision-client.sh on the gateway host
+# prints these for you):
 #   HEARTH_GATEWAY   e.g. http://192.168.1.10:4000
 #   HEARTH_KEY       or put the lan / lan-cloud key in ~/.hearth-key
 #
@@ -18,16 +19,22 @@
 HEARTH_GATEWAY="${HEARTH_GATEWAY:-${AI_STACK_GATEWAY:-}}"
 if [ -z "${HEARTH_GATEWAY:-}" ]; then
   echo "hearth: set HEARTH_GATEWAY first (e.g. export HEARTH_GATEWAY=http://HOST:4000)" >&2
-  echo "          or run scripts/client-setup.sh on the gateway host for copy-paste instructions." >&2
+  echo "          or run scripts/provision-client.sh on the gateway host for copy-paste instructions." >&2
   return 1 2>/dev/null || exit 1
 fi
 
 HEARTH_KEY="${HEARTH_KEY:-${AI_STACK_KEY:-}}"
 
 if [ -f "$HOME/.hearth-key" ]; then
-  HEARTH_KEY="$(cat "$HOME/.hearth-key")"
+  HEARTH_KEY="$(tr -d '\n\r' < "$HOME/.hearth-key")"
 elif [ -f "$HOME/.ai-stack-key" ]; then
-  HEARTH_KEY="$(cat "$HOME/.ai-stack-key")"
+  HEARTH_KEY="$(tr -d '\n\r' < "$HOME/.ai-stack-key")"
+fi
+
+if [ -z "${HEARTH_KEY:-}" ]; then
+  echo "hearth: no key — put the lan key in ~/.hearth-key (chmod 600)" >&2
+  echo "          or run scripts/provision-client.sh on the gateway host." >&2
+  return 1 2>/dev/null || exit 1
 fi
 
 # OpenAI-compatible, so most tools pick these up with no further config:
@@ -35,20 +42,6 @@ fi
 export OPENAI_API_BASE="${HEARTH_GATEWAY}/v1"
 export OPENAI_BASE_URL="${HEARTH_GATEWAY}/v1"   # newer SDKs use this name
 export OPENAI_API_KEY="${HEARTH_KEY}"
-
-# ---------------------------------------------------------------- aider
-# Roles, never model names — the same contract as on the host. When the model
-# behind local-code changes, nothing here needs editing.
-_ai_role() {
-  role="$1"; shift
-  aider --model "openai/${role}" "$@"
-}
-
-alias ask='_ai_role local-code'        # coding (runs on the gateway host)
-alias ask-chat='_ai_role local-chat'   # general questions
-alias ask-fast='_ai_role local-chat'
-alias ask-big='_ai_role local-big'     # reasoning
-alias ask-cloud='_ai_role cloud-cheap' # needs the `lan` or `lan-cloud` key
 
 # ---------------------------------------------------------------- utilities
 ai-models() {
@@ -71,7 +64,13 @@ ai-ping() {
   else
     echo "UNREACHABLE"
     echo "  - is the gateway host awake?"
-    echo "  - same network? try: ping ${HEARTH_GATEWAY#http://}"
+    # ping wants a host, not host:port
+    _host="${HEARTH_GATEWAY#http://}"
+    _host="${_host#https://}"
+    _host="${_host%%/*}"
+    _host="${_host%%:*}"
+    echo "  - same network? try: ping ${_host}"
+    unset _host
   fi
 }
 
@@ -91,3 +90,12 @@ except Exception:
 if "error" in d: print("error:", d["error"].get("message", d["error"])); raise SystemExit
 print(d["choices"][0]["message"]["content"])'
 }
+
+# ---------------------------------------------------------------- one-shot roles
+# Same semantics as client/hearth-client.ps1 — HTTP via the gateway, no aider.
+# For repo editing: pipx install aider-chat, then `aider` (OPENAI_* are set).
+ask()       { ai-ask local-code  "$@"; }
+ask-chat()  { ai-ask local-chat  "$@"; }
+ask-fast()  { ai-ask local-chat  "$@"; }
+ask-big()   { ai-ask local-big   "$@"; }
+ask-cloud() { ai-ask cloud-cheap "$@"; }

@@ -10,12 +10,13 @@ that is the trade for not putting 37 GB of weights on every device.
 
 ## 1. Get the key and the shim
 
-On the **gateway host**:
+On the **gateway host** (not this laptop — the script refuses if it does not
+see a local LiteLLM agent / `:4000`):
 
 ```bash
 cd <hearth-repo>
-scripts/client-setup.sh lan                      # prints instructions + key
-scripts/client-setup.sh lan --install user@laptop   # or does it over ssh
+scripts/provision-client.sh lan                      # prints instructions + key
+scripts/provision-client.sh lan --install user@laptop   # or does it over ssh
 ```
 
 Manually, on the **laptop**:
@@ -37,8 +38,11 @@ a frontier provider is configured.
 ```bash
 ai-ping                  # gateway reachable?
 ai-models                # which roles this key may use
-ai-ask "say hello"       # one-shot, no editor needed
+ask-chat "say hello"     # one-shot via the gateway (no aider)
 ```
+
+`ask`, `ask-chat`, `ask-big`, and `ask-cloud` are one-shot HTTP helpers (same on
+bash and PowerShell). They do **not** need aider.
 
 If `ai-ping` fails, stop here — everything below depends on it. Check the gateway host
 is awake and you are on the same network.
@@ -46,6 +50,8 @@ is awake and you are on the same network.
 ---
 
 ## 3. aider
+
+Optional — for repo editing. The shim already exports `OPENAI_*`.
 
 ```bash
 pipx install aider-chat          # or: pip install --user aider-chat
@@ -62,16 +68,7 @@ map-tokens: 4096
 ```
 
 Roles, not model names — so this file never needs editing when a model changes
-on the gateway host.
-
-The shim gives you:
-
-```bash
-ask "explain this repo"     # local-code
-ask-chat "..."              # local-chat, general questions
-ask-big "..."               # local-big, reasoning
-ask-cloud "..."             # cloud-cheap, leaves the machine
-```
+on the gateway host. Then just `aider` in a repo.
 
 ### Architect mode
 
@@ -79,9 +76,7 @@ Worth setting up on the laptop too — `local-big` reasons about the change,
 `local-code` writes the diff:
 
 ```bash
-alias ask-arch='OPENAI_API_BASE="${HEARTH_GATEWAY}/v1" \
-  OPENAI_API_KEY="$(cat ~/.hearth-key)" \
-  aider --architect --model openai/local-big --editor-model openai/local-code'
+alias ask-arch='aider --architect --model openai/local-big --editor-model openai/local-code'
 ```
 
 See `docs/IDES.md` for why this is the mode to reach for.
@@ -194,7 +189,7 @@ public LiteLLM holding your provider keys becomes somebody else's budget.
 The `.sh` shim is POSIX shell. Three routes, easiest first:
 
 ```bash
-scripts/client-setup.sh lan --windows    # prints all three, on the gateway host
+scripts/provision-client.sh lan --windows    # prints all three, on the gateway host
 ```
 
 - **WSL or Git Bash** — the `.sh` works unchanged.
@@ -221,4 +216,4 @@ Zed and aider both work on Windows independently of which route you pick.
 | First request very slow | Cold model load on the gateway host; later ones are fast |
 
 Rotate a lost laptop's key on the gateway host with `scripts/create-keys.sh --force`,
-then re-run `client-setup.sh` for the machines you keep.
+then re-run `provision-client.sh` for the machines you keep.

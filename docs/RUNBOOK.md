@@ -302,14 +302,16 @@ The gateway listens on `:4000` across interfaces and is protected by key auth, s
 other machines just need a base URL and a key:
 
 ```bash
-# Prefer: scripts/client-setup.sh lan   (fills in this host's LAN IP)
-export OPENAI_API_BASE=http://<LAN-IP>:4000/v1
+# Prefer: scripts/provision-client.sh lan   (fills in this host's LAN IP)
+# On the laptop that installs HEARTH_GATEWAY + the client shim; or raw:
+export HEARTH_GATEWAY=http://<LAN-IP>:4000
+export OPENAI_API_BASE=${HEARTH_GATEWAY}/v1
 export OPENAI_API_KEY=<the lan or lan-cloud key>
 ```
 
 - `lan` — local roles plus `cloud-cheap`. The everyday key.
 - `lan-cloud` — every live cloud role. For a laptop that actually needs Claude
-  or K3. Same LAN, wider scope — the difference is reach, not location.
+  or K3. Same intended use (other machines), wider cloud scope.
 
 The dollar figures on these keys are **fuses, not billing** — you are the only user.
 They cap spend on your provider account so that a leaked key or a runaway overnight
@@ -317,8 +319,10 @@ agent loop hits a wall instead of your card. Raise them whenever they get in the
 just don't set `null` on a key that can reach a paid model.
 
 Two keys rather than one so the everyday key stays cheap and a lost laptop has a
-small, visible blast radius. Both are LAN-only; neither works off this network. Rotate with `scripts/create-keys.sh` and delete the old
-key via the admin API.
+small, visible blast radius. The keys themselves are **not** IP-restricted — anyone
+who can reach `:4000` and has the token can use them (home LAN, SSH tunnel, or a
+mis-forwarded port). Keep `:4000` off the public internet. Rotate with
+`scripts/create-keys.sh` and delete the old key via the admin API.
 
-This is LAN only. Do not port-forward `:4000` to the internet — key auth is not
-hardening, and a public LiteLLM holding your provider keys is somebody else's budget.
+Do not port-forward `:4000` to the internet — key auth is not hardening, and a
+public LiteLLM holding your provider keys is somebody else's budget.

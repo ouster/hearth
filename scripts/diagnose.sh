@@ -50,10 +50,30 @@ hdr "ollama direct — is the backend actually answering"
 curl -s -m 5 "http://127.0.0.1:11434/api/tags" \
   | python3 -c 'import sys,json;print("  models:", [m["name"] for m in json.load(sys.stdin).get("models",[])])' 2>&1
 
-echo "  chat probe:"
-curl -s -m 60 http://127.0.0.1:11434/api/chat \
-  -d '{"model":"qwen2.5-coder:7b","stream":false,"messages":[{"role":"user","content":"say ok"}]}' \
-  | python3 -c 'import sys,json; d=json.load(sys.stdin); print("   ", d.get("message",{}).get("content","<no content>")[:80])' 2>&1
+# Resolve local-chat's Ollama tag from config — never hardcode a model here.
+PROBE=""
+if [ -n "${AI_PY:-}" ]; then
+  PROBE=$("$AI_PY" - "$ROOT/litellm/config.yaml" <<'PY'
+import sys, yaml
+cfg = yaml.safe_load(open(sys.argv[1])) or {}
+for m in cfg.get("model_list") or []:
+    if m.get("model_name") != "local-chat":
+        continue
+    target = (m.get("litellm_params") or {}).get("model") or ""
+    # ollama_chat/foo:tag -> foo:tag
+    print(target.split("/", 1)[-1])
+    break
+PY
+)
+fi
+echo "  chat probe (local-chat -> ${PROBE:-unresolved}):"
+if [ -n "$PROBE" ]; then
+  curl -s -m 60 http://127.0.0.1:11434/api/chat \
+    -d "$(python3 -c 'import json,sys; print(json.dumps({"model":sys.argv[1],"stream":False,"messages":[{"role":"user","content":"say ok"}]}))' "$PROBE")" \
+    | python3 -c 'import sys,json; d=json.load(sys.stdin); print("   ", d.get("message",{}).get("content","<no content>")[:80])' 2>&1
+else
+  echo "   skipped — could not resolve local-chat from litellm/config.yaml (need PyYAML)"
+fi
 
 hdr "error log — last 40 lines"
 tail -40 "$HOME/Library/Logs/litellm.error.log" 2>/dev/null | sed 's/^/  /'
