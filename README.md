@@ -136,12 +136,20 @@ Laptops need **no Ollama and no model downloads**. Run this on the
 scripts/provision-client.sh lan              # prints copy-paste instructions
 scripts/provision-client.sh lan --install user@laptop
 scripts/provision-client.sh lan --windows    # PowerShell path
+scripts/provision-client.sh lan --example    # placeholders (safe on a laptop clone)
 ```
 
 Clients must set `HEARTH_GATEWAY` (there is no hardcoded host IP). Details:
 [`docs/LAPTOP.md`](docs/LAPTOP.md).
 
-Off your home LAN, tunnel:
+Preferred on a laptop: permanent SSH tunnel to localhost, then
+`HEARTH_GATEWAY=http://127.0.0.1:4000`:
+
+```bash
+scripts/install-client-tunnel.sh --apply
+```
+
+One-shot without launchd:
 
 ```bash
 ssh -N -L 4000:127.0.0.1:4000 USER@HOST

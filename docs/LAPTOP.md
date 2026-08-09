@@ -10,13 +10,19 @@ that is the trade for not putting 37 GB of weights on every device.
 
 ## 1. Get the key and the shim
 
-On the **gateway host** (not this laptop — the script refuses if it does not
-see a local LiteLLM agent / `:4000`):
+On the **gateway host** (real LAN IP + key):
 
 ```bash
 cd <hearth-repo>
 scripts/provision-client.sh lan                      # prints instructions + key
 scripts/provision-client.sh lan --install user@laptop   # or does it over ssh
+```
+
+On a **laptop clone**, the same command prints an EXAMPLE with placeholders
+(`<LAN-IP>`, `<user>`, `<LITELLM_LAN_KEY>`, …). Explicitly:
+
+```bash
+scripts/provision-client.sh lan --example
 ```
 
 Manually, on the **laptop**:
@@ -170,17 +176,53 @@ does not. Never on a chat involving client data. See `docs/ROUTING.md`.
 
 ---
 
-## 6. Off your own network
+## 6. Prefer a permanent SSH tunnel
 
-LAN traffic is plain HTTP. Fine at home, wrong on cafe or hotel wifi. Tunnel:
+Plain HTTP to the Studio LAN IP is fine at home and wrong on cafe wifi. Better:
+always tunnel `:4000` to localhost and point the client there. Encrypted on any
+network; same `HEARTH_GATEWAY` everywhere.
 
 ```bash
-ssh -N -L 4000:127.0.0.1:4000 USER@HOST
+# on this laptop
+scripts/install-client-tunnel.sh --check
+scripts/install-client-tunnel.sh --apply   # Host studio + launchd KeepAlive
+```
+
+That appends an SSH `Host studio` (LocalForward 4000) if missing, and installs
+`com.hearth.tunnel` so `ssh -N studio` comes back after drops and reboots.
+
+Then:
+
+```bash
+export HEARTH_GATEWAY=http://127.0.0.1:4000   # ~/.zshrc
+source ~/.hearth-client.sh
+```
+
+Overrides if the Studio IP or SSH user moved:
+
+```bash
+HEARTH_STUDIO_HOSTNAME=x.x.x.x HEARTH_STUDIO_USER=colinnevin \
+  scripts/install-client-tunnel.sh --apply
+```
+
+First-time key auth (once, password prompt):
+
+```bash
+ssh-copy-id -i ~/.ssh/id_rsa.pub studio
+```
+
+One-shot manual tunnel (no launchd):
+
+```bash
+ssh -N -L 4000:127.0.0.1:4000 studio
 export HEARTH_GATEWAY=http://127.0.0.1:4000
 ```
 
 **Never port-forward `:4000` to the internet.** Key auth is not hardening, and a
 public LiteLLM holding your provider keys becomes somebody else's budget.
+
+Studio asleep → tunnel fails. Wake-on-LAN / sleep settings are on the gateway host
+(`scripts/install-autostart.sh`).
 
 ---
 
@@ -207,7 +249,7 @@ Zed and aider both work on Windows independently of which route you pick.
 
 | Symptom | Cause |
 |---|---|
-| `ai-ping` says UNREACHABLE | Studio asleep, or different network |
+| `ai-ping` says UNREACHABLE | Studio asleep, tunnel down, or wrong `HEARTH_GATEWAY` |
 | `ai-models` lists nothing | Wrong key, or key not in `~/.hearth-key` |
 | A role 400s | It may not exist for this key — `ai-models` shows what does |
 | Zed sees no models | `api_url` missing `/v1`, or key entered in the wrong field |

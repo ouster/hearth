@@ -1,16 +1,19 @@
 #!/bin/bash
 # Provision another machine on the LAN to use this gateway.
 #
-# Run this on the GATEWAY HOST (not the laptop). It prints copy-paste
-# instructions, or installs over ssh.
+# Run this on the GATEWAY HOST for real values (key + this host's LAN IP):
 #
 #   scripts/provision-client.sh lan            # local roles + cloud-cheap
 #   scripts/provision-client.sh lan-cloud      # wider scope: adds the cloud roles
 #   scripts/provision-client.sh lan --install user@laptop
 #   scripts/provision-client.sh lan --windows  # PowerShell instructions
 #
-# The client needs no Ollama, no models, no Podman. Inference stays on this
-# host; the laptop only sends requests.
+# On a laptop clone (or anywhere), print the same shape with placeholders:
+#
+#   scripts/provision-client.sh lan --example
+#
+# The client needs no Ollama, no models, no Podman. Inference stays on the
+# gateway host; the laptop only sends requests.
 #
 # Both keys are for LAN clients. The difference between them is how much CLOUD
 # they can reach, not where they can be used from. (Reachability of :4000 is
@@ -21,68 +24,103 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
 ai_load_env "$ROOT"
 
-# Refuse to run on a laptop clone — advertising this machine's LAN IP as the
-# gateway would strand the client. Override: HEARTH_PROVISION_FORCE=1
-if [ "$(_hearth_env HEARTH_PROVISION_FORCE AI_STACK_PROVISION_FORCE)" != "1" ]; then
-  _label="$(ai_litellm_label)"
-  _uid="$(id -u)"
-  _is_host=false
-  if launchctl print "gui/${_uid}/${_label}" >/dev/null 2>&1; then
-    _is_host=true
-  elif [ -f "$HOME/Library/LaunchAgents/${_label}.plist" ]; then
-    _is_host=true
-  elif curl -s -m 2 -o /dev/null "http://127.0.0.1:4000/health/readiness" 2>/dev/null; then
-    _is_host=true
-  fi
-  if ! $_is_host; then
+WINDOWS=false
+EXAMPLE=false
+INSTALL_TARGET=""
+SCOPE=""
+prev=""
+for a in "$@"; do
+  case "$a" in
+    --windows) WINDOWS=true ;;
+    --example) EXAMPLE=true ;;
+    --install) prev="--install" ;;
+    lan|lan-cloud)
+      if [ -z "$SCOPE" ]; then SCOPE="$a"; else
+        echo "usage: $0 {lan|lan-cloud} [--example] [--install user@host] [--windows]" >&2
+        exit 1
+      fi
+      ;;
+    *)
+      if [ "$prev" = "--install" ]; then
+        INSTALL_TARGET="$a"
+        prev=""
+      else
+        echo "usage: $0 {lan|lan-cloud} [--example] [--install user@host] [--windows]" >&2
+        exit 1
+      fi
+      ;;
+  esac
+done
+SCOPE="${SCOPE:-lan}"
+
+case "$SCOPE" in
+  lan)  KEY_VAR=LITELLM_LAN_KEY;       DESC="local roles + cloud-cheap" ;;
+  lan-cloud) KEY_VAR=LITELLM_LAN_CLOUD_KEY; DESC="local roles + all live cloud roles" ;;
+  *) echo "usage: $0 {lan|lan-cloud} [--example] [--install user@host] [--windows]" >&2; exit 1 ;;
+esac
+
+# Are we on the gateway host?
+_label="$(ai_litellm_label)"
+_uid="$(id -u)"
+_is_host=false
+if [ "$(_hearth_env HEARTH_PROVISION_FORCE AI_STACK_PROVISION_FORCE)" = "1" ]; then
+  _is_host=true
+elif launchctl print "gui/${_uid}/${_label}" >/dev/null 2>&1; then
+  _is_host=true
+elif [ -f "$HOME/Library/LaunchAgents/${_label}.plist" ]; then
+  _is_host=true
+elif curl -s -m 2 -o /dev/null "http://127.0.0.1:4000/health/readiness" 2>/dev/null; then
+  _is_host=true
+fi
+unset _label _uid
+
+if ! $_is_host; then
+  if [ -n "$INSTALL_TARGET" ]; then
     cat <<'EOF' >&2
-This script runs on the gateway host — it prints (or ssh-installs) setup for
-a laptop. This machine does not look like the gateway (no LiteLLM launchd
-agent, nothing answering on 127.0.0.1:4000).
+--install needs the gateway host (key + this machine's LAN IP).
 
 On the gateway host:
-  scripts/provision-client.sh lan
+  scripts/provision-client.sh lan --install user@laptop
 
-On this laptop, follow docs/LAPTOP.md (or the instructions that script prints).
-
-If you really are on the gateway and it is down mid-setup:
-  HEARTH_PROVISION_FORCE=1 scripts/provision-client.sh lan
+For placeholder copy-paste on this machine:
+  scripts/provision-client.sh lan --example
 EOF
     exit 1
   fi
-  unset _label _uid _is_host
+  # Laptop / fresh clone: always show the template (same as --example).
+  EXAMPLE=true
 fi
 
-WINDOWS=false
-for a in "$@"; do [ "$a" = "--windows" ] && WINDOWS=true; done
-
-SCOPE="${1:-lan}"
-case "$SCOPE" in
-  lan)  KEY="${LITELLM_LAN_KEY:-}";  DESC="local roles + cloud-cheap" ;;
-  lan-cloud) KEY="${LITELLM_LAN_CLOUD_KEY:-}"; DESC="local roles + all live cloud roles" ;;
-  *) echo "usage: $0 {lan|lan-cloud} [--install user@host] [--windows]"; exit 1 ;;
-esac
-
-if [ -z "$KEY" ]; then
-  echo "No ${SCOPE} key found in litellm/.env."
-  echo "Run scripts/create-keys.sh, then paste the values in."
-  exit 1
+if $EXAMPLE; then
+  KEY="<${KEY_VAR}>"
+  LANIP="<LAN-IP>"
+  SCP_USER="<user>"
+  HOST_REPO_REMOTE="<hearth-repo>"
+  GATEWAY="http://${LANIP}:4000"
+  BANNER_NOTE="EXAMPLE — placeholders only. On the gateway host, omit --example for real values."
+else
+  eval "KEY=\"\${${KEY_VAR}:-}\""
+  if [ -z "$KEY" ]; then
+    echo "No ${SCOPE} key found in litellm/.env."
+    echo "Run scripts/create-keys.sh, then paste the values in."
+    exit 1
+  fi
+  LANIP="$(ai_lan_ip)"
+  if [ -z "$LANIP" ]; then
+    echo "No LAN IP detected. Connect to a network, or set HEARTH_LAN_IP."
+    exit 1
+  fi
+  GATEWAY="http://${LANIP}:4000"
+  SCP_USER="$(whoami)"
+  HOST_REPO_REMOTE="${ROOT}"
+  case "$ROOT" in
+    "$HOME"/*) HOST_REPO_REMOTE="~${ROOT#"$HOME"}" ;;
+  esac
+  BANNER_NOTE=""
 fi
 
-LANIP="$(ai_lan_ip)"
-if [ -z "$LANIP" ]; then
-  echo "No LAN IP detected. Connect to a network, or set HEARTH_LAN_IP."
-  exit 1
-fi
-GATEWAY="http://${LANIP}:4000"
-# Path on this host as seen by scp (tilde form when under $HOME).
-HOST_REPO_REMOTE="${ROOT}"
-case "$ROOT" in
-  "$HOME"/*) HOST_REPO_REMOTE="~${ROOT#"$HOME"}" ;;
-esac
-
-if [ "${2:-}" = "--install" ] && [ -n "${3:-}" ]; then
-  TARGET="$3"
+if [ -n "$INSTALL_TARGET" ]; then
+  TARGET="$INSTALL_TARGET"
   echo "Installing to ${TARGET}..."
   scp "${ROOT}/client/hearth-client.sh" "${TARGET}:~/.hearth-client.sh" || exit 1
   # Key via stdin — never on the ssh argv (visible in ps on both ends).
@@ -98,16 +136,19 @@ cat <<EOF
 =============================================================
  hearth client setup — WINDOWS — ${SCOPE} key (${DESC})
 =============================================================
+${BANNER_NOTE:+
+${BANNER_NOTE}
+}
 
 Three ways, easiest first.
 
 A. WSL or Git Bash — the .sh works unchanged
-   Follow the normal instructions: scripts/provision-client.sh ${SCOPE}
+   Follow the normal instructions: scripts/provision-client.sh ${SCOPE}${EXAMPLE:+ --example}
 
 B. Native PowerShell (5.1 or 7+, no WSL needed)
 
    1. Copy the client
-      scp $(whoami)@${LANIP}:${HOST_REPO_REMOTE}/client/hearth-client.ps1 \$HOME\.hearth-client.ps1
+      scp ${SCP_USER}@${LANIP}:${HOST_REPO_REMOTE}/client/hearth-client.ps1 \$HOME\.hearth-client.ps1
 
    2. Store the key
       '${KEY}' | Out-File -NoNewline \$HOME\.hearth-key
@@ -146,7 +187,7 @@ on the gateway host. If it is asleep, nothing works.
 
 Traffic is plain HTTP on your LAN. Fine at home, wrong on public wifi.
 Off-network, tunnel instead:
-  ssh -N -L 4000:127.0.0.1:4000 $(whoami)@${LANIP}
+  ssh -N -L 4000:127.0.0.1:4000 ${SCP_USER}@${LANIP}
   \$env:HEARTH_GATEWAY = "http://127.0.0.1:4000"
 EOF
 exit 0
@@ -156,12 +197,15 @@ cat <<EOF
 =============================================================
  hearth client setup — ${SCOPE} key (${DESC})
 =============================================================
+${BANNER_NOTE:+
+${BANNER_NOTE}
+}
 
-Run these ON THE OTHER MACHINE. Works on macOS (zsh) and Linux (bash).
+Run these ON THE LAPTOP. Works on macOS (zsh) and Linux (bash).
 
 1. Install the client shim
 
-   scp $(whoami)@${LANIP}:${HOST_REPO_REMOTE}/client/hearth-client.sh ~/.hearth-client.sh
+   scp ${SCP_USER}@${LANIP}:${HOST_REPO_REMOTE}/client/hearth-client.sh ~/.hearth-client.sh
 
    (or copy the file by any means — it is plain shell, no dependencies)
 
@@ -206,10 +250,10 @@ not duplicating tens of GB of weights onto every device.
 ${DESC}.
 
 Spend cap applies — it is a fuse against a runaway loop or a lost
-laptop, not billing. Check usage from the Studio with:
+laptop, not billing. Check usage from the gateway host with:
   scripts/usage.sh --keys
 
-If this laptop is lost or the key leaks, rotate it on the Studio:
+If this laptop is lost or the key leaks, rotate it on the gateway host:
   scripts/create-keys.sh --force
 then re-run this script and reinstall on the machines you keep.
 
@@ -220,8 +264,21 @@ Traffic between this laptop and the gateway is plain HTTP on your
 LAN. Fine at home; do NOT use it on cafe or hotel wifi. For that,
 tunnel over SSH instead:
 
-  ssh -N -L 4000:127.0.0.1:4000 $(whoami)@${LANIP}
+  ssh -N -L 4000:127.0.0.1:4000 ${SCP_USER}@${LANIP}
   export HEARTH_GATEWAY=http://127.0.0.1:4000
 
 and never port-forward :4000 to the internet.
 EOF
+
+if $EXAMPLE && ! $_is_host; then
+  cat <<'EOF'
+
+-------------------------------------------------------------
+ Getting real values
+-------------------------------------------------------------
+On the gateway host (Studio):
+  scripts/provision-client.sh lan
+
+That fills in the LAN IP, SSH user, repo path, and the live key.
+EOF
+fi

@@ -94,6 +94,8 @@ print(d["choices"][0]["message"]["content"])'
 # ---------------------------------------------------------------- one-shot roles
 # Same semantics as client/hearth-client.ps1 — HTTP via the gateway, no aider.
 # For repo editing: pipx install aider-chat, then `aider` (OPENAI_* are set).
+# Drop any pre-existing aliases so zsh will accept function definitions.
+unalias ask ask-chat ask-fast ask-big ask-cloud 2>/dev/null || true
 ask()       { ai-ask local-code  "$@"; }
 ask-chat()  { ai-ask local-chat  "$@"; }
 ask-fast()  { ai-ask local-chat  "$@"; }
