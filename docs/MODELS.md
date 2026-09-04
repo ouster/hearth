@@ -11,14 +11,25 @@ model's size — see the measurement below.
 
 | Role | Model | Size | Set | Digest | Why |
 |---|---|---|---|---|---|
-| `local-chat` | `qwen3:8b` | 5.2 GB | 2026-08-02 | `500a1f067a9f` | General knowledge, 40K ctx. **thinking off** — ADR 0006 |
-| `local-code` | `qwen3-coder:30b` | 19 GB | 2026-08-02 | `06c1097efce0` | 30B MoE, ~3B active, 256K ctx. Runs at ~7B speed |
-| `local-big` | `gpt-oss:20b` | 13 GB | 2026-08-02 | `17052f91a42e` | Reasoning. Replaced llama3.3:70b — ADR 0004 |
+| `local-chat` | `qwen3:8b` | 5.2 GB | 2026-08-02 | `500a1f067a9f` | General knowledge, **40K** ctx (native). **thinking off** — ADR 0006 |
+| `local-code` | `qwen3-coder:30b` | 18 GB | 2026-08-02 | `06c1097efce0` | 30B MoE, ~3B active. Native 256K; **runtime 64K** — ADR 0010 |
+| `local-big` | `gpt-oss:20b` | 13 GB | 2026-08-02 | `17052f91a42e` | Reasoning. Native 128K; **runtime 64K** — ADR 0010 |
 | `local-embed` | `nomic-embed-text` | 0.3 GB | 2026-08-01 | `0a109f422b47` | Local RAG |
 | `cloud-cheap` | `gemini-3.5-flash` | — | 2026-08-01 | n/a | 1M ctx, cheap. Bulk non-sensitive work |
 
-**Resident total: 37.5 GB of ~48 GB.** All four local models stay loaded; no
-switch evicts anything.
+**Disk footprint: ~36.5 GB** across the four local weights (`ollama list`).
+Only **one** model stays GPU-resident (`OLLAMA_MAX_LOADED_MODELS=1`,
+ADR 0011) — switching roles evicts. KV cache uses `q8_0` when flash
+attention is active.
+
+Context windows and capability flags also live in each role's `model_info`
+block in `litellm/config.yaml`, so `/model/info` (and tools like
+`zed-litellm`) stay honest — ADR 0009. **Runtime `num_ctx` is capped at 64K
+for `local-code` / `local-big`** so Ollama does not allocate a 256K KV cache
+(~45 GB) on this machine — ADR 0010.
+
+**Bench candidate (not a role yet):** `qwen3.6:27b-coding-mtp-q4_K_M` (~18 GB)
+vs incumbent `qwen3-coder:30b`. Run `scripts/bench.sh` before any swap.
 
 Digests are **recorded and drift-checked** in `pins/digests.tsv`, not enforced —
 see below. Re-record with `scripts/pin-digests.sh` after any role change you trust.

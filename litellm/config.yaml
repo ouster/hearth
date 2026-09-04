@@ -16,27 +16,60 @@ model_list:
     litellm_params:
       model: ollama_chat/qwen3-coder:30b
       api_base: http://127.0.0.1:11434
-    # set 2026-08-02 — default coding model. 30B MoE, ~3B active, 19GB,
-    # 256K context. Generates at roughly 7B speed, which is why local-fast
-    # was retired. See docs/decisions/0005.
+      num_ctx: 65536       # RAM budget — native is 256K; see ADR 0010
+    model_info:
+      mode: chat
+      max_input_tokens: 65536
+      max_output_tokens: 65536
+      supports_function_calling: true
+      supports_vision: false
+      supports_reasoning: false
+      supports_prompt_caching: false
+      supports_parallel_function_calling: false
+    # set 2026-08-02 — default coding model. 30B MoE, ~3B active, 18GB on
+    # disk. Native 256K ctx; runtime capped at 64K (ADR 0010). Generates at
+    # roughly 7B speed. See docs/decisions/0005. model_info — ADR 0009.
 
   - model_name: local-big
     litellm_params:
       model: ollama_chat/gpt-oss:20b
       api_base: http://127.0.0.1:11434
+      num_ctx: 65536       # RAM budget — native is 128K; see ADR 0010
+    model_info:
+      mode: chat
+      max_input_tokens: 65536
+      max_output_tokens: 65536
+      supports_function_calling: true
+      supports_vision: false
+      supports_reasoning: true
+      supports_prompt_caching: false
+      supports_parallel_function_calling: false
     # set 2026-08-02 — reasoning role, ~13GB. Replaced llama3.3:70b, which
     # measured 440s to first reply because 42GB could not stay resident
-    # alongside the coding model. See docs/decisions/0004.
+    # alongside the coding model. See docs/decisions/0004. model_info —
+    # ADR 0009. Runtime ctx capped at 64K — ADR 0010.
 
   - model_name: local-chat
     litellm_params:
       model: ollama_chat/qwen3:8b
       api_base: http://127.0.0.1:11434
       think: false      # qwen3 thinking off — see ADR 0006
+      num_ctx: 40960    # native ceiling; pin so clients cannot open larger
+    model_info:
+      mode: chat
+      max_input_tokens: 40960
+      max_output_tokens: 40960
+      supports_function_calling: true
+      supports_vision: false
+      # Hybrid model, but think:false for this role — do not advertise
+      # reasoning to discovery clients or they enable thinking UI.
+      supports_reasoning: false
+      supports_prompt_caching: false
+      supports_parallel_function_calling: false
     # set 2026-08-02 — GENERAL knowledge and conversation, 5.2GB, 40K ctx.
     # Added because every other local role is a coder or reasoning model.
     # Asking qwen2.5-coder:7b for a history fact got a hallucinated tool call,
-    # not an answer. This is the default for Open WebUI.
+    # not an answer. This is the default for Open WebUI. model_info — ADR 0009.
 
   - model_name: local-embed
     litellm_params:
@@ -44,6 +77,11 @@ model_list:
       api_base: http://127.0.0.1:11434
     model_info:
       mode: embedding      # a REAL ModelInfo field — keep
+      max_input_tokens: 2048
+      max_output_tokens: 2048
+      supports_function_calling: false
+      supports_vision: false
+      supports_reasoning: false
     # set 2026-08-01
 
   # ---------- CLOUD: ACTIVE ----------
@@ -53,7 +91,17 @@ model_list:
     litellm_params:
       model: gemini/gemini-3.5-flash
       api_key: os.environ/GOOGLE_API_KEY
+    model_info:
+      mode: chat
+      max_input_tokens: 1048576
+      max_output_tokens: 65536
+      supports_function_calling: true
+      supports_vision: true
+      supports_reasoning: false
+      supports_prompt_caching: false
+      supports_parallel_function_calling: false
     # set 2026-08-01 — 1M context, cheap. Bulk non-sensitive work.
+    # model_info — ADR 0009.
 
   # ---------- CLOUD: DORMANT ----------
   # Uncomment one block at a time, add the key to ~/.config/litellm/env,
@@ -123,7 +171,76 @@ general_settings:
   # repo's .env, and preflight checks that specific distinction.
   database_url: os.environ/DATABASE_URL
 
-  # Lets the auto-updater promote a model via the admin API instead of editing
-  # yaml and restarting. config.yaml stays the git-tracked base layer; DB rows
-  # overlay it on refresh.
+  # false, deliberately. Some LiteLLM versions serve ONLY database rows when
+  # this is true and ignore model_list entirely — with an empty DB that means
+  # no models at all. config.yaml stays the single source of truth for roles.
+  # See docs/decisions/0002.
   store_model_in_db: false
+
+  # MCP access is DENY BY DEFAULT.
+  #
+  # LiteLLM ships the opposite: a key with no mcp_servers list inherits its
+  # team's list, and a team with an empty list means "no restriction". Register
+  # one MCP server under those defaults and every key reaches it — including
+  # `private`, whose entire purpose is that it cannot reach anything that
+  # leaves this machine.
+  #
+  # This flag turns the team list into a ceiling rather than a default, so a
+  # key reaches only what it was explicitly granted. Rule 3: the boundary has
+  # to be structural, not a thing you remembered to configure.
+  #
+  # Read 2026-08-02: LiteLLM documents this as the recommended posture and
+  # intends to make it the default in a future release.
+  require_key_mcp_access_defined: true
+
+# ---------- MCP SERVERS ----------
+# Tools reachable through the gateway. Empty until a server has an ADR and a
+# scope, because registering one is a routing decision: tool RESULTS enter the
+# prompt, so a tool that reaches the network is an egress path the model-level
+# leak test cannot see.
+#
+# stdio only. auslaw-mcp's HTTP mode calls listen(port) with no host — it binds
+# every interface with no authentication — and defaults to :3000, which is
+# Open WebUI. stdio has no listener to expose.
+#
+# x-hearth-egress is ours, not LiteLLM's. Nothing in MCP tells a gateway
+# whether a tool phones home; only someone who read the source knows, and
+# audit-mcp-scope.sh needs that written down. Unmarked fails the audit.
+mcp_servers:
+  auslaw:
+    transport: stdio
+    # Env-resolved because the nvm path carries a node version that changes on
+    # every upgrade. LiteLLM allowlists stdio commands by basename, so an
+    # absolute path whose basename is `node` passes.
+    command: os.environ/HEARTH_MCP_NODE
+    # Literal, and it has to be. LiteLLM's os.environ/ resolver recurses into
+    # dicts but leaves plain strings inside a list alone, and args is
+    # List[str] — an os.environ/ entry here is passed to node verbatim, which
+    # dies instantly with "Connection closed" and an empty tool list. This is
+    # the one machine-specific path in the tracked config; preflight checks it
+    # exists so a fork fails loudly rather than silently serving no tools.
+    args: ["/Users/colinnevin/dev/auslaw-mcp/dist/index.js"]
+    description: "Australian and NZ case law and legislation via AustLII."
+    x-hearth-egress: "austlii.edu.au"
+
+    # jade.io is excluded at the SERVER level, so those tools are not exposed
+    # to any key regardless of its grant. Belt and braces with withholding
+    # JADE_SESSION_COOKIE below: permission says no, and the credential to do
+    # it anyway is absent.
+    #
+    # Why exclude: jade.io access is a reverse-engineered GWT-RPC endpoint
+    # driven by a session cookie lifted from a browser. That is a credential
+    # in a config file and a fragile contract with a commercial provider.
+    # AustLII is free, public, and has no such coupling.
+    allowed_tools:
+      - search_cases           # AustLII; jade half returns [] with no cookie
+      - search_legislation
+      - search_by_citation
+      - fetch_document_text
+      - generate_pinpoint
+      - validate_citation
+      - format_citation        # the only tool that touches no network at all
+
+    # Deliberately minimal, and deliberately WITHOUT JADE_SESSION_COOKIE.
+    env:
+      MCP_TRANSPORT: "stdio"

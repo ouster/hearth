@@ -44,6 +44,49 @@ CLOUD_CHEAP='"cloud-cheap"'
 CLOUD_ALL='"cloud-cheap"'
 # CLOUD_ALL='"cloud-cheap","cloud-code","cloud-frontier","cloud-frontier-direct","cloud-frontier-fast"'
 
+# ---- MCP scope, per key -----------------------------------------------------
+#
+# Every key states its MCP grant explicitly. An absent or empty list does NOT
+# mean "none" in LiteLLM — it means "inherit the team's list", and a team with
+# an empty list means "no restriction". config.yaml sets
+# require_key_mcp_access_defined to close that, but the two must agree: the
+# flag makes an empty list grant nothing, and these lists say what it grants.
+#
+# Deny is an EMPTY list here, not the documented `no-mcp-servers` sentinel.
+# LiteLLM 1.85.1 validates every entry against the registered servers before
+# it interprets sentinels, so sending no-mcp-servers with none registered is
+# rejected outright:
+#
+#   403  Only globally available (allow_all_keys) MCP servers can be
+#        assigned: []. Disallowed servers: ['no-mcp-servers'].
+#
+# An empty list is accepted, and these keys belong to no team, so there is no
+# team list for it to inherit. With require_key_mcp_access_defined set in
+# config.yaml an empty list grants nothing. Revisit the sentinel if these keys
+# ever join a team, because only the sentinel overrides team inheritance.
+#
+# Do not "fix" this by omitting object_permission — an absent field leaves any
+# previous grant in place, so revoking would silently do nothing.
+#
+# Access GROUPS are deliberately unused. BerriAI/litellm#27657 (open as of
+# 2026-08-02): assigning a group to a team never creates the underlying
+# permission row, so discovery and enforcement both fall through. Direct
+# per-key lists avoid that code path entirely.
+MCP_NONE=''
+
+# Servers each key may reach. Keep in sync with mcp_servers in config.yaml.
+# Quote every entry, comma-separated, e.g. MCP_GENERAL='"auslaw"'.
+#
+# Only `research` holds a tool that reaches the network, and it holds no cloud
+# role — that pairing is what audit-mcp-scope.sh enforces. `private` gets
+# nothing: auslaw queries AustLII, and a key whose whole promise is that
+# nothing leaves the machine cannot own a tool that leaves the machine.
+MCP_PRIVATE="${MCP_NONE}"
+MCP_GENERAL="${MCP_NONE}"
+MCP_LAN="${MCP_NONE}"
+MCP_LAN_CLOUD="${MCP_NONE}"
+MCP_RESEARCH='"auslaw"'
+
 api() {
   curl -s -X "$1" "${GATEWAY}$2" \
     -H "Authorization: Bearer ${KEY}" \
@@ -78,9 +121,45 @@ PY
 
 token_for() { printf '%s\n' "$EXISTING" | awk -F'\t' -v a="$1" '$1==a{print $2; exit}'; }
 
+# An MCP grant needs a TEAM behind it. A key outside a team may only be
+# assigned servers flagged allow_all_keys, and that flag is not a scoping
+# mechanism — the manager UNIONS those servers into every key's allowed set,
+# so it means "grant to everyone". The team is the only way to grant one
+# server to one key.
+#
+# Echoes the team_id. Idempotent: reuses the team with this alias if present.
+sync_team() {
+  local alias="$1" mcp="$2" tid r
+  tid=$(api GET "/team/list" "" | "$AI_PY" -c "
+import sys, json
+try: d = json.load(sys.stdin)
+except Exception: raise SystemExit
+ts = d.get('teams', d) if isinstance(d, dict) else d
+for t in ts or []:
+    if isinstance(t, dict) and t.get('team_alias') == '${alias}':
+        print(t.get('team_id', '')); break" 2>/dev/null)
+
+  if [ -n "$tid" ]; then
+    api POST "/team/update" \
+      "{\"team_id\":\"${tid}\",\"object_permission\":{\"mcp_servers\":[${mcp}]}}" >/dev/null
+  else
+    r=$(api POST "/team/new" \
+      "{\"team_alias\":\"${alias}\",\"object_permission\":{\"mcp_servers\":[${mcp}]}}")
+    tid=$(printf '%s' "$r" | "$AI_PY" -c "import sys,json; print(json.load(sys.stdin).get('team_id',''))" 2>/dev/null)
+    if [ -z "$tid" ]; then
+      printf '  team %-4s CREATE FAILED\n' "$alias"
+      printf '%s' "$r" | head -c 300 | sed 's/^/      /'; echo
+      return 1
+    fi
+  fi
+  printf '%s' "$tid"
+}
+
 sync_key() {
-  local alias="$1" models="$2" cap="$3" desc="$4"
+  local alias="$1" models="$2" cap="$3" mcp="$4" desc="$5" team="${6:-}"
   local tok; tok="$(token_for "$alias")"
+  local team_field=""
+  [ -n "$team" ] && team_field=",\"team_id\":\"${team}\""
 
   if [ -n "$tok" ] && $FORCE; then
     api POST "/key/delete" "{\"keys\":[\"${tok}\"]}" >/dev/null
@@ -91,7 +170,7 @@ sync_key() {
     # Update in place — the key VALUE is unchanged, so nothing needs re-pasting.
     local r
     r=$(api POST "/key/update" \
-      "{\"key\":\"${tok}\",\"models\":[${models}],\"max_budget\":${cap},\"metadata\":{\"description\":\"${desc}\"}}")
+      "{\"key\":\"${tok}\",\"models\":[${models}],\"max_budget\":${cap},\"object_permission\":{\"mcp_servers\":[${mcp}]}${team_field},\"metadata\":{\"description\":\"${desc}\"}}")
     if printf '%s' "$r" | grep -q '"error"'; then
       printf '  %-9s UPDATE FAILED\n' "$alias"
       printf '%s' "$r" | head -c 300 | sed 's/^/      /'; echo
@@ -103,7 +182,7 @@ sync_key() {
 
   local r newkey
   r=$(api POST "/key/generate" \
-    "{\"key_alias\":\"${alias}\",\"models\":[${models}],\"max_budget\":${cap},\"budget_duration\":\"30d\",\"metadata\":{\"description\":\"${desc}\"}}")
+    "{\"key_alias\":\"${alias}\",\"models\":[${models}],\"max_budget\":${cap},\"budget_duration\":\"30d\",\"object_permission\":{\"mcp_servers\":[${mcp}]}${team_field},\"metadata\":{\"description\":\"${desc}\"}}")
   newkey=$(printf '%s' "$r" | "$AI_PY" -c "import sys,json; print(json.load(sys.stdin).get('key',''))" 2>/dev/null)
 
   if [ -z "$newkey" ]; then
@@ -118,14 +197,22 @@ echo "Syncing scoped keys on ${GATEWAY}"
 $FORCE && echo "  --force: deleting and recreating, key values WILL change"
 echo
 
-sync_key "private" "${LOCAL}" 'null' \
-  "Local only. Conveyancing work, Open WebUI default. Never add cloud roles."
-sync_key "general" "${LOCAL},${CLOUD_ALL}" '100' \
+sync_key "private" "${LOCAL}" 'null' "${MCP_PRIVATE}" \
+  "Local only. Sensitive matter work, Open WebUI default. Never add cloud roles."
+sync_key "general" "${LOCAL},${CLOUD_ALL}" '100' "${MCP_GENERAL}" \
   "This machine: aider, Zed, scripts on non-sensitive repos."
-sync_key "lan" "${LOCAL},${CLOUD_CHEAP}" '10' \
+sync_key "lan" "${LOCAL},${CLOUD_CHEAP}" '10' "${MCP_LAN}" \
   "Other machines, everyday. Local plus cheap cloud."
-sync_key "lan-cloud" "${LOCAL},${CLOUD_ALL}" '25' \
+sync_key "lan-cloud" "${LOCAL},${CLOUD_ALL}" '25' "${MCP_LAN_CLOUD}" \
   "Laptop, when it needs real cloud models. Small cap so a lost laptop is contained."
+# Local models only, plus the AustLII tools. No cloud role, deliberately: tool
+# output re-enters the prompt, so a key holding both would hand a cloud
+# provider whatever the tool fetched. Switching to this key is the act of
+# saying "this query is going to AustLII" — see docs/decisions/0008.
+RESEARCH_TEAM="$(sync_team "research" "${MCP_RESEARCH}")"
+sync_key "research" "${LOCAL}" 'null' "${MCP_RESEARCH}" \
+  "Legal research. Local models plus AustLII lookup. Queries LEAVE this machine." \
+  "${RESEARCH_TEAM}"
 
 # While every cloud role except cloud-cheap is dormant, CLOUD_ALL == CLOUD_CHEAP,
 # so lan and lan-cloud currently grant identical access. They diverge the moment

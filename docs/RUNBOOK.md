@@ -74,7 +74,8 @@ What already survives, and what does not:
 | Piece | After a reboot |
 |---|---|
 | LiteLLM | comes back — launchd `KeepAlive` |
-| `OLLAMA_HOST` | set at login by `com.user.setollamahost.plist` |
+| `OLLAMA_HOST` | set at login by `com.user.setollamahost.plist` (also in serve plist) |
+| Ollama memory | `FLASH_ATTENTION=1`, `KV_CACHE_TYPE=q8_0`, `MAX_LOADED_MODELS=1`, `KEEP_ALIVE=-1` via serve plist — ADR 0011 |
 | Ollama itself | **only if "Open at Login" is ticked in its Settings** |
 | Podman VM | **does not start itself** — this is the real gap |
 | Containers | restart policies only apply once the VM is up |
@@ -276,6 +277,47 @@ then fix the gateway.
 Inherited config and aliases are recorded verbatim in
 `docs/decisions/0001-inherited-state.md`. Restore
 `~/.config/litellm/config.yaml` from that file and kickstart the agent.
+
+## Upgrading LiteLLM
+
+Four steps, and skipping the third produces a failure that looks like success.
+
+```bash
+# 1. Dump the database. It holds your key VALUES, the research team and spend
+#    history — losing it means re-pasting keys on every laptop.
+mkdir -p ~/hearth-backups
+podman exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$(. scripts/lib.sh; ai_container postgres)" \
+  pg_dump -U litellm -d litellm > ~/hearth-backups/litellm-$(date +%Y%m%d-%H%M%S).sql
+
+# 2. Upgrade. --force recreates the venv, so the injected packages go with it.
+pipx install --force 'litellm[proxy]==<version>'
+pipx inject litellm prisma psycopg2-binary
+
+# 3. Regenerate the prisma client AND sync the schema.
+scripts/setup-prisma.sh
+
+# 4. Restart and verify.
+launchctl kickstart -k "$(. scripts/lib.sh; ai_litellm_agent)"
+scripts/preflight.sh && scripts/healthcheck.sh && scripts/audit-mcp-scope.sh
+```
+
+**Why step 3 matters.** Recreating the venv deletes the generated prisma
+client, so the gateway will not start at all — that failure is loud and
+obvious. The quiet one comes next: a new LiteLLM expects database columns the
+live schema does not have, and then the gateway *does* start,
+`/health/readiness` reports `db:connected`, `/v1/models` answers, and every
+`/key/*` call returns 500 with
+
+```
+The column `LiteLLM_VerificationToken.key_type` does not exist
+```
+
+Scoped keys and MCP grants stop resolving while `status.sh` shows a green
+stack. Preflight now checks the key API directly for exactly this.
+
+Take the release LiteLLM marks **stable**, not the newest on PyPI — the latter
+is often hours old. 1.85.1 → 1.94.1 on 2026-08-02 needed all four steps and
+also rebuilt the venv on a newer Python.
 
 ## Postgres (Podman)
 

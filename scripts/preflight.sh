@@ -90,6 +90,62 @@ else
     *) er "fallback audit could not run" ;;
   esac
 
+  # The tool-path twin of the check above. Needs the gateway to read key
+  # grants, so exit 2 here is routine when it is down — not a finding.
+  bash "${ROOT}/scripts/audit-mcp-scope.sh" >/dev/null 2>&1
+  case $? in
+    0) ok "no key holds both a cloud role and a network-reaching MCP tool" ;;
+    1) bad "MCP SCOPE LEAK — run scripts/audit-mcp-scope.sh for detail" ;;
+    *) wrn "MCP scope audit could not run (gateway down, or no master key)" ;;
+  esac
+
+  # An MCP server registered while require_key_mcp_access_defined is unset
+  # grants itself to every key, because an empty key list inherits and an empty
+  # team list means "no restriction". Config-level, so check it here.
+  mcpflag=$("$AI_PY" - "$CFG" <<'PY'
+import sys, yaml
+cfg = yaml.safe_load(open(sys.argv[1])) or {}
+g = cfg.get('general_settings') or {}
+servers = cfg.get('mcp_servers') or {}
+print(f"{bool(g.get('require_key_mcp_access_defined'))}\t{len(servers)}")
+PY
+)
+  flag="${mcpflag%%	*}"; nsrv="${mcpflag##*	}"
+  if [ "$flag" = "True" ]; then
+    ok "MCP access is deny-by-default (require_key_mcp_access_defined)"
+  elif [ "${nsrv:-0}" = "0" ]; then
+    wrn "require_key_mcp_access_defined not set — set it before registering any MCP server"
+  else
+    bad "${nsrv} MCP server(s) registered WITHOUT require_key_mcp_access_defined"
+    echo "        Every key inherits them, including private. See docs/decisions/0008."
+  fi
+
+  # A stdio server whose entry file is missing does not error — the process
+  # exits immediately, LiteLLM logs "Connection closed", and the tool list is
+  # silently empty. Indistinguishable from "correctly scoped" at the API.
+  if [ "${nsrv:-0}" != "0" ]; then
+    missing=$("$AI_PY" - "$CFG" <<'PY'
+import os, sys, yaml
+cfg = yaml.safe_load(open(sys.argv[1])) or {}
+for name, spec in (cfg.get('mcp_servers') or {}).items():
+    spec = spec or {}
+    if spec.get('transport') != 'stdio':
+        continue
+    for a in spec.get('args') or []:
+        if a.startswith('os.environ/'):
+            print(f"{name}: args cannot use os.environ/ — LiteLLM leaves list items unresolved")
+        elif a.startswith('/') and not os.path.exists(a):
+            print(f"{name}: {a}")
+PY
+)
+    if [ -z "$missing" ]; then
+      ok "stdio MCP entry paths exist"
+    else
+      bad "stdio MCP server entry path problem:"
+      printf '%s\n' "$missing" | sed 's/^/        /'
+    fi
+  fi
+
   # model_info is a validated pydantic model, and an invalid field makes LiteLLM
   # DROP that deployment while logging only "ignoring and continuing" — the
   # gateway starts clean and serves nothing. `tier` cost us an hour: it is a real
@@ -101,6 +157,10 @@ SAFE = {
     'max_tokens', 'max_input_tokens', 'max_output_tokens',
     'input_cost_per_token', 'output_cost_per_token',
     'supports_vision', 'supports_function_calling', 'supports_prompt_caching',
+    # Discovery clients (zed-litellm) read these from /model/info. Real fields
+    # on litellm.types.utils.ModelInfo — ADR 0009.
+    'supports_reasoning', 'supports_parallel_function_calling',
+    'supports_tool_choice',
 }
 problems = []
 cfg = yaml.safe_load(open(sys.argv[1])) or {}
@@ -400,7 +460,28 @@ hdr "Runtime"
 
 if lsof -nP -iTCP:4000 -sTCP:LISTEN >/dev/null 2>&1; then
   case "$(ai_gateway_state http://127.0.0.1:4000 5)" in
-    ready) ok "gateway on :4000 (db:connected)" ;;
+    ready)
+      ok "gateway on :4000 (db:connected)"
+      # db:connected is necessary and not sufficient. After a LiteLLM upgrade
+      # the client expects columns the live database lacks: readiness still
+      # says connected, /v1/models still answers, and every /key/* call 500s —
+      # so scoped keys and MCP grants stop resolving while every other check
+      # here stays green. Ask the key API directly.
+      if [ -n "${LITELLM_MASTER_KEY:-}" ]; then
+        kl=$(curl -s -m 10 -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" \
+              "http://127.0.0.1:4000/key/list?return_full_object=true" 2>/dev/null)
+        if printf '%s' "$kl" | grep -q 'does not exist in the current database'; then
+          bad "database schema is behind the installed LiteLLM"
+          printf '%s' "$kl" | sed -n 's/.*"message": *"\([^"]*\)".*/        \1/p' | head -1
+          echo "        Scoped keys and MCP grants will not resolve."
+          echo "        fix: scripts/setup-prisma.sh   (dump the DB first)"
+        elif printf '%s' "$kl" | grep -q '"error"'; then
+          wrn "gateway /key/list returned an error — key management may be broken"
+        else
+          ok "key API works (schema matches installed LiteLLM)"
+        fi
+      fi
+      ;;
     nodb)  bad "gateway on :4000 answers db:disconnected — every virtual key 401s"
            echo "        Deploying now restarts it into the same broken state."
            echo "        fix: scripts/boot.sh" ;;

@@ -26,6 +26,12 @@ LABEL="$(ai_ollama_label)"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
 BIND="${OLLAMA_BIND:-127.0.0.1:11434}"
 MODELS="${OLLAMA_MODELS:-/Users/Shared/Ollama/models}"
+# Memory envelope knobs (ADR 0011). Override via env when re-running --apply.
+FLASH="${OLLAMA_FLASH_ATTENTION:-1}"
+KV_CACHE="${OLLAMA_KV_CACHE_TYPE:-q8_0}"
+MAX_LOADED="${OLLAMA_MAX_LOADED_MODELS:-1}"
+KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:--1}"
+NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}"
 
 find_ollama() {
   for p in /opt/homebrew/bin/ollama /usr/local/bin/ollama \
@@ -45,6 +51,11 @@ case "${1:---check}" in
     [ -n "$BIN" ] && echo "  binary       : ${BIN}" || echo "  binary       : NOT FOUND"
     echo "  would bind to: ${BIND}"
     echo "  models dir   : ${MODELS}"
+    echo "  flash attn   : ${FLASH}"
+    echo "  kv cache     : ${KV_CACHE}"
+    echo "  max loaded   : ${MAX_LOADED}"
+    echo "  keep alive   : ${KEEP_ALIVE}"
+    echo "  num parallel : ${NUM_PARALLEL}"
     echo
     if [ -f "$PLIST" ]; then
       echo "  launchd agent: installed"
@@ -89,6 +100,16 @@ case "${1:---check}" in
         <string>${BIND}</string>
         <key>OLLAMA_MODELS</key>
         <string>${MODELS}</string>
+        <key>OLLAMA_FLASH_ATTENTION</key>
+        <string>${FLASH}</string>
+        <key>OLLAMA_KV_CACHE_TYPE</key>
+        <string>${KV_CACHE}</string>
+        <key>OLLAMA_MAX_LOADED_MODELS</key>
+        <string>${MAX_LOADED}</string>
+        <key>OLLAMA_KEEP_ALIVE</key>
+        <string>${KEEP_ALIVE}</string>
+        <key>OLLAMA_NUM_PARALLEL</key>
+        <string>${NUM_PARALLEL}</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

@@ -45,8 +45,9 @@ aider --architect \
       --editor-model openai/local-code
 ```
 
-`local-big` (gpt-oss:20b) reasons, `local-code` (qwen3-coder:30b) writes the
-diff. Both resident, both private, no eviction. Add it as an alias:
+`local-big` (`gpt-oss:20b`) reasons, `local-code` (`qwen3-coder:30b`) writes
+the diff. Both private; with `OLLAMA_MAX_LOADED_MODELS=1` the second load
+evicts the first (ADR 0011). Add it as an alias:
 
 ```bash
 alias ask-arch='OPENAI_API_BASE="${HEARTH_GATEWAY}/v1" \
@@ -91,10 +92,10 @@ Agent Settings, or directly in `settings.json`:
       "hearth": {
         "api_url": "http://127.0.0.1:4000/v1",
         "available_models": [
-          { "name": "local-code", "max_tokens": 262144 },
-          { "name": "local-chat", "max_tokens": 40960 },
-          { "name": "local-big",  "max_tokens": 131072 },
-          { "name": "cloud-cheap", "max_tokens": 1048576 }
+          { "name": "local-code", "display_name": "qwen3-coder:30b", "max_tokens": 65536 },
+          { "name": "local-chat", "display_name": "qwen3:8b", "max_tokens": 40960 },
+          { "name": "local-big",  "display_name": "gpt-oss:20b", "max_tokens": 65536 },
+          { "name": "cloud-cheap", "display_name": "gemini-3.5-flash", "max_tokens": 1048576 }
         ]
       }
     }
@@ -104,12 +105,9 @@ Agent Settings, or directly in `settings.json`:
 
 On a laptop use the gateway host's LAN address instead of `127.0.0.1`.
 
-**Check the context windows before trusting them.** The values above are right
-for qwen3-coder (256K), qwen3 (40K) and Gemini (1M), but `gpt-oss:20b` is a
-guess — confirm with `ollama show gpt-oss:20b` and correct it. An overstated
-context window fails at request time with a confusing error rather than a clear
-one. `zed-litellm` below reads the real values from the gateway and avoids the
-question entirely.
+Context windows come from each role's `model_info` on the gateway (ADR 0009).
+Prefer `zed-litellm` below over hand-editing numbers; it reads `/model/info`.
+An overstated window fails at request time with a confusing error.
 
 The API key goes in the UI so it lands in the keychain rather than a dotfile.
 Use the `private` key on this machine; `lan` on other machines.
@@ -122,6 +120,9 @@ that metadata, and [`zed-litellm`](https://github.com/joby-brentsmith/zed-litell
 queries it and writes correct entries into `settings.json`, backing up first.
 
 Worth re-running after any role change so context windows stay honest.
+Default merge keeps hand-tuned fields like `display_name` (concrete Ollama
+tags in the picker while API `name` stays the role). Avoid `--replace` /
+`-f` unless you intend to wipe those labels.
 
 ### On a laptop
 

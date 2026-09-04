@@ -52,6 +52,34 @@ else
   "$PY" -m prisma generate --schema "$SCHEMA"
 fi
 
+# ---------------------------------------------------------------- 3. schema
+# Generating the client is NOT enough after a LiteLLM upgrade. The client then
+# expects columns the live database does not have, and the failure is nasty:
+# the gateway starts, /health/readiness reports db:connected, and every
+# /key/* call returns
+#
+#   The column `LiteLLM_VerificationToken.key_type` does not exist
+#
+# so scoped keys and MCP grants silently stop resolving while every status
+# check says the stack is fine. 1.85.1 -> 1.94.1 did exactly this.
+#
+# db push is additive here — it syncs the live schema to schema.prisma without
+# generating a migration history. Take a dump first; this is the step that can
+# lose data if the schema ever removes a column.
+if [ "${SKIP_DB_PUSH:-}" = "1" ]; then
+  echo "  schema sync skipped (SKIP_DB_PUSH=1)"
+elif [ -z "${DATABASE_URL:-}" ]; then
+  echo "  schema sync skipped — DATABASE_URL not set (file-mode install)"
+else
+  echo "  syncing database schema to schema.prisma"
+  if "${VENV}/bin/prisma" db push --schema "$SCHEMA" --skip-generate 2>&1 | sed 's/^/    /'; then
+    :
+  else
+    echo "  schema sync FAILED — the gateway will start but /key/* will 500."
+    exit 1
+  fi
+fi
+
 # ---------------------------------------------------------------- verify
 echo
 if "$PY" -c 'from prisma import Prisma' 2>/dev/null; then

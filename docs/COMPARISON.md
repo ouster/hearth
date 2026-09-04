@@ -27,17 +27,19 @@ security and self-sovereignty as non-negotiable?"*
 
 ### Where he is ahead — and these are real gaps for us
 
-**1. Sandboxing. We have none.**
+**1. Sandboxing — closed, after this was written.**
 
 He runs LLM work inside [bubblewrap](https://github.com/containers/bubblewrap):
 `sbox` in any directory creates a sandbox rooted there, and anything started
 inside can only see that directory plus explicit whitelists. Ports, audio and
 filesystem are all constrained.
 
-We have nothing equivalent. `aider` and Zed's agent run with full user
-permissions — they can read `~/.ssh`, `~/.aws`, every repo on the machine, and
-the gateway's own `.env`. Our privacy boundary stops data going to the *wrong
-model*. It does nothing about an agent reading the wrong *file*.
+We had nothing equivalent when this file was first written: `aider` and Zed's
+agent ran with full user permissions, able to read `~/.ssh`, `~/.aws`, every
+repo on the machine, and the gateway's own `.env`. `scripts/sandboxed.sh` and
+ADR 0007 answered that — an SBPL profile that restricts capability rather than
+attempting to detect injection. Different mechanism from bubblewrap, same
+instinct.
 
 **2. A threat model we never wrote down: prompt injection.**
 
@@ -120,7 +122,13 @@ Directly addresses the thing we found most irritating.
 | Per-project model list | yes | yes |
 | Routing policies | 9, including LLM-picks-the-model | static fallbacks |
 | Provider breadth | 8 | 100+ |
+| MCP gateway | **none** | yes — scoped by key, team, org |
 | Maturity | v0.1.5, 43 stars, 3 contributors | widely deployed |
+
+**Checked again 2026-08-02: Routerly still has no MCP support.** That now cuts
+against switching. LiteLLM's MCP gateway applies the same key scoping to tools
+as to models, which is what ADR 0008 is built on — leaving would mean rebuilding
+tool access control as well as the routing verification below.
 
 **The interesting unlock is native Anthropic format.** Claude Code is currently a
 documented exception in our stack because LiteLLM only speaks OpenAI shape.
@@ -147,16 +155,12 @@ than merely offending.
 
 ## What we should actually do about this
 
-In rough priority. Nothing here is urgent; the sandboxing one is the only
-genuine hole.
+In rough priority. Items 1 and 2 are now done; the rest stand.
 
-1. **Sandboxing for agent work.** The clearest gap. On macOS `sandbox-exec` is
-   deprecated but functional; containers or a dedicated user account are
-   alternatives. Even scoping aider to the repo directory would be an
-   improvement on nothing.
-2. **Write down a prompt-injection threat model.** We have web search feeding a
-   chat UI and agents reading repos, and have never asked what untrusted content
-   could make them do.
+1. ~~**Sandboxing for agent work.**~~ Done — `scripts/sandboxed.sh`, ADR 0007.
+2. ~~**Write down a prompt-injection threat model.**~~ Partly done. ADR 0007
+   covers agent containment and ADR 0008 covers tool scope. Web search feeding
+   the chat UI is still unmodelled.
 3. **Confirmation gates for consequential actions.** Currently only `git commit`
    qualifies, which is why this has not hurt. It would matter the moment
    anything in this stack can send an email or move money.
@@ -166,6 +170,8 @@ genuine hole.
 5. **Note llama-server** as the first thing to try if a model does not fit,
    before assuming the hardware is the limit.
 
-The honest summary: **we built the routing and governance layer well, and the
-isolation layer not at all.** Vitalik built the isolation layer and skipped the
-routing. Neither is complete.
+The honest summary as first written: **we built the routing and governance
+layer well, and the isolation layer not at all.** Vitalik built the isolation
+layer and skipped the routing. ADR 0007 closed most of our side of that gap,
+and ADR 0008 extended the governance layer to cover tools as well as models —
+which was a hole neither of us had named.

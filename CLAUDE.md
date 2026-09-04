@@ -9,6 +9,7 @@ Read `docs/ROUTING.md` before suggesting any routing change.
 1. **Concrete model names appear in exactly two files:** `litellm/config.yaml` and
    `docs/MODELS.md`. Everywhere else — aliases, scripts, IDE config, code — uses roles.
    If you are about to write `qwen3-coder:30b` into a shell alias, stop.
+   Same discipline for MCP servers: `litellm/config.yaml` and `docs/MCP.md`.
 
    Live: `local-chat`, `local-code`, `local-big`, `local-embed`, `cloud-cheap`.
    Dormant: `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`,
@@ -39,7 +40,7 @@ Read `docs/ROUTING.md` before suggesting any routing change.
    re-benching.
 
 7. **Check the RAM envelope.** 64 GB total, but macOS caps GPU-accessible memory at ~48 GB
-   (75% above 36 GB) — that is the real ceiling. Current resident set is 37.5 GB. Say when a suggestion will not fit, or
+   (75% above 36 GB) — that is the real ceiling. Current resident set is ~36.5 GB. Say when a suggestion will not fit, or
    will evict something that needs to stay loaded — on this machine the resident
    set matters more than any one model's quality.
 
@@ -76,6 +77,7 @@ docs/
   ARCHITECTURE.md    how the gateway is wired
   ROUTING.md         local vs cloud decision table
   MODELS.md          role → model registry
+  MCP.md             MCP server → tools → which keys
   RUNBOOK.md         start, stop, diagnose
   CLAUDE-PROJECT.md  the claude.ai Project spec
   decisions/         ADRs

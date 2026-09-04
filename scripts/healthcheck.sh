@@ -194,6 +194,55 @@ else
 fi
 
 echo
+echo "MCP tool scope:"
+#
+# A second egress path the model-level test above cannot see. Tool RESULTS are
+# fed back into the prompt, and a tool can reach the network on its own, so a
+# key that cannot touch a cloud MODEL can still ship data off the host through
+# a TOOL. The private key must therefore see zero tools it is not granted.
+#
+# Same two halves as the leak test. "Nobody sees any tools" is the correct
+# result when nothing is registered AND the result of a broken MCP gateway,
+# and those must not look the same — hence the master-key control.
+mcp_tools_for() {
+  curl -s -m 10 -H "Authorization: Bearer $1" "${GATEWAY}/v1/mcp/tools" 2>/dev/null \
+    | "$AI_PY" -c 'import sys,json
+try: d=json.load(sys.stdin)
+except Exception: print("ERR"); raise SystemExit
+t=d.get("tools")
+print("ERR" if t is None else len(t))'
+}
+
+mcp_admin="$(mcp_tools_for "$KEY")"
+if [ "$mcp_admin" = "ERR" ]; then
+  echo "  SKIPPED — /v1/mcp/tools did not answer (build without the MCP gateway?)"
+elif [ "$mcp_admin" = "0" ]; then
+  echo "  no MCP servers registered — nothing to scope yet"
+  echo "      Registering one is a routing decision: see docs/decisions/0008."
+elif [ -z "$PRIVATE_KEY" ]; then
+  echo "  ${mcp_admin} tool(s) registered, but LITELLM_PRIVATE_KEY is unset"
+  echo "      Cannot prove the private key is scoped. Not a pass."
+  fail=$((fail+1))
+else
+  echo "  control: ${mcp_admin} tool(s) visible to the master key"
+  mcp_priv="$(mcp_tools_for "$PRIVATE_KEY")"
+  allowed="${HEARTH_PRIVATE_MCP_TOOLS:-0}"
+  if [ "$mcp_priv" = "ERR" ]; then
+    echo "  *** INCONCLUSIVE: private key got no usable answer from /v1/mcp/tools ***"
+    fail=$((fail+1))
+  elif [ "$mcp_priv" = "$allowed" ]; then
+    echo "  private key sees ${mcp_priv} tool(s) — matches its granted scope"
+    pass=$((pass+1))
+  else
+    echo "  *** LEAK: private key sees ${mcp_priv} tool(s), expected ${allowed} ***"
+    echo "      A tool that reaches the network is egress the model scope does"
+    echo "      not cover. Check object_permission.mcp_servers on the key and"
+    echo "      require_key_mcp_access_defined in config.yaml."
+    fail=$((fail+1))
+  fi
+fi
+
+echo
 echo "Direct Ollama bypass check:"
 # Same false-pass class as the leak test: an unreachable address and a closed
 # port produce identical curl failures. Probe THIS machine's LAN IP, or report
