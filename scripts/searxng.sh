@@ -13,7 +13,7 @@
 # reaches upstream engines. The conversation, your documents and the model stay
 # local; the search terms do not.
 #
-# So: never enable web search on a conversation involving client matters, PII,
+# So: never enable web search on a conversation involving sensitive data, PII,
 # or any flagged-sensitive repo. "Summarise this document" is safe; "search for
 # <client name> <address>" is a disclosure. See docs/ROUTING.md.
 

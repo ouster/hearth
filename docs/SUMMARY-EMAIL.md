@@ -183,9 +183,9 @@ slower. Not doing it.
 2. **Re-bench with thinking off** and actually *read* the task 03 output.
    `gpt-oss:20b` earned `local-big` on capacity, not quality — nothing has yet
    confirmed it reasons well. Task 03 hides a float-for-currency bug in
-   settlement arithmetic. A syntax check cannot answer that; it needs a human.
+   money arithmetic. A syntax check cannot answer that; it needs a human.
 3. **Record model digests** from a verified state, so drift is detectable.
-4. **Local corpus of legislation** via `local-embed`, so the queries most worth
+4. **Local reference corpus** via `local-embed`, so the queries most worth
    not leaking never reach a search engine at all.
 5. **Confirmation gates** — costs nothing today because nothing in the stack can
    send mail or move money. Matters the day something can.

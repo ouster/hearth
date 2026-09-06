@@ -89,9 +89,9 @@ Kept as a record of why the tooling exists.
 1. **Re-run `bench.sh`** now that thinking is off, so the recorded numbers
    match reality, then **read the task 03 output.** `gpt-oss:20b` earned `local-big` on
    capacity, not quality — nothing has yet confirmed it reasons well. Task 03
-   hides a float-for-currency bug in settlement arithmetic; a model that fixes
-   the obvious `range(len())` and misses that is the wrong tool for conveyancing
-   work. Syntax checks cannot answer this. It needs a human read.
+   hides a float-for-currency bug in money arithmetic; a model that fixes
+   the obvious `range(len())` and misses that is the wrong tool for
+   production financial code. Syntax checks cannot answer this. It needs a human read.
 2. **Record digests after that read**, with `scripts/pin-digests.sh`, so drift
    is detectable from a known-good state rather than an arbitrary one.
 3. **Live with it for a week** before building the auto-updater. It is the
@@ -111,7 +111,7 @@ Kept as a record of why the tooling exists.
   agent is allowed to call it. Highest value per effort of anything left.
 - **No confirmation gates** on consequential actions beyond git commits. Costs
   nothing today because nothing in the stack can send mail or move money.
-- **`local-embed` indexes nothing** — a local corpus of legislation would keep
+- **`local-embed` indexes nothing** — a local reference corpus would keep
   the most sensitive queries off SearXNG entirely.
 
 Optional, when the need arises:
@@ -121,4 +121,4 @@ Optional, when the need arises:
 - Enable `cloud-frontier` (OpenRouter) for Kimi K3 and day-zero access to new
   models. There is no local K3 at any quantisation.
 - A second Open WebUI without search configured, if you want "no web search on
-  client work" to be structural rather than remembered.
+  sensitive work" to be structural rather than remembered.

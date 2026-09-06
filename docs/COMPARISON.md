@@ -65,8 +65,8 @@ same instinct applied only to code. Nothing gates an action with consequences.
 **4. A local `world_knowledge` corpus.**
 
 A Wikipedia dump plus manuals for things he cares about, so questions answerable
-locally never reach a search engine. For conveyancing that would be legislation
-and practice notes — the queries most worth not leaking. Our `local-embed` role
+locally never reach a search engine. For a regulated domain that would be
+reference docs and internal playbooks — the queries most worth not leaking. Our `local-embed` role
 exists and indexes nothing.
 
 ### Where we are ahead
@@ -164,9 +164,9 @@ In rough priority. Items 1 and 2 are now done; the rest stand.
 3. **Confirmation gates for consequential actions.** Currently only `git commit`
    qualifies, which is why this has not hurt. It would matter the moment
    anything in this stack can send an email or move money.
-4. **`world_knowledge` for conveyancing.** Legislation and practice notes
-   indexed locally via `local-embed`, so the queries most worth not leaking
-   never reach SearXNG.
+4. **`world_knowledge` corpus.** Domain reference material and internal
+   playbooks indexed locally via `local-embed`, so the queries most worth not
+   leaking never reach SearXNG.
 5. **Note llama-server** as the first thing to try if a model does not fit,
    before assuming the hardware is the limit.
 

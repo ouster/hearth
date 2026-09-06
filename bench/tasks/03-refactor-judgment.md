@@ -16,8 +16,8 @@ def apply_discount(items, discount_pct):
     return round(total, 2)
 ```
 
-Context: this is used for settlement figures in a conveyancing system, so
-correctness of the money arithmetic matters more than elegance.
+Context: this is used for money totals in a billing system, so
+correctness of the arithmetic matters more than elegance.
 
 Be specific about what breaks and under what input. Judged on whether it catches
 the float-for-currency problem, not just the obvious style issues.

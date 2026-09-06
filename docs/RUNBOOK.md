@@ -176,7 +176,7 @@ cannot quietly become cloud spend.
 
 Web search feeds arbitrary attacker-controlled page text straight into the
 model's context. That is tolerable **only** because the chat model has no tools:
-it can mislead you convincingly — which matters for legal research — but it
+it can mislead you convincingly — which matters on sensitive topics — but it
 cannot act.
 
 Enabling tools, functions, or code execution turns this into the highest-risk

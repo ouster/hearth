@@ -6,9 +6,9 @@ The decision table. When in doubt, local.
 
 Route to `local-*` roles, always:
 
-- Any repo or path you have flagged as holding real client / matter data
-- Client names, addresses, contact details, settlement figures, ID documents
-- Anything covered by privacy-law obligations (e.g. Australian Privacy Principles)
+- Any repo or path you have flagged as holding sensitive or private data
+- Names, addresses, contact details, financial figures, ID documents
+- Anything covered by applicable privacy obligations
 - Credentials, keys, `.env` contents, database dumps
 - Anything you would not paste into a public forum
 
@@ -68,8 +68,8 @@ So the same local/cloud line applies to search, one level down:
 
 | Safe with web search on | Never with web search on |
 |---|---|
-| "How does the Torrens title system handle X?" | "Search for <client name> <address>" |
-| "What changed in the 2026 conveyancing regulations?" | Anything quoting a matter, party, or settlement figure |
+| "How does framework X handle refresh tokens?" | "Search for <person name> <address>" |
+| "What changed in the 2026 API spec?" | Anything quoting a customer, party, or account figure |
 | Framework and API questions | Anything you would not type into Google |
 
 Web search is opt-in per conversation, not a global setting. Leave it off by

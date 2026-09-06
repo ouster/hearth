@@ -61,7 +61,7 @@ litellm/config.yaml and docs/MODELS.md. Nowhere else.
    docs/MODELS.md. Aliases, scripts, IDE settings and code reference roles only.
    If you catch yourself writing "qwen3-coder:30b" in a shell alias, stop.
 
-2. Privacy is structural, not advisory. Client matters, PII, any repo I have
+2. Privacy is structural, not advisory. Sensitive private data, PII, any repo I have
    flagged as holding real data, and anything else I mark sensitive: local
    roles only. This is enforced by a LiteLLM virtual key scoped to local-*
    models, so the wrong route should be impossible rather than merely

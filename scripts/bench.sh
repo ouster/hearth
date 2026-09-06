@@ -183,7 +183,7 @@ Syntax checks prove a model emitted parseable code, nothing more.
 
 The two discriminating tasks cannot be scored automatically:
 
-- **03-refactor-judgment** hides a float-for-currency bug in settlement
+- **03-refactor-judgment** hides a float-for-currency bug in money
   arithmetic. A weak model fixes the obvious `range(len())` and misses the one
   that matters. This is the task that should decide `local-big`.
 - **04-long-context** feeds the repo's own docs in. It separates models that

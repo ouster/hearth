@@ -198,7 +198,7 @@ $FORCE && echo "  --force: deleting and recreating, key values WILL change"
 echo
 
 sync_key "private" "${LOCAL}" 'null' "${MCP_PRIVATE}" \
-  "Local only. Sensitive matter work, Open WebUI default. Never add cloud roles."
+  "Local only. Sensitive private work, Open WebUI default. Never add cloud roles."
 sync_key "general" "${LOCAL},${CLOUD_ALL}" '100' "${MCP_GENERAL}" \
   "This machine: aider, Zed, scripts on non-sensitive repos."
 sync_key "lan" "${LOCAL},${CLOUD_CHEAP}" '10' "${MCP_LAN}" \

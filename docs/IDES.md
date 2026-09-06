@@ -71,7 +71,7 @@ deciding what to change.
 
 You have `auto-commits: true`, which is convenient and also the setting most
 likely to let a change land without you reading it. For anything touching
-conveyancing code:
+flagged sensitive code:
 
 ```bash
 aider --no-auto-commits
@@ -83,10 +83,16 @@ aider --no-auto-commits
 
 ### Point it at the gateway
 
-Agent Settings, or directly in `settings.json`:
+Agent Settings, or directly in `settings.json`. **Agent default is `local-big`
+(`gpt-oss:20b`)** — multi-turn write/edit survives better than `local-code`
+under Zed's tool list (Ollama Qwen XML parse failures). Keep `local-code` in
+the picker for short coding turns.
 
 ```json
 {
+  "agent": {
+    "default_model": { "provider": "hearth", "model": "local-big" }
+  },
   "language_models": {
     "openai_compatible": {
       "hearth": {

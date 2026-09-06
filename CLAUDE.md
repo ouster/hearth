@@ -20,7 +20,7 @@ Read `docs/ROUTING.md` before suggesting any routing change.
    change; across a privacy boundary it is a leak. If every local role is down, fail
    loudly. Any change adding a cloud model to a `local-*` fallback list is a bug.
 
-3. **Privacy is structural.** Client matter data, PII, credentials, and any repo or
+3. **Privacy is structural.** Sensitive private data, PII, credentials, and any repo or
    path the operator has flagged as sensitive goes to `local-*` only, enforced by
    the `private` virtual key's scope. Refuse to write code or config that could
    route that class of data to a cloud endpoint.
