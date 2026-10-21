@@ -19,8 +19,7 @@ flowchart TB
     gw{{"LiteLLM :4000<br/>roles / key scope / spend"}}
     pg[("Postgres :5433")]
 
-    ollama["Ollama 127.0.0.1:11434<br/>local-chat / code / embed"]
-    mlx["Rapid-MLX 127.0.0.1:8000<br/>local-big"]
+    ollama["Ollama 127.0.0.1:11434<br/>local-chat / code / big / embed"]
     cloud["Cloud roles<br/>Gemini live; others dormant"]
 
     aider --> gw
@@ -30,7 +29,6 @@ flowchart TB
     laptop -->|"lan or lan-cloud key"| gw
 
     gw --> ollama
-    gw --> mlx
     gw -->|"allowed keys only"| cloud
     gw -.->|"private key refused"| cloud
     gw <--> pg
@@ -39,7 +37,7 @@ flowchart TB
     classDef cloudCls fill:#FAEEDA,stroke:#854F0B,color:#633806
     classDef gwCls fill:#E6F1FB,stroke:#185FA5,color:#0C447C
 
-    class ollama,pg,mlx localCls
+    class ollama,pg localCls
     class cloud cloudCls
     class gw gwCls
 ```
@@ -63,8 +61,8 @@ plus dormant `cloud-code` and the three `cloud-frontier*` variants. Clients ask 
 role. Swapping the model behind a role is one config edit and a restart; no alias,
 script, or IDE setting changes. See `docs/MODELS.md`.
 
-`local-big` is served by **Rapid-MLX** on localhost `:8000`; the other local roles
-stay on Ollama `:11434` (ADR 0012).
+Every local role is Ollama on `:11434`. `local-big` uses Ollama's MLX runner
+(ADR 0013). One model stays GPU-resident (ADR 0011).
 
 **2. Keys.** Four virtual keys, each scoped to a model list:
 

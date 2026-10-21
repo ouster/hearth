@@ -1,7 +1,7 @@
 # ADR 0012 — `local-big` on Rapid-MLX
 
 **Date:** 2026-09-06  
-**Status:** accepted
+**Status:** superseded by ADR 0013 (2026-10-22)
 
 ## Context
 

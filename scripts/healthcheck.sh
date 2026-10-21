@@ -49,8 +49,8 @@ probe() {
   local role="$1" key="$2" label="$3"
   local start elapsed code body timeout
 
-  # Local roles may need a cold load. local-big is MLX (~20GB) on Rapid-MLX;
-  # first request after service start can take minutes.
+  # Local roles may need a cold load. local-big is ~23GB on Ollama's MLX
+  # runner; the first request after it was evicted can take a minute.
   # Cloud roles have no such excuse.
   case "$label" in
     local) timeout="${PROBE_TIMEOUT_LOCAL:-600}" ;;

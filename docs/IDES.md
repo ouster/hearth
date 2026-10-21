@@ -45,9 +45,9 @@ aider --architect \
       --editor-model openai/local-code
 ```
 
-`local-big` (`qwen3.6-35b-4bit` / MLX) reasons, `local-code` (`qwen3-coder:30b`)
-writes the diff. Both private; MLX and Ollama are separate backends — both can
-be resident (~40 GB combined). Watch the envelope (ADR 0012).
+`local-big` reasons, `local-code` writes the diff. Both are Ollama and both
+are private. One model stays resident, so the second load evicts the first
+(ADR 0011, ADR 0013).
 
 ```bash
 alias ask-arch='OPENAI_API_BASE="${HEARTH_GATEWAY}/v1" \
@@ -83,10 +83,9 @@ aider --no-auto-commits
 
 ### Point it at the gateway
 
-Agent Settings, or directly in `settings.json`. **Agent default is `local-big`**
-(`qwen3.6-35b-4bit` via Rapid-MLX) — passes Zed tool loops; ~7× faster than
-the prior Ollama `gpt-oss:20b` on tool-smoke. Keep `local-code` in the picker for
-short coding turns (Ollama `qwen3-coder:30b` — avoid for long agent runs).
+Agent Settings, or directly in `settings.json`. **Agent default is `local-big`.**
+Tool-smoke on 2026-10-22 passed on Ollama's MLX runner (ADR 0013). Keep
+`local-code` in the picker for short coding turns.
 
 ```json
 {
@@ -100,7 +99,7 @@ short coding turns (Ollama `qwen3-coder:30b` — avoid for long agent runs).
         "available_models": [
           { "name": "local-code", "display_name": "qwen3-coder:30b", "max_tokens": 65536 },
           { "name": "local-chat", "display_name": "qwen3:8b", "max_tokens": 40960 },
-          { "name": "local-big",  "display_name": "qwen3.6-35b-4bit (MLX)", "max_tokens": 65536 },
+          { "name": "local-big",  "display_name": "qwen3.6:35b-mlx", "max_tokens": 65536 },
           { "name": "cloud-cheap", "display_name": "gemini-3.5-flash", "max_tokens": 1048576 }
         ]
       }
@@ -109,9 +108,8 @@ short coding turns (Ollama `qwen3-coder:30b` — avoid for long agent runs).
 }
 ```
 
-No separate `mlx` provider is required — `local-big` routes through the gateway
-to Rapid-MLX on `:8000`. For A/B testing against a raw MLX endpoint, see
-`docs/MLX-BENCH.md`.
+`local-big` routes through the gateway to Ollama. For a Rapid-MLX experiment
+that bypasses the gateway, see `docs/MLX-BENCH.md`.
 
 On a laptop use the gateway host's LAN address instead of `127.0.0.1`.
 

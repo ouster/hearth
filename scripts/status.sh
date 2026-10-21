@@ -29,17 +29,6 @@ else
   down "ollama" "not responding — scripts/install-ollama-service.sh --apply"
 fi
 
-RAPID_PORT="${RAPID_MLX_PORT:-8000}"
-if curl -s -m 3 -o /dev/null "http://127.0.0.1:${RAPID_PORT}/v1/models" 2>/dev/null; then
-  if [ -f "$HOME/Library/LaunchAgents/$(ai_rapid_mlx_label).plist" ]; then
-    up "rapid-mlx" "127.0.0.1:${RAPID_PORT} (service)"
-  else
-    up "rapid-mlx" "127.0.0.1:${RAPID_PORT} (manual — install service for reboot)"
-  fi
-else
-  down "rapid-mlx" "not responding — scripts/install-rapid-mlx-service.sh --apply"
-fi
-
 case "$(ai_gateway_state http://127.0.0.1:4000 3)" in
   ready) up   "gateway" ":4000 (db:connected)" ;;
   nodb)  warn "gateway" "responding but db not connected — every scoped key 401s. scripts/boot.sh" ;;
