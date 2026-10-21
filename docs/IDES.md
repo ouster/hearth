@@ -45,9 +45,9 @@ aider --architect \
       --editor-model openai/local-code
 ```
 
-`local-big` (`gpt-oss:20b`) reasons, `local-code` (`qwen3-coder:30b`) writes
-the diff. Both private; with `OLLAMA_MAX_LOADED_MODELS=1` the second load
-evicts the first (ADR 0011). Add it as an alias:
+`local-big` (`qwen3.6-35b-4bit` / MLX) reasons, `local-code` (`qwen3-coder:30b`)
+writes the diff. Both private; MLX and Ollama are separate backends — both can
+be resident (~40 GB combined). Watch the envelope (ADR 0012).
 
 ```bash
 alias ask-arch='OPENAI_API_BASE="${HEARTH_GATEWAY}/v1" \
@@ -83,10 +83,10 @@ aider --no-auto-commits
 
 ### Point it at the gateway
 
-Agent Settings, or directly in `settings.json`. **Agent default is `local-big`
-(`gpt-oss:20b`)** — multi-turn write/edit survives better than `local-code`
-under Zed's tool list (Ollama Qwen XML parse failures). Keep `local-code` in
-the picker for short coding turns.
+Agent Settings, or directly in `settings.json`. **Agent default is `local-big`**
+(`qwen3.6-35b-4bit` via Rapid-MLX) — passes Zed tool loops; ~7× faster than
+the prior Ollama `gpt-oss:20b` on tool-smoke. Keep `local-code` in the picker for
+short coding turns (Ollama `qwen3-coder:30b` — avoid for long agent runs).
 
 ```json
 {
@@ -100,7 +100,7 @@ the picker for short coding turns.
         "available_models": [
           { "name": "local-code", "display_name": "qwen3-coder:30b", "max_tokens": 65536 },
           { "name": "local-chat", "display_name": "qwen3:8b", "max_tokens": 40960 },
-          { "name": "local-big",  "display_name": "gpt-oss:20b", "max_tokens": 65536 },
+          { "name": "local-big",  "display_name": "qwen3.6-35b-4bit (MLX)", "max_tokens": 65536 },
           { "name": "cloud-cheap", "display_name": "gemini-3.5-flash", "max_tokens": 1048576 }
         ]
       }
@@ -108,6 +108,10 @@ the picker for short coding turns.
   }
 }
 ```
+
+No separate `mlx` provider is required — `local-big` routes through the gateway
+to Rapid-MLX on `:8000`. For A/B testing against a raw MLX endpoint, see
+`docs/MLX-BENCH.md`.
 
 On a laptop use the gateway host's LAN address instead of `127.0.0.1`.
 

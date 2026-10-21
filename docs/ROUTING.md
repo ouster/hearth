@@ -27,7 +27,7 @@ This is enforced by key scope, not by discipline — see below.
 | Role | Use for | State |
 |---|---|---|
 | `local-code` | default for code. Real work, still private | live |
-| `local-big` | long context, reasoning-heavy, still private | live |
+| `local-big` | agent, long context, reasoning-heavy, still private | live (Rapid-MLX) |
 | `local-chat` | **general questions**, not code. Open WebUI default | live |
 | `local-embed` | embeddings for local RAG | live |
 | `cloud-cheap` | bulk non-sensitive work, big context | live |

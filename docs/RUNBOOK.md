@@ -4,7 +4,8 @@
 
 | Piece | Where | Managed by |
 |---|---|---|
-| Ollama | `127.0.0.1:11434` — localhost only since ADR 0003 | Ollama.app |
+| Ollama | `127.0.0.1:11434` — localhost only since ADR 0003 | launchd (`com.hearth.ollama`) or Ollama.app |
+| Rapid-MLX | `127.0.0.1:8000` — `local-big` only, ADR 0012 | launchd (`com.hearth.rapid-mlx`) |
 | LiteLLM gateway | `:4000` | launchd (`com.hearth.litellm` by default) |
 | Postgres | `127.0.0.1:5433` | Podman, `hearth-postgres` |
 | Open WebUI | `127.0.0.1:3000` | Podman, `hearth-webui` |
@@ -14,7 +15,8 @@ Launch wrapper: `~/.config/litellm/run-litellm.sh`
 Logs: `~/Library/Logs/litellm.log`, `litellm.error.log`
 
 Launchd label overrides (optional): `HEARTH_LITELLM_LABEL`, `HEARTH_OLLAMA_LABEL`,
-`HEARTH_BOOT_LABEL`. Scripts auto-discover an already-installed agent.
+`HEARTH_RAPID_MLX_LABEL`, `HEARTH_BOOT_LABEL`. Scripts auto-discover an
+already-installed agent.
 
 ### Two env files — know which is which
 
@@ -61,6 +63,23 @@ launchctl kickstart -k "gui/$(id -u)/com.hearth.litellm"
 Provider keys go in `~/.config/litellm/env`, which `run-litellm.sh` sources.
 Rollback is `mv` the `.pre-hearth` file back and kickstart.
 
+### Rapid-MLX (`local-big`)
+
+`local-big` routes to Rapid-MLX on `127.0.0.1:8000` (ADR 0012). One-time:
+
+```bash
+# In ~/.config/litellm/env — not a provider secret; any string works locally
+export RAPID_MLX_API_KEY=mlx
+
+scripts/mlx-bench.sh --install-rapid          # if needed
+scripts/install-rapid-mlx-service.sh --apply  # launchd, survives reboot
+launchctl kickstart -k "gui/$(id -u)/com.hearth.litellm"
+scripts/healthcheck.sh                        # local-big should be OK
+```
+
+Zed: agent default stays `hearth` / `local-big`. Update `display_name` to
+`qwen3.6-35b-4bit (MLX)` in `settings.json` (done on this machine).
+
 ## Surviving a reboot
 
 ```bash
@@ -74,9 +93,9 @@ What already survives, and what does not:
 | Piece | After a reboot |
 |---|---|
 | LiteLLM | comes back — launchd `KeepAlive` |
-| `OLLAMA_HOST` | set at login by `com.user.setollamahost.plist` (also in serve plist) |
+| Ollama | comes back — if `scripts/install-ollama-service.sh --apply` was run |
 | Ollama memory | `FLASH_ATTENTION=1`, `KV_CACHE_TYPE=q8_0`, `MAX_LOADED_MODELS=1`, `KEEP_ALIVE=-1` via serve plist — ADR 0011 |
-| Ollama itself | **only if "Open at Login" is ticked in its Settings** |
+| Rapid-MLX (`local-big`) | comes back — if `scripts/install-rapid-mlx-service.sh --apply` was run |
 | Podman VM | **does not start itself** — this is the real gap |
 | Containers | restart policies only apply once the VM is up |
 
@@ -259,18 +278,21 @@ config, not just that model.
 **A role 500s but others work.** Provider issue or a bad model name. `curl` the role
 directly with the master key to see the raw error.
 
-**Local role is slow on first call.** Cold load only. The current set totals
-37.5 GB against a ~48 GB GPU ceiling, so all four stay resident and nothing evicts
-anything. `ollama ps` shows what is loaded. If a role is suddenly slow again,
-check that a newly added model has not pushed the set over budget.
+**Local role is slow on first call.** Cold load only. Ollama roles share one GPU
+slot (`MAX_LOADED_MODELS=1`); Rapid-MLX holds `local-big` separately on `:8000`.
+`ollama ps` shows Ollama residents; `curl :8000/v1/models` for MLX.
+
+**`local-big` fails but Ollama roles work.** Rapid-MLX is down or still loading.
+`scripts/status.sh`, `tail -f ~/Library/Logs/rapid-mlx.error.log`, or
+`scripts/install-rapid-mlx-service.sh --check`.
 
 **Everything local fails.** By design local roles do not fall back to cloud, so they
 fail loudly rather than silently shipping your prompt to Google. Check Ollama:
-`curl localhost:11434/api/tags`.
+`curl localhost:11434/api/tags` and Rapid-MLX: `curl localhost:8000/v1/models`.
 
-**Break-glass.** If the gateway is down and you need inference now, hit Ollama directly
-at `127.0.0.1:11434`. No logging, no spend tracking, no key scoping — unblock yourself,
-then fix the gateway.
+**Break-glass.** If the gateway is down and you need inference now, hit Ollama at
+`127.0.0.1:11434` or Rapid-MLX at `127.0.0.1:8000/v1`. No logging, no spend
+tracking, no key scoping — unblock yourself, then fix the gateway.
 
 ## Rollback
 

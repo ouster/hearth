@@ -32,22 +32,21 @@ model_list:
 
   - model_name: local-big
     litellm_params:
-      model: ollama_chat/gpt-oss:20b
-      api_base: http://127.0.0.1:11434
-      num_ctx: 65536       # RAM budget — native is 128K; see ADR 0010
+      model: openai/qwen3.6-35b-4bit
+      api_base: http://127.0.0.1:8000/v1
+      api_key: os.environ/RAPID_MLX_API_KEY
     model_info:
       mode: chat
-      max_input_tokens: 65536
+      max_input_tokens: 65536       # RAM budget — native 262K; see ADR 0010
       max_output_tokens: 65536
       supports_function_calling: true
-      supports_vision: false
+      supports_vision: false        # vision weights present; role is text agent
       supports_reasoning: true
       supports_prompt_caching: false
       supports_parallel_function_calling: false
-    # set 2026-08-02 — reasoning role, ~13GB. Replaced llama3.3:70b, which
-    # measured 440s to first reply because 42GB could not stay resident
-    # alongside the coding model. See docs/decisions/0004. model_info —
-    # ADR 0009. Runtime ctx capped at 64K — ADR 0010.
+    # set 2026-09-06 — agent / reasoning via Rapid-MLX (~20GB). Replaced
+    # gpt-oss:20b on Ollama after tool-smoke + 7x speed win. See ADR 0012.
+    # Served by scripts/install-rapid-mlx-service.sh on :8000.
 
   - model_name: local-chat
     litellm_params:

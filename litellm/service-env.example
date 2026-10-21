@@ -32,6 +32,10 @@ export GOOGLE_API_KEY=CHANGEME          # cloud-cheap. Live.
 
 # ---- local ----
 export OLLAMA_API_BASE=http://127.0.0.1:11434
+
+# Rapid-MLX OpenAI-compatible server (local-big). Not a provider secret —
+# any bearer token works; LiteLLM requires a value.
+export RAPID_MLX_API_KEY=mlx
 # Optional. Omit to use Ollama's default model directory.
 # export OLLAMA_MODELS=/Users/Shared/Ollama/models
 

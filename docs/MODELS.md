@@ -13,23 +13,26 @@ model's size — see the measurement below.
 |---|---|---|---|---|---|
 | `local-chat` | `qwen3:8b` | 5.2 GB | 2026-08-02 | `500a1f067a9f` | General knowledge, **40K** ctx (native). **thinking off** — ADR 0006 |
 | `local-code` | `qwen3-coder:30b` | 18 GB | 2026-08-02 | `06c1097efce0` | 30B MoE, ~3B active. Native 256K; **runtime 64K** — ADR 0010 |
-| `local-big` | `gpt-oss:20b` | 13 GB | 2026-08-02 | `17052f91a42e` | Reasoning. Native 128K; **runtime 64K** — ADR 0010 |
+| `local-big` | `qwen3.6-35b-4bit` | ~20 GB | 2026-09-06 | n/a (MLX) | Agent / reasoning via **Rapid-MLX** `:8000`. ADR 0012 |
 | `local-embed` | `nomic-embed-text` | 0.3 GB | 2026-08-01 | `0a109f422b47` | Local RAG |
 | `cloud-cheap` | `gemini-3.5-flash` | — | 2026-08-01 | n/a | 1M ctx, cheap. Bulk non-sensitive work |
 
-**Disk footprint: ~36.5 GB** across the four local weights (`ollama list`).
-Only **one** model stays GPU-resident (`OLLAMA_MAX_LOADED_MODELS=1`,
-ADR 0011) — switching roles evicts. KV cache uses `q8_0` when flash
-attention is active.
+**Ollama disk:** ~23.5 GB across chat, code, embed (`ollama list`).
+**MLX disk:** ~20 GB for `qwen3.6-35b-4bit` (Rapid-MLX cache). Only one Ollama
+model stays GPU-resident (`OLLAMA_MAX_LOADED_MODELS=1`, ADR 0011); Rapid-MLX
+holds `local-big` separately on `:8000`.
 
 Context windows and capability flags also live in each role's `model_info`
 block in `litellm/config.yaml`, so `/model/info` (and tools like
-`zed-litellm`) stay honest — ADR 0009. **Runtime `num_ctx` is capped at 64K
-for `local-code` / `local-big`** so Ollama does not allocate a 256K KV cache
-(~45 GB) on this machine — ADR 0010.
+`zed-litellm`) stay honest — ADR 0009. **Runtime context is capped at 64K**
+for `local-code` / `local-big` (Ollama `num_ctx` or MLX client limits) so KV
+does not blow the ~48 GB envelope — ADR 0010.
 
-**Bench candidate (not a role yet):** `qwen3.6:27b-coding-mtp-q4_K_M` (~18 GB)
-vs incumbent `qwen3-coder:30b`. Run `scripts/bench.sh` before any swap.
+**Bench candidate (not a role):** `qwen3.6:27b-coding-mtp-q4_K_M` on Ollama
+(~18 GB) — rejected for verbosity vs `qwen3-coder:30b` (ADR 0005 era bench).
+
+**Retired from `local-big`:** `gpt-oss:20b` on Ollama — replaced by MLX
+`qwen3.6-35b-4bit` after tool-smoke (ADR 0012). Weights may remain on disk.
 
 Digests are **recorded and drift-checked** in `pins/digests.tsv`, not enforced —
 see below. Re-record with `scripts/pin-digests.sh` after any role change you trust.
@@ -59,6 +62,7 @@ Frontier is cloud-only by necessity, which is what these roles are for.
 
 | Model | Was | Removed | Why |
 |---|---|---|---|
+| `gpt-oss:20b` | `local-big` | 2026-09-06 | Superseded by MLX `qwen3.6-35b-4bit` — faster tool smoke, same pass. ADR 0012 |
 | `llama3.3:70b` | `local-big` | 2026-08-02 | 42 GB, could not stay resident. 440 s to first reply. ADR 0004 |
 | `qwen2.5-coder:32b` | `local-code` | 2026-08-02 | Superseded by the 30B MoE at the same size |
 | `qwen2.5-coder:7b` | `local-fast` | 2026-08-02 | Role retired — the MoE made a separate fast coder redundant. ADR 0005 |

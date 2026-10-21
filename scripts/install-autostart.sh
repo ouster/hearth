@@ -41,6 +41,12 @@ check() {
     gap "Ollama — no service and not a login item: scripts/install-ollama-service.sh --apply"
   fi
 
+  if [ -f "$HOME/Library/LaunchAgents/$(ai_rapid_mlx_label).plist" ]; then
+    ok "Rapid-MLX — launchd service ($(ai_rapid_mlx_label)), KeepAlive (local-big)"
+  else
+    gap "Rapid-MLX — not a service: scripts/install-rapid-mlx-service.sh --apply"
+  fi
+
   if [ -f "$PLIST" ]; then
     ok "podman + containers — boot agent installed"
   else

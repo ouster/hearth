@@ -3,6 +3,6 @@
 # this records what was in place when each role was blessed so drift is
 # detectable. scripts/preflight.sh checks it.
 local-code	qwen3-coder:30b	06c1097efce0	2026-08-02
-local-big	gpt-oss:20b	17052f91a42e	2026-08-02
 local-chat	qwen3:8b	500a1f067a9f	2026-08-02
 local-embed	nomic-embed-text	0a109f422b47	2026-08-02
+# local-big moved to Rapid-MLX (qwen3.6-35b-4bit) — not Ollama-digest-pinned. ADR 0012.

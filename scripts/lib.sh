@@ -71,6 +71,16 @@ ai_ollama_label() {
     "com.hearth.ollama" "com.ai-stack.ollama" "com.colinnevin.ollama"
 }
 
+ai_rapid_mlx_label() {
+  _ai_resolve_label "$(_hearth_env HEARTH_RAPID_MLX_LABEL AI_STACK_RAPID_MLX_LABEL)" \
+    "com.hearth.rapid-mlx" \
+    "com.hearth.rapid-mlx" "com.ai-stack.rapid-mlx" "com.colinnevin.rapid-mlx"
+}
+
+ai_rapid_mlx_agent() {
+  printf 'gui/%s/%s' "$(id -u)" "$(ai_rapid_mlx_label)"
+}
+
 ai_boot_label() {
   _ai_resolve_label "$(_hearth_env HEARTH_BOOT_LABEL AI_STACK_BOOT_LABEL)" \
     "com.hearth.boot" \

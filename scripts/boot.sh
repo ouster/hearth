@@ -119,6 +119,21 @@ else
   fi
 fi
 
+# ---------------------------------------------------------------- rapid-mlx
+RAPID_PORT="${RAPID_MLX_PORT:-8000}"
+if curl -s -m 5 -o /dev/null "http://127.0.0.1:${RAPID_PORT}/v1/models" 2>/dev/null; then
+  log "rapid-mlx responding on :${RAPID_PORT}"
+else
+  RAPID_LABEL="$(ai_rapid_mlx_label)"
+  if [ -f "$HOME/Library/LaunchAgents/${RAPID_LABEL}.plist" ]; then
+    log "rapid-mlx not up — kicking the service (${RAPID_LABEL})"
+    launchctl kickstart -k "gui/$(id -u)/${RAPID_LABEL}" 2>/dev/null
+  else
+    log "rapid-mlx NOT responding and no service installed"
+    log "  fix: scripts/install-rapid-mlx-service.sh --apply"
+  fi
+fi
+
 # ---------------------------------------------------------------- gateway
 # Wait until the HOST can reach Postgres. In-container pg_isready alone is not
 # enough — LiteLLM uses the published port on 127.0.0.1:5433.
