@@ -100,7 +100,7 @@ Tool-smoke on 2026-10-22 passed on Ollama's MLX runner (ADR 0013). Keep
           { "name": "local-code", "display_name": "qwen3-coder:30b", "max_tokens": 65536 },
           { "name": "local-chat", "display_name": "qwen3:8b", "max_tokens": 40960 },
           { "name": "local-big",  "display_name": "qwen3.6:35b-mlx", "max_tokens": 65536 },
-          { "name": "cloud-cheap", "display_name": "gemini-3.5-flash", "max_tokens": 1048576 }
+          { "name": "cloud-cheap", "display_name": "gemini-3.6-flash", "max_tokens": 1048576 }
         ]
       }
     }

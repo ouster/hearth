@@ -30,7 +30,9 @@ MODELS="${OLLAMA_MODELS:-/Users/Shared/Ollama/models}"
 FLASH="${OLLAMA_FLASH_ATTENTION:-1}"
 KV_CACHE="${OLLAMA_KV_CACHE_TYPE:-q8_0}"
 MAX_LOADED="${OLLAMA_MAX_LOADED_MODELS:-1}"
-KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:--1}"
+# 10m, not -1. A bad first load (native 256K) never expired under -1.
+# An in-flight allocator stall is the watchdog's job. ADR 0015.
+KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-10m}"
 NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}"
 
 find_ollama() {

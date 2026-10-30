@@ -47,7 +47,7 @@ pass=0; fail=0
 
 probe() {
   local role="$1" key="$2" label="$3"
-  local start elapsed code body timeout
+  local start elapsed code body timeout payload
 
   # Local roles may need a cold load. local-big is ~23GB on Ollama's MLX
   # runner; the first request after it was evicted can take a minute.
@@ -57,11 +57,19 @@ probe() {
     *)     timeout="${PROBE_TIMEOUT_CLOUD:-90}"  ;;
   esac
 
+  # Cloud Flash counts thinking against max_tokens. A cap of 10 is spent
+  # before any visible text (ADR 0014). Omit it and let the model stop.
+  # Local probes stay capped so a cold role cannot ramble.
+  payload="{\"model\":\"${role}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word: ok\"}]}"
+  if [ "$label" != "cloud" ]; then
+    payload="{\"model\":\"${role}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word: ok\"}],\"max_tokens\":10}"
+  fi
+
   start=$(date +%s)
   body=$(curl -s -m "$timeout" -w '\n%{http_code}' \
     -H "Authorization: Bearer ${key}" \
     -H "Content-Type: application/json" \
-    -d "{\"model\":\"${role}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word: ok\"}],\"max_tokens\":10}" \
+    -d "$payload" \
     "${GATEWAY}/v1/chat/completions" 2>&1)
   code=$(printf '%s' "$body" | tail -n1)
   elapsed=$(( $(date +%s) - start ))

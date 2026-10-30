@@ -15,7 +15,7 @@ model's size — see the measurement below.
 | `local-code` | `qwen3-coder:30b` | 18 GB | 2026-08-02 | `06c1097efce0` | 30B MoE, ~3B active. Native 256K; **runtime 64K** — ADR 0010 |
 | `local-big` | `qwen3.6:35b-mlx` | 23 GB | 2026-10-22 | `e92a3e94bbca` | Agent / reasoning. Ollama MLX runner. Native 256K; **runtime 64K**. ADR 0013 |
 | `local-embed` | `nomic-embed-text` | 0.3 GB | 2026-08-01 | `0a109f422b47` | Local RAG |
-| `cloud-cheap` | `gemini-3.5-flash` | — | 2026-08-01 | n/a | 1M ctx, cheap. Bulk non-sensitive work |
+| `cloud-cheap` | `gemini-3.6-flash` | — | 2026-10-22 | n/a | 1M ctx, 65K output. ADR 0014 |
 
 **Ollama disk:** chat, code, embed, plus ~23 GB for `local-big`. Only **one**
 model stays GPU-resident (`OLLAMA_MAX_LOADED_MODELS=1`, ADR 0011).

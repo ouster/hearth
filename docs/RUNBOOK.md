@@ -75,7 +75,8 @@ What already survives, and what does not:
 |---|---|
 | LiteLLM | comes back — launchd `KeepAlive` |
 | Ollama | comes back — if `scripts/install-ollama-service.sh --apply` was run |
-| Ollama memory | `FLASH_ATTENTION=1`, `KV_CACHE_TYPE=q8_0`, `MAX_LOADED_MODELS=1`, `KEEP_ALIVE=-1` via serve plist — ADR 0011 |
+| Ollama memory | `FLASH_ATTENTION=1`, `KV_CACHE_TYPE=q8_0`, `MAX_LOADED_MODELS=1`, `KEEP_ALIVE=10m` via serve plist — ADR 0011, keep-alive ADR 0015 |
+| MLX watchdog | `scripts/mlx-watchdog.sh` — kills a runner at ≥38 GB graphics footprint that has accepted a prompt and sent no tokens for 30 s |
 | Podman VM | **does not start itself** — this is the real gap |
 | Containers | restart policies only apply once the VM is up |
 
@@ -119,6 +120,8 @@ tail -f ~/Library/Logs/litellm.error.log
 
 # what's loaded in memory right now
 ollama ps
+# ollama ps SIZE understates graphics memory. A runner near 40 GB that
+# never emits a token is killed by scripts/mlx-watchdog.sh (ADR 0015).
 
 # spend
 curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
