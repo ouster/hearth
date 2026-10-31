@@ -93,6 +93,9 @@ $want
 EOF
 
 if [ "$CHECK" = 0 ] && [ "$rc" = 0 ]; then
+  # Keep Zed's model-picker labels in step with what is loaded. Best effort:
+  # a missing Zed config must not fail a load.
+  [ -x "${ROOT}/scripts/zed-sync.sh" ] && "${ROOT}/scripts/zed-sync.sh" >/dev/null 2>&1 || true
   # Re-read: a load that returns 0 and loads nothing is the failure to catch.
   exec "$0" --check
 fi

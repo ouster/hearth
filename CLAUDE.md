@@ -17,6 +17,9 @@ removed gateway — never suggest commands against it.
 1. **Concrete model names appear in exactly two files:** `config/roles.tsv` and
    `docs/MODELS.md`. Everywhere else — aliases, scripts, IDE config, code — uses roles.
    If you are about to write a model tag into a shell alias, stop.
+   One exception: the `display_name` labels in Zed's settings, which
+   `scripts/zed-sync.sh` generates from `roles.tsv` + `lms ls` so they cannot
+   drift. Clients always *call* the role.
    Same discipline for MCP servers: client config docs (`docs/IDES.md`) and
    `docs/MCP.md`.
 

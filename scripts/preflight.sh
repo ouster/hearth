@@ -152,6 +152,15 @@ case "$rc" in
   *) er "pin-digests could not run: $(printf '%s' "$out" | tail -1)" ;;
 esac
 
+# ---------------------------------------------------------------- zed labels
+hdr "Zed labels"
+zs=$("${ROOT}/scripts/zed-sync.sh" --check 2>&1); zrc=$?
+case "$zrc" in
+  0) ok "Zed model labels match roles.tsv (scripts/zed-sync.sh)" ;;
+  1) wrn "Zed labels out of date: $(printf '%s' "$zs" | grep -E 'DRIFT|MISSING|skip' | head -1) — run scripts/zed-sync.sh" ;;
+  *) wrn "zed-sync could not run: $(printf '%s' "$zs" | tail -1)" ;;
+esac
+
 # ---------------------------------------------------------------- autostart
 hdr "Autostart"
 "${ROOT}/scripts/install-autostart.sh" --check >/dev/null 2>&1 \

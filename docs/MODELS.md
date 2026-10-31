@@ -153,6 +153,7 @@ loads whatever is on disk.
    `bench/tasks/` (rule 5). Same settings as the last baseline
 3. Check the footprint fits beside `local-embed` under the ~48 GB ceiling
 4. Update this table and `config/roles.tsv` together, then `scripts/lms-load.sh`
+   (which also refreshes Zed's labels via `scripts/zed-sync.sh`)
 5. `scripts/tool-smoke.sh openai http://127.0.0.1:1234/v1 local-big`
 6. Write an ADR in `docs/decisions/` and a row in `docs/HISTORY.md`
 7. Delete the old weights only once the replacement has proven itself
