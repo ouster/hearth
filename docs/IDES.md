@@ -116,7 +116,10 @@ AustLII, so it is enabled **only** in the `research` agent profile.
 
 Zed's built-in **Write** profile sets `enable_all_context_servers: true`
 (Zed 1.26 defaults), which would expose auslaw in every thread. Settings
-override that to `false`. `tool_permissions.default` is `confirm`, so each
+redefine Write with that set to `false`. A profile override **replaces** the
+built-in profile (`name` is required, tools are not merged), so the override
+carries Zed 1.26.2's full Write tool list. Re-check it after a Zed upgrade:
+a partial override fails the whole settings load with `missing field name`. `tool_permissions.default` is `confirm`, so each
 tool call asks first.
 
 Switching to Research is the act of saying "this query goes to AustLII" —
