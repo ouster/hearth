@@ -1,0 +1,42 @@
+round 1 slot 0: status=200 ttft=19.92 total=20.65 tool_ok=1 finish=tool_calls 
+round 2 slot 0: status=200 ttft=19.465 total=20.08 tool_ok=1 finish=tool_calls 
+round 3 slot 0: status=200 ttft=19.45 total=20.611 tool_ok=1 finish=tool_calls 
+round 4 slot 0: status=200 ttft=19.522 total=20.22 tool_ok=1 finish=tool_calls 
+round 5 slot 0: status=200 ttft=19.499 total=20.637 tool_ok=1 finish=tool_calls 
+round 6 slot 0: status=200 ttft=19.475 total=24.195 tool_ok=1 finish=tool_calls 
+round 7 slot 0: status=200 ttft=19.499 total=20.157 tool_ok=1 finish=tool_calls 
+round 8 slot 0: status=200 ttft=19.578 total=20.578 tool_ok=1 finish=tool_calls 
+round 9 slot 0: status=200 ttft=19.545 total=21.092 tool_ok=0 finish=tool_calls no valid read_file call
+round 10 slot 0: status=200 ttft=19.878 total=20.614 tool_ok=1 finish=tool_calls 
+# Concurrency bench — phase 1, llmster direct, 3 slots x 64K, c1
+
+| | |
+|---|---|
+| Base URL | `http://127.0.0.1:1234/v1` |
+| Role | `local-big` |
+| Concurrency × rounds | 1 × 10 = 10 requests |
+| Target prompt tokens | 30000 (actual median 28701) |
+| Client timeout | 180 s |
+| Run | 2026-10-31T12:05:26 → 2026-10-31T12:08:55 (209 s wall) |
+| Footprint process match | `(\.lmstudio/|^llmster)` |
+
+## Result
+
+| Metric | Value |
+|---|---|
+| Valid `read_file` tool calls | 9 / 10 |
+| Timeouts (client, 180 s) | 0 |
+| HTTP errors | 0 |
+| Other failures (bad/no tool call, stream error) | 1 |
+| TTFB p50 / p95 | 19.5 s / 19.9 s |
+| TTFT p50 / p95 (requests that produced a token) | 19.5 s / 19.9 s |
+| Total time p50 / p95 (successful) | 20.6 s / 24.2 s |
+| Peak footprint (sum of matched processes) | 26.7 GB |
+
+## Failures
+
+| Round | Slot | HTTP | TTFT | Total | Finish | Error |
+|---|---|---|---|---|---|---|
+| 9 | 0 | 200 | 19.545 | 21.092 | tool_calls | no valid read_file call |
+
+Raw: `raw.tsv`, `footprint.tsv`.

@@ -27,7 +27,7 @@
 | Phase | What | State |
 |---|---|---|
 | 0 | Baseline concurrency bench on the current stack | done 2026-10-31 — `bench/results/2026-10-31-phase0/report.md` |
-| 1 | LM Studio beside the current stack, localhost only | not started |
+| 1 | LM Studio beside the current stack, localhost only | gate run 2026-10-31: 5 of 6 pass; wrong-tool picks 3/40, decision pending — `bench/results/2026-10-31-phase1/report.md` |
 | 2 | GPU wired-limit headroom | not started |
 | 3 | Cut host clients over (Zed, aider, WebUI, sandbox, MCP) | not started |
 | 4 | LAN access with tokens; laptop clients | not started |
@@ -43,7 +43,7 @@
 | D3 | Does Zed **on the host** get a Gemini provider? | No on the host (keeps sensitive work local by default); yes on the laptop | |
 | D4 | Digest drift detection | Keep: hash the model directory in `config/roles.tsv` and check it in preflight | |
 | D5 | Keep Open WebUI? | Yes, pointed at `:1234`. It no longer needs the gateway's Postgres | |
-| D6 | Headless runner: LM Studio app with "run server on login", or `llmster`? | `llmster` if it installs cleanly; the app otherwise | **`llmster`** (2026-10-31). Removing Ollama.app: ask the operator first |
+| D6 | Headless runner: LM Studio app with "run server on login", or `llmster`? | `llmster` if it installs cleanly; the app otherwise | **`llmster`** (2026-10-31). llmster cannot enable auth or create tokens (no CLI, lmstudio-ai/lms#489 open 2026-10-29), so: install the app once, set auth + token in the GUI, then verify llmster honours it; app with "run server on login" if not. Removing Ollama.app: ask the operator first |
 | D7 | Soak length before phase 6 cleanup | Operator: one week is excessive. Proposal pending | |
 
 ## Target
@@ -97,6 +97,19 @@ the baseline.
 ## Phase 1 — LM Studio beside the current stack
 
 Localhost only. Nothing else changes yet.
+
+**Checked on this Mac (llmster 0.0.27-1, 2026-10-31):**
+- Installer: `curl -fsSL https://lmstudio.ai/install.sh` → `~/.lmstudio/bin/lms`.
+  Run with `--no-modify-path`; scripts call the full path.
+- `lms load` flags: `--identifier`, `-c/--context-length`, `--gpu max`,
+  `--parallel <n>` (concurrent predictions is a **load** flag), `--ttl`,
+  `--estimate-only`, `-y`.
+- `lms server start` flags: `-p/--port`, `--bind` (default `127.0.0.1`;
+  `0.0.0.0` for LAN), `--cors`. **No auth flag**; auth and tokens are
+  GUI-only (see D6).
+- Runtime: `lms runtime get mlx-llm -y`.
+- Weights: `lms get <hugging face URL> -y` picks an exact build; a bare
+  staff-pick name with `-y` may pick a larger quantisation.
 
 1. Install LM Studio 0.4.x (or `llmster`, per D6). Record the version in
    `docs/MODELS.md`.

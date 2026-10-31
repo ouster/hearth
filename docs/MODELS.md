@@ -35,6 +35,19 @@ ADR 0013). `gpt-oss:20b` weights may remain on disk.
 Digests are **recorded and drift-checked** in `pins/digests.tsv`, not enforced —
 see below. Re-record with `scripts/pin-digests.sh` after any role change you trust.
 
+## LM Studio (ADR 0016, phase 1 — beside the live stack, not yet serving clients)
+
+llmster 0.0.27-1, MLX runtime 1.13.1, llama.cpp runtime 2.67.0; auth/CORS/LAN set
+once in the LM Studio app 0.4.28. Machine-read copy: `config/roles.tsv`.
+
+| Role | Model key | Source | Size | Load | Set |
+|---|---|---|---|---|---|
+| `local-big` | `qwen/qwen3.6-35b-a3b` | `lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a` | 20.4 GB | 64K × 3 parallel | 2026-10-31 |
+| `local-embed` | `text-embedding-nomic-embed-text-v1.5@f16` | `nomic-ai/nomic-embed-text-v1.5-GGUF` f16 @ `0188c9b`, sha256 `f7af6f66…` | 0.3 GB | 2K | 2026-10-31 |
+
+Measured: 29.7 GB peak footprint at 3 concurrent 28K-token turns
+(`bench/results/2026-10-31-phase1`).
+
 ## Dormant
 
 Commented out in `config.yaml`. A model whose `os.environ/` key is missing fails

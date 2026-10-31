@@ -1,0 +1,63 @@
+round 1 slot 0: status=200 ttft=59.938 total=61.548 tool_ok=1 finish=tool_calls 
+round 1 slot 1: status=200 ttft=44.226 total=61.059 tool_ok=1 finish=tool_calls 
+round 1 slot 2: status=200 ttft=24.218 total=60.616 tool_ok=1 finish=tool_calls 
+round 2 slot 0: status=200 ttft=24.226 total=60.985 tool_ok=1 finish=tool_calls 
+round 2 slot 1: status=200 ttft=44.105 total=61.636 tool_ok=1 finish=tool_calls 
+round 2 slot 2: status=200 ttft=59.767 total=61.887 tool_ok=1 finish=tool_calls 
+round 3 slot 0: status=200 ttft=60.205 total=61.871 tool_ok=1 finish=tool_calls 
+round 3 slot 1: status=200 ttft=24.403 total=61.298 tool_ok=1 finish=tool_calls 
+round 3 slot 2: status=200 ttft=44.486 total=61.553 tool_ok=1 finish=tool_calls 
+round 4 slot 0: status=200 ttft=24.231 total=60.936 tool_ok=1 finish=tool_calls 
+round 4 slot 1: status=200 ttft=44.114 total=61.271 tool_ok=1 finish=tool_calls 
+round 4 slot 2: status=200 ttft=59.697 total=62.451 tool_ok=1 finish=tool_calls 
+round 5 slot 0: status=200 ttft=24.046 total=60.797 tool_ok=1 finish=tool_calls 
+round 5 slot 1: status=200 ttft=44.029 total=61.072 tool_ok=1 finish=tool_calls 
+round 5 slot 2: status=200 ttft=59.572 total=62.2 tool_ok=1 finish=tool_calls 
+round 6 slot 0: status=200 ttft=24.014 total=60.345 tool_ok=1 finish=tool_calls 
+round 6 slot 1: status=200 ttft=43.725 total=61.625 tool_ok=0 finish=tool_calls no valid read_file call
+round 6 slot 2: status=200 ttft=59.185 total=61.204 tool_ok=1 finish=tool_calls 
+round 7 slot 0: status=200 ttft=43.766 total=61.16 tool_ok=1 finish=tool_calls 
+round 7 slot 1: status=200 ttft=59.229 total=61.107 tool_ok=1 finish=tool_calls 
+round 7 slot 2: status=200 ttft=24.045 total=60.552 tool_ok=1 finish=tool_calls 
+round 8 slot 0: status=200 ttft=59.169 total=60.954 tool_ok=1 finish=tool_calls 
+round 8 slot 1: status=200 ttft=24.011 total=60.256 tool_ok=1 finish=tool_calls 
+round 8 slot 2: status=200 ttft=43.72 total=60.524 tool_ok=1 finish=tool_calls 
+round 9 slot 0: status=200 ttft=24.015 total=60.0 tool_ok=1 finish=tool_calls 
+round 9 slot 1: status=200 ttft=43.703 total=60.218 tool_ok=1 finish=tool_calls 
+round 9 slot 2: status=200 ttft=59.191 total=61.653 tool_ok=0 finish=tool_calls no valid read_file call
+round 10 slot 0: status=200 ttft=43.729 total=60.618 tool_ok=1 finish=tool_calls 
+round 10 slot 1: status=200 ttft=23.998 total=60.039 tool_ok=1 finish=tool_calls 
+round 10 slot 2: status=200 ttft=59.241 total=60.738 tool_ok=1 finish=tool_calls 
+# Concurrency bench — phase 1, llmster direct, 3 slots x 64K, c3
+
+| | |
+|---|---|
+| Base URL | `http://127.0.0.1:1234/v1` |
+| Role | `local-big` |
+| Concurrency × rounds | 3 × 10 = 30 requests |
+| Target prompt tokens | 30000 (actual median 28700) |
+| Client timeout | 180 s |
+| Run | 2026-10-31T12:08:56 → 2026-10-31T12:19:12 (616 s wall) |
+| Footprint process match | `(\.lmstudio/|^llmster)` |
+
+## Result
+
+| Metric | Value |
+|---|---|
+| Valid `read_file` tool calls | 28 / 30 |
+| Timeouts (client, 180 s) | 0 |
+| HTTP errors | 0 |
+| Other failures (bad/no tool call, stream error) | 2 |
+| TTFB p50 / p95 | 43.8 s / 59.9 s |
+| TTFT p50 / p95 (requests that produced a token) | 43.8 s / 59.9 s |
+| Total time p50 / p95 (successful) | 61.0 s / 62.2 s |
+| Peak footprint (sum of matched processes) | 29.7 GB |
+
+## Failures
+
+| Round | Slot | HTTP | TTFT | Total | Finish | Error |
+|---|---|---|---|---|---|---|
+| 6 | 1 | 200 | 43.725 | 61.625 | tool_calls | no valid read_file call |
+| 9 | 2 | 200 | 59.191 | 61.653 | tool_calls | no valid read_file call |
+
+Raw: `raw.tsv`, `footprint.tsv`.

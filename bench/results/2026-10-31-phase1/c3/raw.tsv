@@ -1,0 +1,31 @@
+round	slot	status	ttfb	ttft	total	tool_ok	tool_name	finish	prompt_tokens	completion_tokens	error
+1	0	200	59.938	59.938	61.548	1	read_file	tool_calls	28699	73	
+1	1	200	44.226	44.226	61.059	1	read_file	tool_calls	28699	49	
+1	2	200	24.218	24.218	60.616	1	read_file	tool_calls	28700	50	
+2	0	200	24.226	24.226	60.985	1	read_file	tool_calls	28702	67	
+2	1	200	44.105	44.105	61.636	1	read_file	tool_calls	28700	75	
+2	2	200	59.767	59.767	61.887	1	read_file	tool_calls	28701	81	
+3	0	200	60.205	60.205	61.871	1	read_file	tool_calls	28698	67	
+3	1	200	24.403	24.403	61.298	1	read_file	tool_calls	28704	63	
+3	2	200	44.485	44.486	61.553	1	read_file	tool_calls	28701	56	
+4	0	200	24.231	24.231	60.936	1	read_file	tool_calls	28698	67	
+4	1	200	44.114	44.114	61.271	1	read_file	tool_calls	28703	64	
+4	2	200	59.697	59.697	62.451	1	read_file	tool_calls	28701	153	
+5	0	200	24.045	24.046	60.797	1	read_file	tool_calls	28697	67	
+5	1	200	44.029	44.029	61.072	1	read_file	tool_calls	28703	61	
+5	2	200	59.572	59.572	62.2	1	read_file	tool_calls	28702	146	
+6	0	200	24.014	24.014	60.345	1	read_file	tool_calls	28701	67	
+6	1	200	43.725	43.725	61.625	0	grep	tool_calls	28698	118	no valid read_file call
+6	2	200	59.185	59.185	61.204	1	read_file	tool_calls	28699	67	
+7	0	200	43.766	43.766	61.16	1	read_file	tool_calls	28699	79	
+7	1	200	59.229	59.229	61.107	1	read_file	tool_calls	28702	60	
+7	2	200	24.045	24.045	60.552	1	read_file	tool_calls	28701	69	
+8	0	200	59.169	59.169	60.954	1	read_file	tool_calls	28696	77	
+8	1	200	24.011	24.011	60.256	1	read_file	tool_calls	28700	63	
+8	2	200	43.72	43.72	60.524	1	read_file	tool_calls	28700	58	
+9	0	200	24.015	24.015	60.0	1	read_file	tool_calls	28700	56	
+9	1	200	43.703	43.703	60.218	1	read_file	tool_calls	28700	49	
+9	2	200	59.191	59.191	61.653	0	grep	tool_calls	28700	164	no valid read_file call
+10	0	200	43.729	43.729	60.618	1	read_file	tool_calls	28698	61	
+10	1	200	23.998	23.998	60.039	1	read_file	tool_calls	28698	56	
+10	2	200	59.241	59.241	60.738	1	read_file	tool_calls	28698	56	

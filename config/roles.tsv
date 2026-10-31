@@ -1,0 +1,10 @@
+# Role registry for LM Studio (ADR 0016). Tab-separated. One of the two files
+# allowed to name concrete models (the other is docs/MODELS.md).
+# model_key is the modelKey from `lms ls --json`, with @variant when a model
+# has several quantisations on disk. ctx and slots are per load;
+# slots > 1 becomes `lms load --parallel`. Read by scripts/lms-load.sh.
+#
+# role	backend	model_key	ctx	slots
+local-big	lmstudio	qwen/qwen3.6-35b-a3b	65536	3
+local-embed	lmstudio	text-embedding-nomic-embed-text-v1.5@f16	2048	1
+cloud-cheap	gemini	gemini-3.6-flash	-	-

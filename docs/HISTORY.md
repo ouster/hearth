@@ -25,7 +25,7 @@ redacted (billing/invoice substituted); figures are unchanged.
 | 2026-10-22 | `local-big` on Ollama's MLX runner, one inference server | ~111 tok/s; Zed agent loops still stall under load | Superseded by 0016 | ADR 0013, `2026-10-22-0816` |
 | 2026-10-31 | Stall handling: 90 s timeout, no retries, `mlx-watchdog` kills a stuck runner | Treats the symptom (F7) | Superseded by 0016 | ADR 0015 |
 | 2026-10-31 | Phase 0 concurrency baseline on that stack | c1 TTFT p95 21.0 s; c3 p95 65.8 s, strictly serialised; no failures, peak 37 GB | Numbers to beat | `2026-10-31-phase0` |
-| 2026-10-31 | LM Studio direct (`llmster`), gateway retired | In progress | — | ADR 0016, `docs/MIGRATION-LMSTUDIO.md` |
+| 2026-10-31 | Phase 1: llmster direct, `local-big` 3 parallel × 64K | c3 TTFT p95 59.9 s (was 65.8); prefill still serialised, all three finish at ~61 s; peak 29.7 GB; 3/40 wrong-tool picks | Decision pending | ADR 0016, `2026-10-31-phase1` |
 
 ## Roles
 
