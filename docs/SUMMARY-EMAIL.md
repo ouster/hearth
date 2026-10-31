@@ -1,5 +1,7 @@
 # hearth — what it solves, what it measured, what's next
 
+> **Historical (gateway era).** Describes the LiteLLM + Ollama stack; superseded by ADR 0016.
+
 Written 2026-08-02. All figures below are measured on the machine, not estimated.
 
 ---

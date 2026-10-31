@@ -1,7 +1,7 @@
 # 0008 — MCP tools go through the gateway, scoped by key, deny by default
 
 Date: 2026-08-02
-Status: accepted
+Status: superseded by ADR 0016 (2026-10-31); was: accepted
 
 ## Context
 

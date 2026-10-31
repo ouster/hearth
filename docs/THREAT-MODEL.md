@@ -25,9 +25,10 @@ Anything in this repo that looks like injection *detection* is a bug.
 
 This is the important structural point, and it is easy to get wrong.
 
-The gateway is the control plane for **where data goes on purpose**. The
-`private` key cannot reach cloud roles, so a prompt cannot route client data to
-Google. That boundary is real and it works.
+Model placement is the control for **where data goes on purpose**. LM Studio
+on `:1234` holds only local models, and only `ask-cloud` carries a cloud key, so
+a prompt sent to a local role cannot route client data to Google. That boundary
+is real and it works (ADR 0016; before that it was gateway key scope).
 
 Injection attacks do not use that path at all.
 
@@ -46,7 +47,7 @@ flowchart TB
 
     secrets["~/.ssh, .env, keychain<br/>readable - accepted"]
 
-    gw{{"LiteLLM :4000<br/>key scope / spend / audit"}}
+    gw{{"llmster 127.0.0.1:1234<br/>local models only, token required"}}
     localm["local models"]
     cloudm["cloud models"]
     outside["blocked: github / pypi / attacker"]
@@ -61,7 +62,7 @@ flowchart TB
     agent -.->|"blocked by sandbox"| outside
 
     gw --> localm
-    gw -.->|"private key refused"| cloudm
+    cloudm -.-|"not loaded in LM Studio"| gw
 
     classDef okCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
     classDef badCls fill:#FBE9E7,stroke:#A32B18,color:#7A1F11
@@ -76,26 +77,26 @@ flowchart TB
 
 Two boundaries, doing different jobs:
 
-- **`sandbox-exec`** wraps the agent. One arrow leaves it, to the gateway.
+- **`sandbox-exec`** wraps the agent. One arrow leaves it, to `127.0.0.1:1234`.
   Everything else — `github`, `pypi`, an attacker's host, DNS itself — is cut.
-- **The gateway** then applies key scope to that one permitted arrow, so even
-  intended traffic cannot reach a cloud model on a `private` key.
+- **LM Studio** is the only thing at the end of that arrow, and it holds only
+  local models, so even intended traffic cannot reach a cloud model.
 
 An injection that lands still reads whatever it likes (the dashed arrow from
 secrets is deliberate) and can still write into the working directory. What it
 cannot do is get anything out.
 
 An injected agent that reads `~/.ssh/id_rsa` and POSTs it to an attacker
-**never touches LiteLLM**. The virtual key is not in that path. Spend logging
-does not see it. `audit-fallbacks.sh` has no opinion about it.
+**never touches the model server**. Which models are loaded has no bearing on
+that path.
 
 So: the privacy boundary governs *intentional* routing. The containment
 boundary in §4 governs *everything else*. They are different axes and neither
 substitutes for the other.
 
-| Threat | Key scope | Sandbox |
+| Threat | Model placement | Sandbox |
 |---|---|---|
-| A prompt sends client data to a cloud model | **caught** | not caught |
+| A prompt sends client data to a cloud model | **caught** (unless you run `ask-cloud`) | not caught |
 | An injected agent exfiltrates a key via curl | not caught | **caught** |
 | An injected agent reads a file it shouldn't | not caught | not caught |
 | An injected agent rewrites source in the repo | not caught | not caught |
@@ -132,7 +133,7 @@ on macOS 26.4, 2026-08-02:
 
 | Control | State |
 |---|---|
-| Egress to anything but `127.0.0.1:4000` | **blocked** — verified against 1.1.1.1 |
+| Egress to anything but `127.0.0.1:1234` | **blocked** — verified against 1.1.1.1 and the old `:4000` (2026-10-31) |
 | DNS resolution | **blocked** — hostnames do not resolve |
 | Writes outside the working directory | **blocked** — verified against `$HOME` |
 | Writes inside the working directory | allowed |
@@ -157,7 +158,7 @@ Restricting reads breaks dylib loading and every language runtime, and read
 confinement is not what stops the attack. An agent under this profile **can
 still read your SSH keys, `.env` files, and browser cookies.** It cannot send
 them anywhere. Exfiltration needs a channel, and there is exactly one open
-channel — the gateway, which speaks the OpenAI API and logs everything.
+channel — LM Studio on `:1234`, which holds only local models.
 
 This is a deliberate trade, not a limitation we failed to notice. Anyone
 reading this document should be able to state it back: *the sandbox protects

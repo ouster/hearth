@@ -1,58 +1,46 @@
 # Model registry
 
-Role → model. This file and `litellm/config.yaml` are the only places a concrete
-model name may appear. Update both together, plus an ADR.
+Role → model. This file and `config/roles.tsv` are the only places a concrete
+model name may appear. Update both together, plus an ADR. (Before ADR 0016 the
+second file was `litellm/config.yaml`.)
 
 **Hardware envelope:** 64 GB unified. macOS caps GPU-accessible memory at ~75% above 36 GB,
 so the real ceiling is **~48 GB**, not the full 64. The resident set matters more than any single
 model's size — see the measurement below.
 
-## Live
+## Live — LM Studio (ADR 0016)
 
-| Role | Model | Size | Set | Digest | Why |
-|---|---|---|---|---|---|
-| `local-chat` | `qwen3:8b` | 5.2 GB | 2026-08-02 | `500a1f067a9f` | General knowledge, **40K** ctx (native). **thinking off** — ADR 0006 |
-| `local-code` | `qwen3-coder:30b` | 18 GB | 2026-08-02 | `06c1097efce0` | 30B MoE, ~3B active. Native 256K; **runtime 64K** — ADR 0010 |
-| `local-big` | `qwen3.6:35b-mlx` | 23 GB | 2026-10-22 | `e92a3e94bbca` | Agent / reasoning. Ollama MLX runner. Native 256K; **runtime 64K**. ADR 0013 |
-| `local-embed` | `nomic-embed-text` | 0.3 GB | 2026-08-01 | `0a109f422b47` | Local RAG |
-| `cloud-cheap` | `gemini-3.6-flash` | — | 2026-10-22 | n/a | 1M ctx, 65K output. ADR 0014 |
+llmster 0.0.27-1, MLX runtime 1.13.1, llama.cpp runtime 2.67.0; server
+settings set once in the LM Studio app 0.4.28. Machine-read copy:
+`config/roles.tsv`.
 
-**Ollama disk:** chat, code, embed, plus ~23 GB for `local-big`. Only **one**
-model stays GPU-resident (`OLLAMA_MAX_LOADED_MODELS=1`, ADR 0011).
+| Role | Model key | Source | Size | Load | Set | Why |
+|---|---|---|---|---|---|---|
+| `local-big` | `qwen/qwen3.6-35b-a3b` | `lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a` | 20.4 GB | 64K × 3 parallel | 2026-10-31 | Same base model as the Ollama-era agent; MLX 4-bit from lmstudio-community (quantisation may differ from the Ollama build). The only local chat/agent role (D1) |
+| `local-embed` | `text-embedding-nomic-embed-text-v1.5@f16` | `nomic-ai/nomic-embed-text-v1.5-GGUF` f16 @ `0188c9b`, sha256 `f7af6f66…` | 0.3 GB | 2K | 2026-10-31 | f16 to match the Ollama-era embeddings |
+| `cloud-cheap` | `gemini-3.6-flash` | Google, `ask-cloud` only | — | — | 2026-10-22 | 1M ctx, 65K output. ADR 0014 |
 
-Context windows and capability flags also live in each role's `model_info`
-block in `litellm/config.yaml`, so `/model/info` (and tools like
-`zed-litellm`) stay honest — ADR 0009. **Runtime context is capped at 64K**
-for `local-code` / `local-big` (`num_ctx: 65536`) so the KV cache does not
-blow the ~48 GB envelope — ADR 0010.
+**Resident set:** 29.7 GB peak footprint at 3 concurrent 28K-token turns
+(`bench/results/2026-10-31-phase1`) — ~18 GB under the GPU ceiling.
+
+`local-code` and `local-chat` were collapsed into `local-big` on 2026-10-31
+(D1). Their Ollama weights stay on disk until phase 6. Known quality gap
+against the Ollama build: 3 of 40 concurrency-bench turns picked `grep`
+instead of the requested `read_file` (0 of 40 on Ollama); tracked, not
+blocking.
+
+**Digest drift:** the Ollama digest pins (`pins/digests.tsv`) no longer
+describe what serves. Replacement (hash the model directory) is D4, undecided.
 
 **Bench candidate (not a role):** `qwen3.6:27b-coding-mtp-q4_K_M` on Ollama
 (~18 GB) — rejected for verbosity vs `qwen3-coder:30b` (ADR 0005 era bench).
 
-**Retired from `local-big`:** Rapid-MLX on `:8000` (ADR 0012, superseded by
-ADR 0013). `gpt-oss:20b` weights may remain on disk.
-
-Digests are **recorded and drift-checked** in `pins/digests.tsv`, not enforced —
-see below. Re-record with `scripts/pin-digests.sh` after any role change you trust.
-
-## LM Studio (ADR 0016, phase 1 — beside the live stack, not yet serving clients)
-
-llmster 0.0.27-1, MLX runtime 1.13.1, llama.cpp runtime 2.67.0; auth/CORS/LAN set
-once in the LM Studio app 0.4.28. Machine-read copy: `config/roles.tsv`.
-
-| Role | Model key | Source | Size | Load | Set |
-|---|---|---|---|---|---|
-| `local-big` | `qwen/qwen3.6-35b-a3b` | `lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a` | 20.4 GB | 64K × 3 parallel | 2026-10-31 |
-| `local-embed` | `text-embedding-nomic-embed-text-v1.5@f16` | `nomic-ai/nomic-embed-text-v1.5-GGUF` f16 @ `0188c9b`, sha256 `f7af6f66…` | 0.3 GB | 2K | 2026-10-31 |
-
-Measured: 29.7 GB peak footprint at 3 concurrent 28K-token turns
-(`bench/results/2026-10-31-phase1`).
-
 ## Dormant
 
-Commented out in `config.yaml`. A model whose `os.environ/` key is missing fails
-the **entire** config load, not just that entry, so these stay off until their
-key exists.
+No keys. In the gateway era these were commented-out blocks in `config.yaml`;
+after ADR 0016 a cloud role would be a `gemini` (or other explicit cloud
+backend) row in `config/roles.tsv` plus an alias that passes its own key —
+never a model loaded into LM Studio.
 
 | Role | Model | Blocked on |
 |---|---|---|
@@ -61,9 +49,6 @@ key exists.
 | `cloud-frontier-direct` | `kimi-k3` via Moonshot | Moonshot key. Same price, best K3 caching |
 | `cloud-frontier-fast` | `kimi-k3` via Fireworks | Fireworks key. Dearest; throughput or LoRA only |
 
-To enable one: uncomment its block in `config.yaml`, add the key to
-`~/.config/litellm/env`, add the role to `CLOUD_ALL` in `scripts/create-keys.sh`,
-re-run that script, then `audit-fallbacks.sh` and `healthcheck.sh`.
 
 There is **no local Kimi K3**. The smallest community quant is ~540 GB at 1.56
 bits, and Ollama cannot load it — support is an open llama.cpp pull request.
@@ -73,6 +58,10 @@ Frontier is cloud-only by necessity, which is what these roles are for.
 
 | Model | Was | Removed | Why |
 |---|---|---|---|
+| `qwen3.6:35b-mlx` (Ollama) | `local-big` | 2026-10-31 | Same base model now served by LM Studio (lmstudio-community MLX 4-bit). ADR 0016 |
+| `qwen3-coder:30b` | `local-code` | 2026-10-31 | Role collapsed into `local-big` (D1). ADR 0016 |
+| `qwen3:8b` | `local-chat` | 2026-10-31 | Role collapsed into `local-big` (D1). ADR 0016 |
+| `nomic-embed-text` (Ollama) | `local-embed` | 2026-10-31 | Same model, f16 GGUF, now on LM Studio |
 | `gpt-oss:20b` | `local-big` | 2026-09-06 | Slower tool-smoke than the Qwen3.6 agent. ADR 0012, then 0013 |
 | `llama3.3:70b` | `local-big` | 2026-08-02 | 42 GB, could not stay resident. 440 s to first reply. ADR 0004 |
 | `qwen2.5-coder:32b` | `local-code` | 2026-08-02 | Superseded by the 30B MoE at the same size |
@@ -141,32 +130,23 @@ decisions and does **not** update itself. Re-check before relying on it.
   price. That is exactly the failure mode this registry exists to catch.
 - **Output price is the one that bites** — it compounds through agentic loops.
 
-## Digest pinning
+## Digest pinning (Ollama era)
 
-Ollama tags are mutable pointers, not versions. `ollama pull qwen3-coder:30b`
-fetches whatever that tag points at today, which may be a different quantisation
-than the one you benched, and nothing warns you.
-
-Ollama offers **no way to bind a tag to a digest in the model name**, so pinning
-here is record-and-detect rather than enforce:
-
-```bash
-scripts/pin-digests.sh           # record, after a bench you trust
-scripts/pin-digests.sh --check   # compare live against recorded
-```
-
-`pins/digests.tsv` is git-tracked, so drift shows up in a diff.
-`scripts/preflight.sh` runs the check and fails on a mismatch. That is weaker
-than true pinning; the honest framing is that you will be told, not stopped.
+Ollama tags were mutable pointers, so `scripts/pin-digests.sh` recorded each
+role's digest in `pins/digests.tsv` and preflight failed on drift — record and
+detect, never enforce. Those pins describe the retired Ollama weights. For LM
+Studio, the source repo and revision in the table above are the record; a
+directory-hash drift check is decision D4.
 
 ## Changing a role
 
-`scripts/swap-role.sh <role> <model>` does steps 1–5 and reverts on failure.
-
-1. Pull the candidate
-2. `scripts/bench.sh` against the incumbent
-3. Confirm it fits alongside whatever must stay resident
-4. Update this table and `litellm/config.yaml` together
-5. Deploy, then `audit-fallbacks.sh` and `healthcheck.sh`
-6. Write an ADR in `docs/decisions/`
+1. Download the candidate with an exact source: `lms get <hugging face URL> -y`
+2. Bench it against the incumbent: `scripts/concurrency-bench.sh` and
+   `bench/tasks/` (rule 5). Same settings as the last baseline
+3. Check the footprint fits beside `local-embed` under the ~48 GB ceiling
+4. Update this table and `config/roles.tsv` together, then `scripts/lms-load.sh`
+5. `scripts/tool-smoke.sh openai http://127.0.0.1:1234/v1 local-big`
+6. Write an ADR in `docs/decisions/` and a row in `docs/HISTORY.md`
 7. Delete the old weights only once the replacement has proven itself
+
+`swap-role.sh` and `bench.sh` still target Ollama until phase 5.

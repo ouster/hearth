@@ -1,7 +1,7 @@
 # ADR 0015 — A silent MLX stall fails once, and the runner is killed
 
 **Date:** 2026-10-31
-**Status:** accepted
+**Status:** superseded by ADR 0016 (2026-10-31); was: accepted
 **Adjusts:** the `OLLAMA_KEEP_ALIVE=-1` line of ADR 0011
 
 ## Context

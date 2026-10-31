@@ -1,5 +1,7 @@
 # Claude Project spec
 
+> **Partly stale.** Gateway references (`:4000`, virtual keys) predate ADR 0016; current design in `docs/ARCHITECTURE.md`.
+
 Paste the two fields below into claude.ai → Projects → New project.
 Keep this file as the source of truth; when the instructions change here, re-paste.
 

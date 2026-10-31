@@ -1,7 +1,7 @@
 # ADR 0013 — `local-big` back on Ollama
 
 **Date:** 2026-10-22
-**Status:** accepted
+**Status:** superseded by ADR 0016 (2026-10-31); was: accepted
 **Supersedes:** ADR 0012
 
 ## Context

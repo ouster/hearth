@@ -1,181 +1,137 @@
 # Hearth
 
-Local-first LLM gateway for a single developer (or a small LAN).
+Local-first LLM serving for a single developer (or a small LAN).
 Inference that still works when vendors get expensive, overloaded, or unavailable.
 
-Ollama serves local models. LiteLLM is the only front door. Cloud providers
-(Gemini, optionally Claude / OpenRouter / Moonshot / Fireworks) sit behind the
-same OpenAI-compatible API. Privacy is enforced by **virtual key scope**, not
-by remembering to be careful.
+LM Studio's headless server (`llmster`) serves local models on `:1234` with a
+token required. Cloud (Gemini) is reached by each tool directly with its own
+key, never through the local server — so nothing sent to `:1234` can leave the
+machine. ADR 0016 replaced the earlier LiteLLM + Ollama gateway; what was tried
+before is in [`docs/HISTORY.md`](docs/HISTORY.md).
 
 ## Why
 
-Model names change every few months. Hardcoding `qwen2.5-coder:32b` into shell
+Model names change every few months. Hardcoding a model tag into shell
 aliases, IDE settings, and laptop configs means every upgrade is a scavenger
 hunt. This stack addresses **roles** instead:
 
 ```
-local-chat   local-code   local-big   local-embed   cloud-cheap
+local-big   local-embed   cloud-cheap
 ```
 
-Concrete models live in exactly two files — [`litellm/config.yaml`](litellm/config.yaml)
-and [`docs/MODELS.md`](docs/MODELS.md). Swap a model once; every client keeps working.
+Each local role is an LM Studio `--identifier`, so clients ask for
+`local-big`, never a model. Concrete models live in exactly two files —
+[`config/roles.tsv`](config/roles.tsv) and [`docs/MODELS.md`](docs/MODELS.md).
 
 ```mermaid
-flowchart TB
-    subgraph clients["Clients"]
-        hostApps["aider / Zed / scripts / Open WebUI"]
-        laptop["LAN laptop<br/>no local models"]
+flowchart LR
+    subgraph host["Host"]
+        zed["Zed agent"]
+        aider["aider / ask-*"]
+        webui["Open WebUI :3000"]
+        sbx["sandboxed.sh agents<br/>egress: 127.0.0.1:1234 only"]
+        lms["llmster 127.0.0.1:1234<br/>local-big x3 slots, local-embed<br/>token required"]
     end
+    laptop["LAN laptop<br/>own token (phase 4)"]
+    cloud["Gemini<br/>tool's own key"]
+    searx["SearXNG<br/>opt-in search"]
 
-    gw{{"LiteLLM :4000<br/>roles / keys / spend"}}
-
-    subgraph local["Local - stays on the host"]
-        ollama["Ollama 127.0.0.1:11434"]
-        pg[("Postgres :5433")]
-    end
-
-    subgraph leave["Leaves the host"]
-        cloud["cloud-cheap etc."]
-        searx["SearXNG<br/>opt-in search"]
-        web["search engines"]
-    end
-
-    hostApps -->|"private or general key"| gw
-    laptop -->|"lan / lan-cloud key"| gw
-    gw --> ollama
-    gw <--> pg
-    gw -->|"general / lan keys"| cloud
-    gw -.->|"private key: refused"| cloud
-    hostApps -.->|"Open WebUI only"| searx
-    searx --> web
+    zed --> lms
+    aider --> lms
+    webui --> lms
+    sbx --> lms
+    laptop -.->|"pending phase 4"| lms
+    aider -.->|"ask-cloud only"| cloud
+    webui -.->|"opt-in per message"| searx
 
     classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
     classDef leaveCls fill:#FAEEDA,stroke:#854F0B,color:#633806
-    classDef gwCls fill:#E6F1FB,stroke:#185FA5,color:#0C447C
-    class ollama,pg localCls
-    class cloud,searx,web leaveCls
-    class gw gwCls
+    class lms localCls
+    class cloud,searx leaveCls
 ```
 
 ## Three guarantees
 
-1. **Privacy is structural.** The `private` key can only reach `local-*` roles.
-   Ollama binds to localhost, so the LAN cannot bypass the gateway.
-   `scripts/healthcheck.sh` proves both halves (positive control + refusal).
-2. **Local roles never fall back to cloud.** A timeout that silently ships a
-   prompt to Google is a leak. `scripts/audit-fallbacks.sh` fails the build if
-   that reappears.
-3. **Nothing is claimed without being measured.** Role changes get an ADR and a
-   bench. Digests are recorded so silent `ollama pull` drift is detectable.
+1. **Privacy is structural.** LM Studio holds only local models, so anything
+   sent to `:1234` stays on the host by construction. Cloud needs a separate
+   provider key in the calling tool; only `ask-cloud` has one. Sandboxed agents
+   can reach `127.0.0.1:1234` and nothing else (`scripts/sandbox-probe.sh`).
+2. **No silent route changes.** There is no router, so there is no fallback to
+   leak through. If `local-big` is down, requests fail.
+3. **Nothing is claimed without being measured.** Role and serving changes get
+   an ADR and a bench (`bench/results/`, committed).
 
 ## Requirements
 
-- macOS (Apple Silicon recommended) or Linux host
-- [Ollama](https://ollama.com)
-- [LiteLLM](https://docs.litellm.ai) (pipx works well)
-- [Podman](https://podman.io) for Postgres / Open WebUI / SearXNG
-- Enough RAM for your resident model set (see `docs/MODELS.md`)
+- macOS on Apple Silicon (the reference host is 64 GB)
+- LM Studio headless (`llmster`) — `curl -fsSL https://lmstudio.ai/install.sh`,
+  read it first, run with `--no-modify-path`
+- The LM Studio app **once**, to turn on Require Authentication and create
+  tokens; llmster has no CLI for either (lmstudio-ai/lms#489)
+- [Podman](https://podman.io) for Open WebUI / SearXNG
 
 ## Quick start
 
 ```bash
 git clone <this-repo> hearth && cd hearth
 
-# 1. Secrets
-cp litellm/.env.example litellm/.env
-cp litellm/service-env.example ~/.config/litellm/env   # if you don't have one
-# Edit both: LITELLM_MASTER_KEY, DATABASE_URL / POSTGRES_PASSWORD, GOOGLE_API_KEY, …
+# 1. Server and models (see docs/RUNBOOK.md for the settings to set in the app)
+~/.lmstudio/bin/lms daemon up
+~/.lmstudio/bin/lms server start --bind 127.0.0.1 -p 1234
+scripts/lms-load.sh                 # loads exactly what config/roles.tsv lists
 
-# 2. Database + gateway
-brew install podman   # once
-podman machine init --cpus 2 --memory 2048 --disk-size 20 && podman machine start
-scripts/db.sh up
-scripts/deploy.sh           # symlink config, restart, verify
-scripts/create-keys.sh      # paste private/general/lan/lan-cloud into litellm/.env
-scripts/healthcheck.sh
+# 2. Token — created in the LM Studio app, stored mode 600
+#    ~/.config/hearth/env:  LMSTUDIO_HOST_TOKEN=...
 
-# 3. Shell aliases on the host
+# 3. Shell aliases
 echo "source $PWD/scripts/aliases.zsh" >> ~/.zshrc
 ```
 
-Point LiteLLM's launchd agent at this repo's config (or use whatever process
-supervisor you prefer). Default label is `com.hearth.litellm`; scripts also
-discover an already-installed personal label. Override with
-`HEARTH_LITELLM_LABEL` if needed.
-
-Full ops detail: [`docs/RUNBOOK.md`](docs/RUNBOOK.md). Architecture:
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+Ops detail: [`docs/RUNBOOK.md`](docs/RUNBOOK.md). Architecture:
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Migration status:
+[`docs/MIGRATION-LMSTUDIO.md`](docs/MIGRATION-LMSTUDIO.md).
 
 ## Usage
 
 ```bash
-source scripts/aliases.zsh
+ask                # local-big. ask-big / ask-local / ask-chat / ask-fast are the same
+ask-arch           # aider architect mode, local-big on both sides
+ask-cloud          # Gemini, with GOOGLE_API_KEY — the only alias that leaves the host
 
-ask                # local-code, private key — default
-ask-chat           # local-chat, general questions
-ask-big            # local-big, reasoning
-ask-cloud          # cloud-cheap, explicit reach
-ask-arch           # architect mode: local-big plans, local-code edits
-
-ai-health          # every role + leak test
-ai-audit           # fallback leak check
-ai-restart         # kick the launchd agent
+ai-load            # scripts/lms-load.sh — load roles.tsv, report drift
+ai-loaded          # lms ps
+ai-restart         # restart the server on 127.0.0.1:1234
+ai-log             # lms log stream
 ```
 
 Editors (aider + Zed): [`docs/IDES.md`](docs/IDES.md).
 
 ## LAN clients
 
-Laptops need **no Ollama and no model downloads**. On the gateway host:
-
-```bash
-scripts/client-setup.sh lan              # prints copy-paste instructions
-scripts/client-setup.sh lan --install user@laptop
-scripts/client-setup.sh lan --windows    # PowerShell path
-```
-
-Clients must set `HEARTH_GATEWAY` (there is no hardcoded host IP). Details:
-[`docs/LAPTOP.md`](docs/LAPTOP.md).
-
-Off your home LAN, tunnel:
-
-```bash
-ssh -N -L 4000:127.0.0.1:4000 USER@HOST
-export HEARTH_GATEWAY=http://127.0.0.1:4000
-```
-
-Never port-forward `:4000` to the internet.
-
-## Keys
-
-| Key | Reaches | Use for |
-|---|---|---|
-| `private` | `local-*` only | sensitive work, Open WebUI default |
-| `general` | everything live | this machine, non-sensitive repos |
-| `lan` | `local-*` + `cloud-cheap` | everyday laptop access |
-| `lan-cloud` | everything live | laptop when it needs frontier / Claude |
-
-Dollar caps are **fuses**, not billing — they stop a leaked key or runaway agent
-loop from draining your provider account.
+**Pending phase 4.** The server is localhost-only today. The plan: serve on
+the LAN with authentication on, one token per machine, never port-forward
+`:1234`, and an SSH tunnel off-LAN. Until then `docs/LAPTOP.md` and `client/`
+still describe the retired gateway.
 
 ## Security notes
 
-- Web search via SearXNG is opt-in per message. The **search query leaves** even
-  when the model stays local. See `docs/ROUTING.md`.
+- Web search via SearXNG is opt-in per message. The **search query leaves**
+  even when the model stays local. See `docs/ROUTING.md`.
+- Zed's `auslaw` MCP tools send queries to AustLII; they are enabled only in
+  Zed's Research profile. See `docs/MCP.md`.
 - Prompt-injection / agent containment: `docs/THREAT-MODEL.md`, ADR 0007.
-- Untrusted MCP servers need their own audit before an agent can call them.
 
 ## Layout
 
 ```
 CLAUDE.md / AGENTS.md   rules for coding agents in this repo
-docs/                   architecture, routing, models, runbook, ADRs
-litellm/config.yaml     the only file that names concrete models
-scripts/                deploy, healthcheck, bench, client setup, …
-client/                 shims for other machines (bash + PowerShell)
+config/roles.tsv        role → LM Studio model key, context, slots
+docs/                   architecture, routing, models, runbook, history, ADRs
+scripts/                lms-load, benches, sandbox, client setup, …
+client/                 shims for other machines (rewritten in phase 4)
 bench/tasks/            fixed prompts for comparing models
-pins/digests.tsv        recorded Ollama digests for drift detection
+bench/results/          every bench run, committed
+litellm/                retired gateway config — removed in phase 5
 ```
 
 ## License

@@ -1,5 +1,7 @@
 # Laptop setup — aider and Zed
 
+> **Stale until phase 4.** This still describes laptop access through the retired gateway on `:4000`. Phase 4 of `docs/MIGRATION-LMSTUDIO.md` rewrites it for LM Studio on `:1234` with a per-machine token. Do not follow the commands below.
+
 Start to finish for a second machine. macOS and Linux; Windows notes at the end.
 
 Nothing here downloads a model. Inference happens on the gateway host; the laptop

@@ -89,6 +89,10 @@ exactly the one most likely to phone home.
 
 ## Adding a server
 
+> **Gateway-era procedure.** After ADR 0016 a server is added to the client
+> (Zed `context_servers`) and enabled only in a profile that matches its egress.
+> Steps 1 and 4 still apply: read its source, and add a row here plus an ADR.
+
 1. Read its source and establish what it talks to. That is the whole job; the
    rest is typing.
 2. Add it to `mcp_servers` in `config.yaml` with `x-hearth-egress` and an

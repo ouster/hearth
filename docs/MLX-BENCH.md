@@ -1,5 +1,7 @@
 # MLX stage-1 bench (Ollama vs Rapid-MLX)
 
+> **Historical.** Rapid-MLX vs Ollama (ADR 0012/0013). Local inference is now LM Studio — ADR 0016, `bench/results/2026-10-31-phase1`.
+
 Compare **agent tool loops** — not raw tok/s. Zed needs read → tool result →
 write with messy file content. Code bench (`scripts/bench.sh`) does not catch
 the Qwen XML failure mode.

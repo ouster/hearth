@@ -1,4 +1,5 @@
 # 0011 — Ollama memory knobs + concrete names in Zed
+**Status:** superseded by ADR 0016 (2026-10-31)
 
 **Date:** 2026-09-04
 

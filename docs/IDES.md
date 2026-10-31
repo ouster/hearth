@@ -131,6 +131,9 @@ this migration.
 
 ### On a laptop
 
+> **Stale until phase 4** — still the gateway (`:4000`) setup. Phase 4 replaces it
+> with `http://<host>:1234/v1` and a per-machine token.
+
 Full walkthrough in `docs/LAPTOP.md`. In short — Zed installs normally and edits
 local files; only inference comes from the gateway host. Two changes from the block
 above:

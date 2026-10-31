@@ -1,97 +1,89 @@
 # Runbook
 
+Start, stop, diagnose. LM Studio headless (`llmster`) on `127.0.0.1:1234`,
+ADR 0016. `lms` lives at `~/.lmstudio/bin/lms` (installed with
+`--no-modify-path`; the aliases call it by full path as `$HEARTH_LMS`).
+
 ## Layout of the running system
 
-| Piece | Where | Managed by |
+| Piece | Where | Notes |
 |---|---|---|
-| Ollama | `127.0.0.1:11434` — localhost only since ADR 0003. All local roles, including `local-big` (ADR 0013) | launchd (`com.hearth.ollama`) or Ollama.app |
-| LiteLLM gateway | `:4000` | launchd (`com.hearth.litellm` by default) |
-| Postgres | `127.0.0.1:5433` | Podman, `hearth-postgres` |
-| Open WebUI | `127.0.0.1:3000` | Podman, `hearth-webui` |
+| llmster daemon | `lms daemon up` | owns `~/.lmstudio`; the LM Studio app must be quit, or it takes the daemon over |
+| Server | `127.0.0.1:1234` | `lms server start --bind 127.0.0.1 -p 1234` |
+| Roles | `config/roles.tsv` → `scripts/lms-load.sh` | `local-big` 64K × 3 parallel, `local-embed` |
+| Token | `~/.config/hearth/env`, mode 600 | `LMSTUDIO_HOST_TOKEN`, created in the app |
+| Server settings | `~/.lmstudio/.internal/http-server-config.json` | edited through the app; auth/tokens are stored elsewhere |
+| Open WebUI | Podman, `127.0.0.1:3000` | `scripts/webui.sh` |
+| SearXNG | Podman, `:8888` | `scripts/searxng.sh` |
 
-Config: `<repo>/litellm/config.yaml` (symlinked from `~/.config/litellm/config.yaml`)
-Launch wrapper: `~/.config/litellm/run-litellm.sh`
-Logs: `~/Library/Logs/litellm.log`, `litellm.error.log`
-
-Launchd label overrides (optional): `HEARTH_LITELLM_LABEL`, `HEARTH_OLLAMA_LABEL`,
-`HEARTH_BOOT_LABEL`. Scripts auto-discover an already-installed agent.
-
-### Two env files — know which is which
-
-**`~/.config/litellm/env`** is the only one launchd reads. Provider keys,
-`LITELLM_MASTER_KEY`, `DATABASE_URL` go here.
-
-**`<repo>/litellm/.env`** is read by `scripts/*.sh` only —
-`POSTGRES_PASSWORD`, the virtual keys, and a copy of `DATABASE_URL` for `db.sh`.
-
-launchd reads neither the repo `.env` nor `~/.zshrc`. A var exported in your shell
-will pass a careless check and then fail at runtime; `preflight.sh` deliberately
-checks the service environment and flags "set in your shell but NOT in
-~/.config/litellm/env" as a failure.
+Retired and stopped: Ollama (disabled in launchd, app in the Trash). LiteLLM
+and its Postgres container are still running until phase 5 but have no working
+local backend.
 
 ## First-time setup
 
-```bash
-# Podman, once ever
-brew install podman
-podman machine init --cpus 2 --memory 2048 --disk-size 20
-podman machine start
+1. Read, then run, the installer: `curl -fsSL https://lmstudio.ai/install.sh
+   -o install.sh && less install.sh && sh install.sh --no-modify-path`.
+2. Runtimes: `lms runtime get mlx-llm -y` and `lms runtime get llama.cpp -y`
+   (the embedding model is GGUF).
+3. Weights: `lms get <hugging face URL> -y` for each row in `config/roles.tsv`
+   (exact sources in `docs/MODELS.md`). A bare staff-pick name with `-y` can
+   choose a different quantisation. If `lms get` dies with "WebSocket
+   connection closed", download the file from Hugging Face into
+   `~/.lmstudio/models/<publisher>/<repo>/` and check its sha256.
+4. **Server settings, once, in the LM Studio app** — llmster has no CLI for
+   auth or tokens (lmstudio-ai/lms#489). Mode switch at the bottom → Developer;
+   then the **Developer tab** in the left sidebar (not Settings) → Server
+   Settings:
 
-cd /path/to/hearth
-cp litellm/.env.example litellm/.env    # fill in keys + a real POSTGRES_PASSWORD
-scripts/db.sh up
+   | Setting | Value |
+   |---|---|
+   | Port | 1234 |
+   | Require Authentication | **on** |
+   | Serve on Local Network | off (until phase 4) |
+   | Enable CORS | off |
+   | Allow per-request MCPs | off |
+   | Allow calling servers from mcp.json | off |
+   | Just-in-Time Model Loading | off |
+   | Log sensitive data | off — it writes prompts to the server logs |
 
-set -a; source litellm/.env; set +a
-scripts/create-keys.sh                  # paste the four keys back into .env
-scripts/deploy.sh                       # symlink + restart + verify
-scripts/healthcheck.sh
-```
-
-Or point the running gateway at this repo by hand — `run-litellm.sh` already
-loads `~/.config/litellm/config.yaml`, so replace that file with a symlink:
-
-```bash
-REPO=/path/to/hearth
-mv ~/.config/litellm/config.yaml ~/.config/litellm/config.yaml.pre-hearth
-ln -s "$REPO/litellm/config.yaml" ~/.config/litellm/config.yaml
-# restart: scripts/aliases.zsh defines ai-restart, or:
-launchctl kickstart -k "gui/$(id -u)/com.hearth.litellm"
-```
-
-Provider keys go in `~/.config/litellm/env`, which `run-litellm.sh` sources.
-Rollback is `mv` the `.pre-hearth` file back and kickstart.
+   Manage Tokens → Create Token `host`. Store it without echoing:
+   ```bash
+   mkdir -p ~/.config/hearth && umask 077 && \
+     printf 'LMSTUDIO_HOST_TOKEN=%s\n' "$(pbpaste)" >> ~/.config/hearth/env && \
+     chmod 600 ~/.config/hearth/env && pbcopy </dev/null
+   ```
+   Leave "Enable Local LLM Service (headless)" off — that is the app's own
+   headless mode. **Quit the app (⌘Q)** before starting llmster.
+5. Start and load:
+   ```bash
+   lms daemon up
+   lms server start --bind 127.0.0.1 -p 1234
+   scripts/lms-load.sh
+   ```
+6. Prove auth holds — a positive control first:
+   ```bash
+   . ~/.config/hearth/env
+   curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $LMSTUDIO_HOST_TOKEN" http://127.0.0.1:1234/v1/models   # 200
+   curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:1234/v1/models                                                    # 401
+   ```
+7. `echo "source $PWD/scripts/aliases.zsh" >> ~/.zshrc`
 
 ## Surviving a reboot
 
+Start-at-login supervision is a phase 5 item. Until then, after a reboot:
+
 ```bash
-scripts/install-autostart.sh --check    # what does and does not come back
-scripts/install-autostart.sh --apply    # install the boot agent
-scripts/status.sh                       # is everything up right now
+lms daemon up
+lms server start --bind 127.0.0.1 -p 1234
+scripts/lms-load.sh          # exits 0 only after re-reading lms ps
 ```
-
-What already survives, and what does not:
-
-| Piece | After a reboot |
-|---|---|
-| LiteLLM | comes back — launchd `KeepAlive` |
-| Ollama | comes back — if `scripts/install-ollama-service.sh --apply` was run |
-| Ollama memory | `FLASH_ATTENTION=1`, `KV_CACHE_TYPE=q8_0`, `MAX_LOADED_MODELS=1`, `KEEP_ALIVE=10m` via serve plist — ADR 0011, keep-alive ADR 0015 |
-| MLX watchdog | `scripts/mlx-watchdog.sh` — kills a runner at ≥38 GB graphics footprint that has accepted a prompt and sent no tokens for 30 s |
-| Podman VM | **does not start itself** — this is the real gap |
-| Containers | restart policies only apply once the VM is up |
-
-`scripts/boot.sh` closes the gap: starts the Podman VM, starts the containers,
-waits for Postgres, then kicks the gateway if it has not settled.
-
-LiteLLM would eventually recover on its own — it crash-loops against a missing
-database and launchd restarts it every 10 s — but a clean start beats a minute
-of restart noise in the log.
 
 ### Sleep
 
-A sleeping Studio means every laptop loses the gateway. `install-autostart.sh`
-**prints** these rather than running them, because silently changing when your
-machine sleeps is not something a script should do:
+A sleeping host means every laptop loses inference. These are printed, not
+run, because silently changing when your machine sleeps is not something a
+script should do:
 
 ```bash
 sudo pmset -c sleep 0        # never sleep on AC
@@ -100,106 +92,71 @@ sudo pmset -a womp 1         # wake on network access
 sudo pmset -c displaysleep 10   # displays can still sleep, that is free
 ```
 
-`womp` is the interesting one — with it a laptop reaching the host can wake
-it. Without it, asleep means unavailable.
-
 ## Everyday
 
 ```bash
-# restart the gateway (or: source scripts/aliases.zsh && ai-restart)
-launchctl kickstart -k "gui/$(id -u)/com.hearth.litellm"
+ai-loaded                      # lms ps — identifiers, context, parallel
+scripts/lms-load.sh --check    # drift against roles.tsv; changes nothing
+scripts/lms-load.sh            # fix drift
+ai-restart                     # server stop + start on 127.0.0.1:1234
+ai-log                         # lms log stream — live requests
+lms server status
+lms daemon status
+```
 
-# is it up
-curl -s localhost:4000/health/readiness | python3 -m json.tool
+Footprint of the model worker (the number that matters against the ~48 GB
+GPU ceiling — RSS understates it):
 
-# health of every role + the leak test
-scripts/healthcheck.sh
-
-# tail errors
-tail -f ~/Library/Logs/litellm.error.log
-
-# what's loaded in memory right now
-ollama ps
-# ollama ps SIZE understates graphics memory. A runner near 40 GB that
-# never emits a token is killed by scripts/mlx-watchdog.sh (ADR 0015).
-
-# spend
-curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
-  localhost:4000/spend/logs | python3 -m json.tool | head -50
+```bash
+for p in $(pgrep -f '\.lmstudio/'); do footprint -p $p | awk '/Footprint:/'; done
 ```
 
 ## Chat UI and visibility
 
 ```bash
-scripts/webui.sh up            # private scope — local roles only
-scripts/webui.sh up --general  # cloud reachable, deliberate
+scripts/webui.sh up            # local only — there is no cloud mode
 scripts/webui.sh up --lan      # reachable from other machines (see below)
 scripts/webui.sh down
 ```
 
+The container reaches the host's `127.0.0.1:1234` via
+`host.containers.internal` with "serve on local network" off. `webui.sh up`
+refuses to start unless the host token gets a 200.
+
+**The connection lives in WebUI's database.** Environment variables only seed
+a fresh database, so after the cutover the saved OpenAI connection may still
+point at `:4000`. If the model list is empty: Admin Panel → Settings →
+Connections → OpenAI API, URL `http://host.containers.internal:1234/v1`, key
+= the host token, and delete any `:4000` / `:11434` entry. Default and task
+model are `local-big`.
+
 ### Using the chat UI from a laptop
 
-Open WebUI is a **web app** — nothing to install on the laptop, and you get the
-same chat history rather than a second disconnected copy. It only needs to be
-reachable.
-
-**Preferred: SSH tunnel.** Keeps the UI localhost-only, works from anywhere you
-can ssh, and encrypts the traffic:
+Open WebUI is a **web app** — nothing to install on the laptop. **Preferred:
+SSH tunnel**, which keeps the UI localhost-only:
 
 ```bash
-# on the laptop — USER@HOST is the gateway machine
-ssh -N -L 3000:127.0.0.1:3000 USER@HOST
-# then browse to http://127.0.0.1:3000
+ssh -N -L 3000:127.0.0.1:3000 USER@HOST     # then http://127.0.0.1:3000
 ```
 
-**Alternative: bind to the LAN.**
-
-```bash
-scripts/webui.sh up --lan     # then http://<LAN-IP>:3000
-```
-
-Open WebUI has its own login, so this is not wide open. But it is another
-authenticated surface on a machine whose other services — Ollama, Postgres — are
-deliberately localhost-only, and the traffic is plain HTTP. Fine on a trusted
-home network; the tunnel is better if you can be bothered.
-
+**Alternative:** `scripts/webui.sh up --lan`, then `http://<LAN-IP>:3000`. It
+has its own login, but it is plain HTTP and another authenticated surface.
 Either way, **do not port-forward :3000 to the internet.**
-
-Then `http://127.0.0.1:3000`. First visit creates a local account; signup is
-disabled afterwards. In Settings → Interface, enable **Display "Response Info"**
-to see the model and token count under each reply.
-
-`ENABLE_OLLAMA_API=False` is set deliberately. Left on, Open WebUI would talk to
-Ollama directly and bypass the gateway — reopening the hole Phase 3 closed.
-Title and tag generation is pinned to `local-chat` so background housekeeping
-cannot quietly become cloud spend.
 
 ### Do not enable tools in Open WebUI without thinking
 
 Web search feeds arbitrary attacker-controlled page text straight into the
 model's context. That is tolerable **only** because the chat model has no tools:
-it can mislead you convincingly — which matters on sensitive topics — but it
-cannot act.
+it can mislead you convincingly, but it cannot act.
 
 Enabling tools, functions, or code execution turns this into the highest-risk
-surface in the stack: untrusted web content plus the ability to do something
-with it. Open WebUI also stores these settings in its database, where they
-override the environment and survive container recreation, so a toggle flipped
-once stays flipped invisibly.
-
-Treat enabling them as an ADR-worthy decision, not a settings change. See
-`docs/THREAT-MODEL.md` §3, surface 5.
+surface in the stack. Open WebUI stores these settings in its database, where
+they override the environment and survive container recreation. Treat
+enabling them as an ADR-worthy decision. See `docs/THREAT-MODEL.md` §3.
 
 ### Web search: the env vars are not enough
 
-Open WebUI treats these as config values stored in its **database**, and the
-database value **takes precedence over the environment**. Environment variables
-only seed a *fresh* database. Because `webui.sh up` recreates the container but
-keeps the `hearth-webui-data` volume, whatever was written on first run wins —
-so the toggle can be absent even though `podman exec hearth-webui env` clearly
-shows `ENABLE_WEB_SEARCH=True`.
-
-Enable it where it actually counts:
+Same database-wins trap. Enable it where it counts:
 
 ```
 Admin Panel -> Settings -> Web Search -> Enable Web Search
@@ -207,160 +164,66 @@ Admin Panel -> Settings -> Web Search -> Enable Web Search
   Query URL: http://host.containers.internal:8888/search?q=<query>
 ```
 
-The toggle then appears in the chat input, per message. If it later disappears,
-that is usually a stale access token — sign out and back in.
-
-This is a general trap with any tool that has both env config and a settings UI:
-checking the environment tells you what was *intended*, not what is *in effect*.
-
-Seeing where requests actually went:
-
-```bash
-scripts/usage.sh             # last 25: role, tier, model, tokens, cost
-scripts/usage.sh --summary   # totals by role, LOCAL vs CLOUD token split
-scripts/usage.sh --keys      # per-key spend against its cap
-```
-
-The LOCAL percentage in `--summary` is the number worth watching — it is the
-proportion of your work that never left the machine. LOCAL/CLOUD is derived from
-`config.yaml`, so it stays accurate when models are swapped.
+The toggle then appears per message. If it vanishes, sign out and back in.
 
 ## Running agents contained
 
 ```bash
 scripts/sandboxed.sh aider              # confine to $PWD
 scripts/sandboxed.sh --dir ~/dev/x aider
-scripts/sandboxed.sh --print-profile    # audit the profile, no Mac required
+scripts/sandboxed.sh --print-profile    # audit the profile
 scripts/sandbox-probe.sh                # re-verify the controls still hold
 ```
 
-Inside a sandboxed session the agent can reach **only** the gateway. That means
-`pip install`, `npm install`, `git push` and any `curl` will fail — by design.
-Run those in a normal shell.
+Inside a sandboxed session the agent can reach **only** `127.0.0.1:1234`.
+`pip install`, `npm install`, `git push` and any `curl` fail by design.
 
 **Re-run `sandbox-probe.sh` after every macOS update.** `sandbox-exec` is
-deprecated and Apple can change or remove it without notice. The probe is how
-you find that out on purpose instead of by being breached.
+deprecated and Apple can change or remove it without notice.
 
 If an agent crashes on a permission error naming a path outside the repo, that
-is the sandbox working. Either add a preset in `sandboxed.sh` (preferred, so it
-is remembered) or widen once with `--also-write PATH`. Every widening is printed
-at startup — if you see a `WIDENED` line you did not expect, stop and find out why.
+is the sandbox working. Add a preset in `sandboxed.sh` or widen once with
+`--also-write PATH`; every widening is printed at startup.
 
-What this does **not** protect against: an agent reading your keys (reads are
-unrestricted on purpose) or corrupting the repo it was invited into. Commit
-before starting a session and `git diff` before accepting. Full reasoning in
-`docs/THREAT-MODEL.md`.
+It does **not** protect against an agent reading your keys or corrupting the
+repo it was invited into. Commit first; `git diff` before accepting.
 
 ## Diagnosing
 
-**Gateway won't start.** Check `litellm.error.log` first. Most common cause is a
-missing env var referenced by `os.environ/` in config.yaml — LiteLLM fails the whole
-config, not just that model.
+| Symptom | Check | Fix |
+|---|---|---|
+| Every client 401s | `curl` with the host token | token wrong or missing in `~/.config/hearth/env`; Zed keeps its own copy in the keychain |
+| `model not found` | `lms ps`, `scripts/lms-load.sh --check` | `scripts/lms-load.sh`. JIT is off, so an unlisted model never loads by itself |
+| `lms` says "LM Studio vX is running" | the app took the daemon over | quit the app; `lms daemon up` |
+| Stuck "Local inference is changing ownership" | app and llmster both installed (lmstudio-bug-tracker#2485) | quit both; `lms daemon down; lms daemon up` |
+| Slow under load | `concurrency-bench.sh` at the failing settings | prefill is serialised at any `--parallel`; see `docs/ARCHITECTURE.md` |
+| Zed agent stalls | `ai-log`, footprint, bench | capture all three **before** changing anything |
+| aider errors naming `ollama_chat/…` or `local-code` | an old `.aider.conf.yml` in the repo dir | roles are `openai/local-big` now |
 
-**A role 500s but others work.** Provider issue or a bad model name. `curl` the role
-directly with the master key to see the raw error.
-
-**Local role is slow on first call.** Cold load only. Ollama keeps one model
-resident (`MAX_LOADED_MODELS=1`). `ollama ps` shows which.
-
-**Everything local fails.** By design local roles do not fall back to cloud, so they
-fail loudly rather than silently shipping your prompt to Google. Check Ollama:
-`curl localhost:11434/api/tags`.
-
-**Break-glass.** If the gateway is down and you need inference now, hit Ollama at
-`127.0.0.1:11434`. No logging, no spend tracking, no key scoping — unblock
-yourself, then fix the gateway.
-
-## Rollback
-
-Inherited config and aliases are recorded verbatim in
-`docs/decisions/0001-inherited-state.md`. Restore
-`~/.config/litellm/config.yaml` from that file and kickstart the agent.
-
-## Upgrading LiteLLM
-
-Four steps, and skipping the third produces a failure that looks like success.
+Bench any change the same way as the baseline:
 
 ```bash
-# 1. Dump the database. It holds your key VALUES, the research team and spend
-#    history — losing it means re-pasting keys on every laptop.
-mkdir -p ~/hearth-backups
-podman exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$(. scripts/lib.sh; ai_container postgres)" \
-  pg_dump -U litellm -d litellm > ~/hearth-backups/litellm-$(date +%Y%m%d-%H%M%S).sql
-
-# 2. Upgrade. --force recreates the venv, so the injected packages go with it.
-pipx install --force 'litellm[proxy]==<version>'
-pipx inject litellm prisma psycopg2-binary
-
-# 3. Regenerate the prisma client AND sync the schema.
-scripts/setup-prisma.sh
-
-# 4. Restart and verify.
-launchctl kickstart -k "$(. scripts/lib.sh; ai_litellm_agent)"
-scripts/preflight.sh && scripts/healthcheck.sh && scripts/audit-mcp-scope.sh
+scripts/concurrency-bench.sh --base-url http://127.0.0.1:1234/v1 \
+  --token-env LMSTUDIO_HOST_TOKEN --model local-big --concurrency 3 \
+  --proc-match '(\.lmstudio/|^llmster)'
 ```
 
-**Why step 3 matters.** Recreating the venv deletes the generated prisma
-client, so the gateway will not start at all — that failure is loud and
-obvious. The quiet one comes next: a new LiteLLM expects database columns the
-live schema does not have, and then the gateway *does* start,
-`/health/readiness` reports `db:connected`, `/v1/models` answers, and every
-`/key/*` call returns 500 with
+## Rollback (until phase 6)
 
-```
-The column `LiteLLM_VerificationToken.key_type` does not exist
-```
+Ollama and LiteLLM are stopped or idle, not uninstalled.
 
-Scoped keys and MCP grants stop resolving while `status.sh` shows a green
-stack. Preflight now checks the key API directly for exactly this.
-
-Take the release LiteLLM marks **stable**, not the newest on PyPI — the latter
-is often hours old. 1.85.1 → 1.94.1 on 2026-08-02 needed all four steps and
-also rebuilt the venv on a newer Python.
-
-## Postgres (Podman)
-
-```bash
-scripts/db.sh up        # start (starts the Podman VM if needed)
-scripts/db.sh status
-scripts/db.sh logs
-scripts/db.sh psql
-scripts/db.sh down      # stop, keeps data
-scripts/db.sh destroy   # DESTROYS all keys and spend history, prompts first
-```
-
-Bound to `127.0.0.1:5433` — deliberately unreachable from the LAN, and on 5433 to
-avoid clashing with any other Postgres.
-
-**Podman gotcha:** the container runs inside a Linux VM, and that VM does not start
-itself after a reboot. `scripts/db.sh up` starts it for you, but if the gateway boots
-first it will come up with no database and virtual keys will fail until you run it.
-If that becomes annoying, add a launchd agent for `podman machine start`.
+1. `lms server stop`
+2. Finder → Trash → Ollama.app → Put Back
+3. `launchctl enable gui/$(id -u)/com.colinnevin.ollama` then
+   `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.colinnevin.ollama.plist`
+4. Restore client configs: `~/.config/zed/settings.json.pre-lmstudio-2026-10-31`,
+   `~/.aider.conf.yml.pre-lmstudio-2026-10-31`, and `git revert` the
+   cutover commits for `scripts/aliases.zsh`, `webui.sh`, `sandboxed.sh`.
 
 ## LAN and laptop access
 
-The gateway listens on `:4000` across interfaces and is protected by key auth, so
-other machines just need a base URL and a key:
-
-```bash
-# Prefer: scripts/client-setup.sh lan   (fills in this host's LAN IP)
-export OPENAI_API_BASE=http://<LAN-IP>:4000/v1
-export OPENAI_API_KEY=<the lan or lan-cloud key>
-```
-
-- `lan` — local roles plus `cloud-cheap`. The everyday key.
-- `lan-cloud` — every live cloud role. For a laptop that actually needs Claude
-  or K3. Same LAN, wider scope — the difference is reach, not location.
-
-The dollar figures on these keys are **fuses, not billing** — you are the only user.
-They cap spend on your provider account so that a leaked key or a runaway overnight
-agent loop hits a wall instead of your card. Raise them whenever they get in the way;
-just don't set `null` on a key that can reach a paid model.
-
-Two keys rather than one so the everyday key stays cheap and a lost laptop has a
-small, visible blast radius. Both are LAN-only; neither works off this network. Rotate with `scripts/create-keys.sh` and delete the old
-key via the admin API.
-
-This is LAN only. Do not port-forward `:4000` to the internet — key auth is not
-hardening, and a public LiteLLM holding your provider keys is somebody else's budget.
+**Pending phase 4.** Today the server answers only on `127.0.0.1`. Phase 4
+turns on "Serve on Local Network" with authentication kept on, issues one
+token per machine (`laptop-<name>`), and documents
+`ssh -N -L 1234:127.0.0.1:1234 USER@HOST` for off-LAN. **Never port-forward
+`:1234`.**

@@ -1,159 +1,165 @@
 # Architecture
 
-Reference host shape: Apple Silicon Mac, 64 GB unified memory, macOS. LAN clients
-reach the gateway; Ollama stays on localhost.
+Reference host: Apple Silicon Mac, 64 GB unified memory, macOS. One local
+inference server, LM Studio headless (`llmster`), on `127.0.0.1:1234`. ADR
+0016; the gateway era (LiteLLM + Ollama + Postgres) is in `docs/HISTORY.md`.
 
 ## Shape
 
 ```mermaid
 flowchart TB
-    subgraph onHost["On the gateway host"]
+    subgraph onHost["On the host"]
         aider["aider"]
         zed["Zed"]
-        scripts["scripts"]
-        webui["Open WebUI :3000"]
+        scripts["scripts / benches"]
+        webui["Open WebUI :3000<br/>(Podman)"]
+        sbx["sandboxed.sh agents"]
+        lms["llmster 127.0.0.1:1234<br/>local-big: 64K x 3 parallel<br/>local-embed<br/>token required, JIT off"]
     end
 
-    laptop["LAN laptop"]
+    laptop["LAN laptop<br/>pending phase 4"]
+    cloud["Gemini<br/>ask-cloud only, tool's own key"]
+    austlii["AustLII<br/>Zed Research profile only"]
 
-    gw{{"LiteLLM :4000<br/>roles / key scope / spend"}}
-    pg[("Postgres :5433")]
-
-    ollama["Ollama 127.0.0.1:11434<br/>local-chat / code / big / embed"]
-    cloud["Cloud roles<br/>Gemini live; others dormant"]
-
-    aider --> gw
-    zed --> gw
-    scripts --> gw
-    webui --> gw
-    laptop -->|"lan or lan-cloud key"| gw
-
-    gw --> ollama
-    gw -->|"allowed keys only"| cloud
-    gw -.->|"private key refused"| cloud
-    gw <--> pg
+    aider --> lms
+    zed --> lms
+    scripts --> lms
+    webui -->|"host.containers.internal"| lms
+    sbx -->|"only allowed egress"| lms
+    laptop -.-> lms
+    aider -.-> cloud
+    zed -.->|"auslaw MCP"| austlii
 
     classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
-    classDef cloudCls fill:#FAEEDA,stroke:#854F0B,color:#633806
-    classDef gwCls fill:#E6F1FB,stroke:#185FA5,color:#0C447C
-
-    class ollama,pg localCls
-    class cloud cloudCls
-    class gw gwCls
+    classDef leaveCls fill:#FAEEDA,stroke:#854F0B,color:#633806
+    class lms localCls
+    class cloud,austlii leaveCls
 ```
 
 Everything addresses **roles**, never model names. Concrete models appear in
-exactly two files: `litellm/config.yaml` and `docs/MODELS.md`.
+exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 
-## Why a gateway at all
+## Roles
 
-Before this, aider talked to Ollama directly and other tools talked to cloud
-providers directly. That meant several places to edit when a model changed, no
-spend visibility, no request log, and no way to enforce that client data stayed
-local. One gateway gives a single swap point, one audit trail, and — most
-importantly — a place where the privacy boundary can be *structural* rather than
-a rule you remember.
-
-## The three layers
-
-**1. Roles.** `local-chat`, `local-code`, `local-big`, `local-embed`, `cloud-cheap`,
-plus dormant `cloud-code` and the three `cloud-frontier*` variants. Clients ask for a
-role. Swapping the model behind a role is one config edit and a restart; no alias,
-script, or IDE setting changes. See `docs/MODELS.md`.
-
-Every local role is Ollama on `:11434`. `local-big` uses Ollama's MLX runner
-(ADR 0013). One model stays GPU-resident (ADR 0011).
-
-**2. Keys.** Four virtual keys, each scoped to a model list:
-
-| Key | Reaches | Used by |
+| Role | Backend | What |
 |---|---|---|
-| `private` | `local-*` only | sensitive work, Open WebUI default |
-| `general` | everything live | this machine — aider, Zed, scripts |
-| `lan` | `local-*` + `cloud-cheap` | other machines, everyday |
-| `lan-cloud` | everything live | laptop, when it needs real cloud models |
+| `local-big` | LM Studio | the only local chat/agent model. 64K context, 3 concurrent predictions |
+| `local-embed` | LM Studio | embeddings, resident beside `local-big` |
+| `cloud-cheap` | Gemini | reached directly by `ask-cloud`; never loaded into LM Studio |
 
-A request for a cloud role with the `private` key is refused by the gateway. There
-is no prompt that gets around it, which is the entire point — see `docs/ROUTING.md`.
+`local-code` and `local-chat` were collapsed into `local-big` (D1): two heavy
+models cannot both stay resident with 3 × 64K slots, and evicting the agent
+model was failure F2. The old alias names still work and mean `local-big`.
 
-**3. Fallbacks.** Local roles degrade to *other local roles* and never to cloud.
-`local-big` has none at all — if it is down, fail loudly rather than quietly
-answer with a weaker model.
-The inherited config had `local-ollama → gemini`, so any Ollama timeout silently
-shipped the prompt to Google. Across a privacy boundary a fallback is a leak, not
-resilience. `scripts/audit-fallbacks.sh` fails the build if that reappears.
+`scripts/lms-load.sh` makes the loaded set match `config/roles.tsv`: it
+unloads anything unlisted, loads each `lmstudio` row with
+`--identifier <role> -c <ctx> --gpu max --parallel <slots>`, then re-reads
+`lms ps` to confirm. No `--ttl`, so a role never auto-unloads.
+
+## The privacy boundary
+
+There is no router and no key scope. The boundary is where models live:
+
+- **LM Studio holds only local models.** Anything sent to `:1234` stays on
+  the host by construction. Rule: no script adds a cloud backend to
+  `config/roles.tsv` except as an explicit cloud row (`gemini`).
+- **Cloud needs a provider key in the calling tool.** Only `ask-cloud` passes
+  one, per invocation. Host Zed has no cloud provider (D3).
+- **Sandboxed agents can reach `127.0.0.1:1234` only**, so they cannot reach
+  cloud at all.
+
+What this does **not** do, stated plainly: tokens are not scoped to models
+(any valid token reaches every loaded model — fine while all are local), and
+there is no spend cap or per-request log. A Gemini quota in the Google Cloud
+console is the cap.
+
+## Server settings
+
+Set once in the LM Studio app (llmster has no CLI for auth or tokens) and
+honoured by llmster — verified 2026-10-31: no token → 401, wrong token → 401,
+host token → 200.
+
+| Setting | Value |
+|---|---|
+| Port | 1234 |
+| Require Authentication | on |
+| Serve on Local Network | off (phase 4 turns it on) |
+| CORS | off |
+| Just-in-Time model loading | off |
+| Allow per-request MCPs / calling servers from mcp.json | off |
+| Log sensitive data | off |
+
+Stored in `~/.lmstudio/.internal/http-server-config.json` (auth and tokens
+are not in that file).
 
 ## Process supervision
 
-LiteLLM runs under launchd (default label `com.hearth.litellm`; existing
-installs may keep a personal label — scripts resolve via `ai_litellm_label` in
-`scripts/lib.sh`). The agent executes `~/.config/litellm/run-litellm.sh`, which
-sources `~/.config/litellm/env` and starts LiteLLM with
-`--config ~/.config/litellm/config.yaml`.
+`llmster` runs as the LM Studio daemon (`lms daemon up`); the server is
+started with `lms server start --bind 127.0.0.1 -p 1234`. Start-at-login
+supervision is a phase 5 item (`boot.sh` / `install-autostart.sh` rewrite).
+Until then, after a reboot: `lms daemon up`, `lms server start …`,
+`scripts/lms-load.sh`.
 
-`~/.config/litellm/config.yaml` is a **symlink** into this repo. That is the whole
-deployment mechanism: the plist and wrapper script are never modified, so rollback
-is one `mv` (`scripts/deploy.sh --rollback`).
-
-Postgres runs as a Podman container, bound to `127.0.0.1:5433` — the LAN can reach
-the gateway but never the database. Port 5433 avoids collision with any other
-Postgres.
-
-### Two environment files, deliberately
+### Environment files
 
 | File | Read by | Contains |
 |---|---|---|
-| `~/.config/litellm/env` | launchd, via `run-litellm.sh` | provider keys, `LITELLM_MASTER_KEY`, `DATABASE_URL` |
-| `~/dev/hearth/litellm/.env` | `scripts/*.sh` only | `POSTGRES_PASSWORD`, virtual keys, a copy of `DATABASE_URL` |
+| `~/.config/hearth/env` (mode 600) | aliases (`_hearth_var`), scripts | `LMSTUDIO_HOST_TOKEN`; `GOOGLE_API_KEY` moves here in phase 5 |
+| `~/.config/litellm/env` | aliases fall back to it for `GOOGLE_API_KEY` | retired gateway env, until phase 5 |
 
-**launchd does not read the repo's `.env`, and it does not read `~/.zshrc`.** A
-variable exported in your shell will look fine to a naive check and then fail at
-runtime. `scripts/preflight.sh` checks the service's environment specifically, and
-reports "set in your shell but NOT in ~/.config/litellm/env" as a failure.
+The aliases read single values from these files and inject them per command;
+they never `source` them into the interactive shell.
 
 ## Verification
 
-| Script | Answers |
+| Check | Answers |
 |---|---|
-| `preflight.sh` | Is it safe to deploy? Read-only. Exit 2 = check couldn't run, 1 = real problem |
-| `audit-fallbacks.sh` | Can any local role reach cloud? |
-| `deploy.sh` | Cut over, verify, auto-rollback on failure |
-| `healthcheck.sh` | Is every live role responding, and is the private key actually scoped? |
-| `bench.sh` | Does a candidate model beat the incumbent? |
+| `scripts/lms-load.sh --check` | Is exactly the roles.tsv set loaded, with the right context and slots? |
+| `scripts/tool-smoke.sh openai http://127.0.0.1:1234/v1 local-big` | Does a Zed-like read → write tool loop work? |
+| `scripts/concurrency-bench.sh` | TTFT, tool-call validity and footprint under N concurrent agent turns |
+| `scripts/sandbox-probe.sh` | Sandboxed agents reach `:1234` and nothing else (incl. the old `:4000`) |
+| `curl` without a token | Must be 401 |
 
-The leak test in `healthcheck.sh` has two halves: the private key must **succeed**
-on a local role (otherwise a merely broken key looks like perfect scoping) and must
-be **refused** on a live cloud role (probing a dormant role proves nothing, since
-"model not found" is also a 4xx).
+`healthcheck.sh`, `preflight.sh` and `status.sh` still check the retired
+gateway; they are rewritten in phase 5 (server up, each role answers,
+no-token 401, LAN only with token, nothing else on 1234, JIT off).
+
+## Measured (2026-10-31)
+
+| | Ollama via LiteLLM | llmster |
+|---|---|---|
+| c1 TTFT p95, 28K prompt | 21.0 s | 19.9 s |
+| c3 TTFT p95 | 65.8 s | 59.9 s |
+| c3 total p50 | 40.3 s | 61.0 s |
+| Peak footprint | 37.0 GB (1 slot) | 29.7 GB (3 slots) |
+
+Prefill is still serialised on llmster's MLX engine; `--parallel` batches
+decode, so all three requests in a round finish together. The wins are
+memory, no evictions and no gateway hop, not concurrency.
+`bench/results/2026-10-31-phase0`, `…-phase1`.
 
 ## The second boundary: containment
 
-The key scoping above governs **where data goes on purpose**. It has no
-jurisdiction over a compromised agent, which does not use that path at all — an
-injected aider that `curl`s a stolen key to an attacker never touches LiteLLM.
+The local/cloud split governs **where data goes on purpose**. It has no
+jurisdiction over a compromised agent — an injected aider that `curl`s a
+stolen key to an attacker never touches the model server.
 
 `scripts/sandboxed.sh` closes that channel by denying egress to everything
-except the gateway, so an agent that reads a secret has nowhere to send it.
-Verified on macOS 26.4 by `scripts/sandbox-probe.sh`. Reads are deliberately
-unrestricted; the full reasoning and the accepted residual risk are in
-`docs/THREAT-MODEL.md` and ADR 0007.
+except `127.0.0.1:1234`. Verified by `scripts/sandbox-probe.sh` (11/11 on
+2026-10-31, including a deny check on the old `:4000`). Reads are
+deliberately unrestricted; see `docs/THREAT-MODEL.md` and ADR 0007.
 
-| Threat | Key scope | Sandbox |
+| Threat | Model placement | Sandbox |
 |---|---|---|
-| A prompt sends client data to a cloud model | **caught** | not caught |
+| A prompt sends client data to a cloud model | **caught** unless you run `ask-cloud` | not caught |
 | An injected agent exfiltrates a key via curl | not caught | **caught** |
 
 ## Known gaps
 
-- ~~Ollama open on the LAN~~ — **closed 2026-08-02**. Bound to 127.0.0.1, verified
-  unreachable from the LAN address. See ADR 0003.
-- ~~No agent sandboxing~~ — **closed 2026-08-02** for aider and Zed. Egress and
-  write confinement verified. See ADR 0007.
-- **Untrusted MCP servers are unaudited** — unknown tool surface, adjacent to real client
-  data. Now the largest unknown; see `docs/THREAT-MODEL.md` §3.
-- **Roles are not digest-pinned yet.** Ollama tags are mutable pointers, so a pull
-  can change the weights behind a role. Pinning lands with the bench harness.
-- **Resident set** is 37.5 GB of a ~48 GB GPU ceiling — all four local models stay
-  loaded, so switching roles evicts nothing. This replaced a set needing 65.7 GB.
-- **No auto-updater yet.** Discovery and benching are meant to be automatic;
-  promotion stays manual by choice.
+- **LAN access** — phase 4 (tokens per machine, serve on network with auth).
+- **Boot supervision and the health scripts** — phase 5.
+- **Digest drift detection** — the Ollama digest pins no longer apply; D4
+  (hash the model directory) is undecided.
+- **Untrusted MCP servers are unaudited** — `docs/THREAT-MODEL.md` §3.
+- **Zed's built-in `fetch` and `search_web` tools** reach the internet in the
+  Write and Ask profiles; that predates this migration.

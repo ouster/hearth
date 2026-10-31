@@ -1,5 +1,7 @@
 # Build status
 
+> **Historical (gateway era).** Superseded by ADR 0016. Current status: `docs/MIGRATION-LMSTUDIO.md`; what was tried: `docs/HISTORY.md`.
+
 Last updated: 2026-08-02
 
 **Not the source of truth.** For current reality read, in this order:

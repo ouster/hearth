@@ -1,5 +1,7 @@
 # How this compares to other private-AI setups
 
+> **Historical (gateway era).** Written for the LiteLLM + Ollama stack; superseded by ADR 0016. See `docs/ARCHITECTURE.md` for the current design.
+
 Read 2026-08-02. Two reference points worth knowing about: one person solving
 the same problem from a different angle, and one product solving the piece we
 found most annoying.

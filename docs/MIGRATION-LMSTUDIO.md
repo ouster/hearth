@@ -31,7 +31,7 @@
 | 2 | GPU wired-limit headroom | skipped 2026-10-31: peak 29.7 GB, memory is not the bottleneck (operator) |
 | 3 | Cut host clients over (Zed, aider, WebUI, sandbox, MCP) | configs cut over 2026-10-31; sandbox-probe 11/0, WebUI sees roles; operator gate (Zed session, aider) pending |
 | 4 | LAN access with tokens; laptop clients | not started |
-| 5 | Stop the old stack; rewrite scripts and docs | not started |
+| 5 | Stop the old stack; rewrite scripts and docs | partly done 2026-10-31: docs rewritten, ADRs marked superseded, CLAUDE.md rules updated, Ollama stopped; scripts, LiteLLM, Postgres, watchdog pending |
 | 6 | Soak one week, then delete old weights and services | not started |
 
 ## Decisions the operator must make
