@@ -19,7 +19,7 @@ else
 fi
 export HEARTH_ROOT
 
-# LM Studio (llmster) on localhost — ADR 0016. Every local alias is
+# LM Studio (the app owns the server, D6) on localhost — ADR 0016. Every local alias is
 # local-big (D1); there is no router, so a role name is an LM Studio
 # --identifier and nothing can fall back anywhere.
 HEARTH_LOCAL="${HEARTH_LOCAL:-http://127.0.0.1:1234/v1}"
