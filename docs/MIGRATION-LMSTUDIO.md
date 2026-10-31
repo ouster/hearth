@@ -226,6 +226,12 @@ host — `nc -z <lan-ip> 1234` answers and an unauthenticated request is 401.
 
 ## Phase 5 — Retire the old stack, rewrite tooling
 
+**Done early (2026-10-31, operator):** Ollama stopped (`launchctl bootout`) and
+disabled (`launchctl disable gui/<uid>/com.colinnevin.ollama`); `Ollama.app` in
+the Trash. Plist and model weights untouched. Rollback: Put Back the app,
+`launchctl enable …`, then `launchctl bootstrap gui/<uid>
+~/Library/LaunchAgents/com.colinnevin.ollama.plist`.
+
 1. Stop and disable (do not uninstall yet): LiteLLM launchd agent, Ollama
    launchd service, `com.hearth.mlx-watchdog`, the Postgres container. Back up
    the Postgres volume to `~/hearth-backups/` first.
