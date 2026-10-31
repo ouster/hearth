@@ -110,7 +110,6 @@ Until then, after a reboot: open the app, `lms server start …`,
 | File | Read by | Contains |
 |---|---|---|
 | `~/.config/hearth/env` (mode 600) | aliases (`_hearth_var`), scripts | `LMSTUDIO_HOST_TOKEN`, `GOOGLE_API_KEY` (moved from `~/.zshenv.local` 2026-10-31, where it was exported into every shell) |
-| `~/.config/litellm/env` | aliases fall back to it if a value is missing above | retired gateway env, until phase 5 |
 
 The aliases read single values from these files and inject them per command;
 they never `source` them into the interactive shell. Do not export a provider

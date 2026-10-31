@@ -26,13 +26,13 @@ HEARTH_LOCAL="${HEARTH_LOCAL:-http://127.0.0.1:1234/v1}"
 HEARTH_LMS="${HEARTH_LMS:-$HOME/.lmstudio/bin/lms}"
 . "${HEARTH_ROOT}/scripts/lib.sh"
 
-# Read one NAME=value from the env files WITHOUT sourcing them. Sourcing
-# ~/.config/litellm/env would export every provider key into this shell and
-# every process started from it — aider, any agent it spawns, any npm
+# Read one NAME=value from ~/.config/hearth/env WITHOUT sourcing it. Sourcing
+# would export every secret in it into this shell and every process started
+# from it — aider, any agent it spawns, any npm
 # postinstall. Each alias injects only the one secret it needs, per call.
 _hearth_var() {
   local name="$1" f line val
-  for f in "$HOME/.config/hearth/env" "$HOME/.config/litellm/env"; do
+  for f in "$HOME/.config/hearth/env"; do
     [ -f "$f" ] || continue
     line=$(grep -E "^[[:space:]]*(export[[:space:]]+)?${name}=" "$f" | tail -1)
     [ -n "$line" ] || continue

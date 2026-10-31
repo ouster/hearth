@@ -125,7 +125,17 @@ repo with its own cloud models; it does not consume local inference.
 
 ## Rollback
 
-Until phase 6 of the plan, Ollama, LiteLLM and Postgres stay installed and
-stopped, and `litellm/config.yaml` stays in git history. Rollback is: stop LM
-Studio's server, `launchctl bootstrap` the LiteLLM and Ollama agents,
-`scripts/db.sh up`, revert client configs from git.
+**None to the old stack since 2026-10-31.** The operator chose to skip the
+soak: LiteLLM (pipx), Postgres (container, volume, image), Ollama (app,
+service, 74 GB of weights), Rapid-MLX, llmster and their launchd agents were
+deleted the same day. What remains:
+
+- `~/hearth-backups/` (mode 700): `hearth-postgres-2026-10-31.sql` (full
+  `pg_dumpall`, holds the old virtual keys), `config-litellm-2026-10-31.tgz`,
+  `repo-litellm-dir-2026-10-31.tgz`, `ollama-app-support-2026-10-31.tgz`.
+- Git history for `litellm/config.yaml` and the removed scripts.
+- Client config backups: `*.pre-lmstudio-2026-10-31` next to `~/.zshrc`,
+  `~/.zshenv.local`, `~/.aider.conf.yml`, `~/.config/zed/settings.json`.
+
+Rebuilding the gateway would be a reinstall plus re-pulling the Ollama
+weights, not a rollback.

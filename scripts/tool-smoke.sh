@@ -9,8 +9,9 @@
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-. "${ROOT}/scripts/lib.sh"
-ai_python_or_die || exit 2
+# stdlib only — no PyYAML needed (the LiteLLM venv that had it is gone).
+AI_PY=/usr/bin/python3
+[ -x "$AI_PY" ] || AI_PY="$(command -v python3)" || { echo "could not run: no python3" >&2; exit 2; }
 
 BACKEND="${1:-ollama}"
 shift || true

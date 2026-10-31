@@ -16,9 +16,8 @@ Start, stop, diagnose. The LM Studio app serving `127.0.0.1:1234`, ADR 0016
 | Open WebUI | Podman, `127.0.0.1:3000` | `scripts/webui.sh` |
 | SearXNG | Podman, `:8888` | `scripts/searxng.sh` |
 
-Retired and stopped: Ollama (disabled in launchd, app in the Trash). LiteLLM
-and its Postgres container are still running until phase 5 but have no working
-local backend.
+Removed 2026-10-31: Ollama, LiteLLM, Postgres, Rapid-MLX, llmster and their
+launchd agents. Ports 4000, 5433 and 11434 should be free.
 
 ## First-time setup
 
@@ -208,17 +207,11 @@ scripts/concurrency-bench.sh --base-url http://127.0.0.1:1234/v1 \
   --proc-match '(\.lmstudio/|LM Studio)'
 ```
 
-## Rollback (until phase 6)
+## Rollback
 
-Ollama and LiteLLM are stopped or idle, not uninstalled.
-
-1. `lms server stop`
-2. Finder → Trash → Ollama.app → Put Back
-3. `launchctl enable gui/$(id -u)/com.colinnevin.ollama` then
-   `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.colinnevin.ollama.plist`
-4. Restore client configs: `~/.config/zed/settings.json.pre-lmstudio-2026-10-31`,
-   `~/.aider.conf.yml.pre-lmstudio-2026-10-31`, and `git revert` the
-   cutover commits for `scripts/aliases.zsh`, `webui.sh`, `sandboxed.sh`.
+There is no old stack to roll back to: it was removed on 2026-10-31 (ADR
+0016, Rollback). Backups are in `~/hearth-backups/` (mode 700). Client config
+backups end in `.pre-lmstudio-2026-10-31`.
 
 ## LAN and laptop access
 

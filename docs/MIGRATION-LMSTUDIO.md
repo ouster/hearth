@@ -31,8 +31,8 @@
 | 2 | GPU wired-limit headroom | skipped 2026-10-31: peak 29.7 GB, memory is not the bottleneck (operator) |
 | 3 | Cut host clients over (Zed, aider, WebUI, sandbox, MCP) | gate 2026-10-31: Zed two-thread session pass, sandbox pass, ask pass; ask-cloud and WebUI UI check open — `bench/results/2026-10-31-phase3/report.md` |
 | 4 | LAN access with tokens; laptop clients | not started |
-| 5 | Stop the old stack; rewrite scripts and docs | partly done 2026-10-31: docs rewritten, ADRs marked superseded, CLAUDE.md rules updated, Ollama stopped; scripts, LiteLLM, Postgres, watchdog pending |
-| 6 | Soak one week, then delete old weights and services | not started |
+| 5 | Stop the old stack; rewrite scripts and docs | old stack removed 2026-10-31 (see phase 6); docs rewritten; 13 gateway scripts deleted; **remaining:** rewrite healthcheck, preflight, status, boot/autostart, diagnose, bench, swap-role, pull-candidates, pin-digests (D4), client-setup |
+| 6 | Soak one week, then delete old weights and services | uninstall done 2026-10-31 **without a soak** (operator); backups in `~/hearth-backups/`; ADR 0016 not yet marked accepted-complete |
 
 ## Decisions the operator must make
 
@@ -44,7 +44,7 @@
 | D4 | Digest drift detection | Keep: hash the model directory in `config/roles.tsv` and check it in preflight | |
 | D5 | Keep Open WebUI? | Yes, pointed at `:1234`. It no longer needs the gateway's Postgres | **Keep** (2026-10-31) |
 | D6 | Headless runner: LM Studio app with "run server on login", or `llmster`? | `llmster` if it installs cleanly; the app otherwise | **The app** (changed 2026-10-31). Was `llmster`; it worked and honoured the app-set auth, but the app and llmster cannot share `~/.lmstudio` and the operator wants the GUI. The app runs the server with "Enable Local LLM Service (headless)" on; ~1.1 GB extra for its GUI processes. Removing Ollama.app: done (operator) |
-| D7 | Soak length before phase 6 cleanup | Operator: one week is excessive. Proposal pending | |
+| D7 | Soak length before phase 6 cleanup | — | **No soak** — operator deleted the old stack 2026-10-31 |
 
 ## Target
 

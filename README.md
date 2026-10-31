@@ -131,7 +131,6 @@ scripts/                lms-load, benches, sandbox, client setup, …
 client/                 shims for other machines (rewritten in phase 4)
 bench/tasks/            fixed prompts for comparing models
 bench/results/          every bench run, committed
-litellm/                retired gateway config — removed in phase 5
 ```
 
 ## License

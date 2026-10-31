@@ -6,11 +6,11 @@ roles (never also run headless `llmster`); cloud (Gemini) is reached by each too
 Read `docs/ROUTING.md` before suggesting any routing change.
 
 **In flight:** migration to LM Studio direct — `docs/MIGRATION-LMSTUDIO.md`
-(ADR 0016, accepted 2026-10-31). Host clients are cut over; LAN (phase 4) and
-the script rewrite (phase 5) are pending. Work one phase at a time, only when
-the operator says to start it, and stop at every DECISION. Anything in `litellm/`
-or a doc describing `:4000`, `:11434`, virtual keys or Postgres is the retired
-gateway — never suggest commands against it.
+(ADR 0016, accepted 2026-10-31). Host clients are cut over and the old stack is
+deleted; LAN (phase 4) and the script rewrite (phase 5) are pending. Work one phase at a time, only when
+the operator says to start it, and stop at every DECISION. Any doc or
+script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgres is the
+removed gateway — never suggest commands against it.
 
 ## Hard rules
 
@@ -92,7 +92,6 @@ docs/
   CLAUDE-PROJECT.md  the claude.ai Project spec
   decisions/         ADRs
 config/roles.tsv     role → model key, context, slots (names models)
-litellm/             retired gateway config, removed in phase 5
 scripts/             lms-load, benches, sandbox, aliases
 bench/tasks/         fixed prompts for model comparison
 ```
