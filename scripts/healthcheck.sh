@@ -11,11 +11,13 @@
 #   2. no token → 401, wrong token → 401
 #   3. each lmstudio role in config/roles.tsv answers a real request
 #   4. what is actually listening on :1234, and only LM Studio
-#   5. LAN: no answer (localhost-only) or 401 without / 200 with token (phase 4)
+#   5. LAN: no answer — laptops use the SSH tunnel (D8). A LAN answer fails
+#      unless HEARTH_BIND explicitly opts in to LAN serving.
 #   6. CORS: no Access-Control-Allow-Origin for a foreign Origin
 #   7. JIT off: a model on disk but not in roles.tsv is never loaded. (LM Studio
 #      answers an unknown model name with the loaded LLM rather than refusing —
 #      reported as a warning.)
+#   8. Open WebUI and SearXNG answer (warning only)
 #
 # Exit 0 healthy, 1 a real problem, 2 a check could not run.
 
@@ -118,10 +120,14 @@ if [ -z "$LAN" ]; then
 else
   c=$(hearth_http /models "" "http://${LAN}:${HEARTH_PORT}/v1")
   case "$c" in
-    000) ok "LAN ${LAN}: no answer (localhost-only; phase 4 not enabled)" ;;
-    401) c2=$(hearth_http /models "$TOK" "http://${LAN}:${HEARTH_PORT}/v1")
-         [ "$c2" = "200" ] && ok "LAN ${LAN}: 401 without token, 200 with (phase 4 mode)" \
-                           || bad "LAN ${LAN}: 401 without token but ${c2} with it" ;;
+    000) ok "LAN ${LAN}: no answer (localhost-only; laptops use the SSH tunnel, D8)" ;;
+    401) if [ -n "${HEARTH_BIND:-}" ]; then
+           c2=$(hearth_http /models "$TOK" "http://${LAN}:${HEARTH_PORT}/v1")
+           [ "$c2" = "200" ] && ok "LAN ${LAN}: 401 without token, 200 with (HEARTH_BIND=${HEARTH_BIND} opt-in)" \
+                             || bad "LAN ${LAN}: 401 without token but ${c2} with it"
+         else
+           bad "LAN ${LAN}: server answers on the LAN (401) — D8 is tunnel only; Serve on Local Network got turned on (scripts/boot.sh rebinds)"
+         fi ;;
     *)   bad "LAN ${LAN}: no token → ${c} — the LAN can use the server without a token" ;;
   esac
 fi
@@ -170,6 +176,14 @@ for m in json.load(sys.stdin):
 else
   er "skipped: server not answering"
 fi
+
+# ---------------------------------------------------------------- 8. UI
+hdr "8. Open WebUI / SearXNG (warn only — not part of the boundary)"
+for pu in "Open WebUI|http://127.0.0.1:3000/health" "SearXNG|http://127.0.0.1:8888/"; do
+  n="${pu%%|*}"; u="${pu#*|}"
+  c=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$u" 2>/dev/null)
+  [ "$c" = "200" ] && ok "${n} answering" || wrn "${n} not answering (${c}) — the Podman VM may have stopped: scripts/boot.sh"
+done
 
 # ---------------------------------------------------------------- verdict
 printf '\n\033[1m%d passed, %d warnings, %d failed, %d errors\033[0m\n' "$pass" "$warn" "$fail" "$err"

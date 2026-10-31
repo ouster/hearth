@@ -1,13 +1,132 @@
 #!/bin/bash
-# Print (or install) the setup for another machine on the LAN.
+# Set up a laptop to use this host's LM Studio over an SSH tunnel (phase 4).
 #
-# PENDING PHASE 4 (docs/MIGRATION-LMSTUDIO.md). The previous version set
-# laptops up against the removed LiteLLM gateway (:4000, virtual keys) and is
-# in git history. Phase 4 rewrites this for LM Studio on <host>:1234 with one
-# token per machine (laptop-<name>), stored in ~/.hearth-key on the laptop.
+#   scripts/client-setup.sh <laptop-name>                    # print the steps
+#   scripts/client-setup.sh <laptop-name> --windows          # PowerShell steps
+#   scripts/client-setup.sh <laptop-name> --authorize <pub>  # add the laptop's
+#                                                            # tunnel-only key
+#   scripts/client-setup.sh <laptop-name> --install user@laptop  # scp the client
 #
-# Exit 2: could not run.
+# The host stays bound to 127.0.0.1 (ADR 0016, phase 4 decision: tunnel only).
+# Each laptop gets:
+#   - its own LM Studio token, laptop-<name>, created in the app — revoke one
+#     machine without touching the others;
+#   - its own SSH key, authorized here with `restrict` + permitopen, so that key
+#     can forward to 127.0.0.1:1234 and :3000 and do nothing else — no shell,
+#     no other ports;
+#   - its own Google API key for ask-cloud. The host's key never leaves.
+#
+# Exit 0 ok, 1 failed, 2 could not run.
 
-echo "client-setup.sh is pending phase 4 — the gateway it configured is gone." >&2
-echo "See docs/MIGRATION-LMSTUDIO.md, phase 4." >&2
-exit 2
+set -uo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "${ROOT}/scripts/lib.sh"
+
+NAME="${1:-}"; shift || true
+case "$NAME" in ''|-*) sed -n '2,9p' "$0"; exit 2 ;; esac
+case "$NAME" in *[!A-Za-z0-9_-]*) echo "laptop name: letters, digits, - and _ only"; exit 2 ;; esac
+WINDOWS=0; AUTH=""; INSTALL=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --windows)   WINDOWS=1; shift ;;
+    --authorize) AUTH="${2:?--authorize needs a public key file or string}"; shift 2 ;;
+    --install)   INSTALL="${2:?--install needs user@laptop}"; shift 2 ;;
+    *) echo "unknown option $1"; exit 2 ;;
+  esac
+done
+
+HOSTNAME_LOCAL="$(scutil --get LocalHostName 2>/dev/null || hostname -s).local"
+USER_NAME="$(id -un)"
+CLOUD_MODEL=$(hearth_roles gemini | awk -F'\t' '$1 == "cloud-cheap" {print $3; exit}')
+AK="$HOME/.ssh/authorized_keys"
+RESTRICT='command="/usr/bin/false",restrict,port-forwarding,permitopen="127.0.0.1:1234",permitopen="127.0.0.1:3000"'
+
+# ---------------------------------------------------------------- --authorize
+if [ -n "$AUTH" ]; then
+  pub="$AUTH"; [ -f "$AUTH" ] && pub=$(cat "$AUTH")
+  case "$pub" in ssh-ed25519\ *|ecdsa-sha2-*\ *|ssh-rsa\ *) ;; *) echo "not an SSH public key"; exit 2 ;; esac
+  keybody=$(printf '%s' "$pub" | awk '{print $1" "$2}')
+  mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"; touch "$AK"; chmod 600 "$AK"
+  if grep -qF "$keybody" "$AK"; then
+    if grep -F "$keybody" "$AK" | grep -q 'restrict,port-forwarding,permitopen'; then
+      echo "already authorized (tunnel-only) for ${NAME}"; exit 0
+    fi
+    echo "REFUSING: that key is already in ${AK} WITHOUT restrictions (full shell)."
+    echo "Generate a separate tunnel key on the laptop (step 2 below) and authorize that."
+    exit 1
+  fi
+  cp -p "$AK" "${AK}.bak-$(date +%Y%m%d%H%M%S)"
+  printf '%s %s hearth-tunnel-%s\n' "$RESTRICT" "$keybody" "$NAME" >> "$AK"
+  echo "authorized tunnel-only key for ${NAME} in ${AK} (backup kept)"
+  echo "  can forward to 127.0.0.1:1234 and 127.0.0.1:3000; no shell, no commands, no other ports"
+  exit 0
+fi
+
+# ---------------------------------------------------------------- --install
+if [ -n "$INSTALL" ]; then
+  src="${ROOT}/client/hearth-client.sh"; dst='~/.hearth-client.sh'
+  [ "$WINDOWS" -eq 1 ] && { src="${ROOT}/client/hearth-client.ps1"; dst='hearth-client.ps1'; }
+  scp -q "$src" "${INSTALL}:${dst}" && echo "copied $(basename "$src") → ${INSTALL}:${dst}" || { echo "scp failed"; exit 1; }
+  exit 0
+fi
+
+# ---------------------------------------------------------------- instructions
+[ -n "$CLOUD_MODEL" ] || CLOUD_MODEL="<cloud-cheap id from config/roles.tsv>"
+cat <<EOF
+Laptop setup: ${NAME}   (host ${USER_NAME}@${HOSTNAME_LOCAL}, tunnel only)
+
+1. ON THIS HOST — LM Studio app → Developer tab → Server Settings → Manage
+   Tokens → Create Token "laptop-${NAME}". Copy it. Leave Serve on Local
+   Network OFF: the tunnel needs nothing exposed.
+
+EOF
+if [ "$WINDOWS" -eq 0 ]; then cat <<EOF
+2. ON THE LAPTOP — a key used only for the tunnel:
+     ssh-keygen -t ed25519 -f ~/.ssh/hearth_tunnel -C hearth-tunnel-${NAME}
+     printf 'Host hearth\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/hearth_tunnel\n  IdentitiesOnly yes\n' ${HOSTNAME_LOCAL} ${USER_NAME} >> ~/.ssh/config
+   Copy ~/.ssh/hearth_tunnel.pub to this host, then HERE:
+     scripts/client-setup.sh ${NAME} --authorize /path/to/hearth_tunnel.pub
+
+3. ON THE LAPTOP — the client and its secrets:
+     scp ${USER_NAME}@${HOSTNAME_LOCAL}:${ROOT}/client/hearth-client.sh ~/.hearth-client.sh
+       (or from this host: scripts/client-setup.sh ${NAME} --install you@laptop)
+     umask 077
+     read -rs t && printf '%s' "\$t" > ~/.hearth-key && unset t        # paste the laptop-${NAME} token
+     read -rs t && printf '%s' "\$t" > ~/.hearth-gemini-key && unset t # this laptop's OWN Google key (optional)
+     printf 'export HEARTH_SSH=hearth\nexport HEARTH_CLOUD_MODEL=%s\nsource ~/.hearth-client.sh\n' ${CLOUD_MODEL} >> ~/.zshrc   # or ~/.bashrc
+
+4. ON THE LAPTOP — prove it:
+     ai-tunnel        # ssh -f -N -L 1234 -L 3000 via the tunnel-only key
+     ai-ping          # up / BAD TOKEN / NO ANSWER / DOWN
+     ai-models        # local-big, local-embed
+     ask              # aider on local-big
+     ask-cloud        # Gemini with the laptop's own key
+     ai-webui         # the host's Open WebUI at http://127.0.0.1:3000
+EOF
+else cat <<EOF
+2. ON THE LAPTOP (PowerShell) — a key used only for the tunnel:
+     ssh-keygen -t ed25519 -f \$HOME\\.ssh\\hearth_tunnel -C hearth-tunnel-${NAME}
+     Add-Content \$HOME\\.ssh\\config "Host hearth\`n  HostName ${HOSTNAME_LOCAL}\`n  User ${USER_NAME}\`n  IdentityFile ~/.ssh/hearth_tunnel\`n  IdentitiesOnly yes"
+   Copy hearth_tunnel.pub to this host, then HERE:
+     scripts/client-setup.sh ${NAME} --authorize /path/to/hearth_tunnel.pub
+
+3. ON THE LAPTOP — the client and its secrets:
+     scp ${USER_NAME}@${HOSTNAME_LOCAL}:${ROOT}/client/hearth-client.ps1 \$HOME\\.hearth-client.ps1
+     Read-Host -AsSecureString "token" | ConvertFrom-SecureString -AsPlainText | Set-Content \$HOME\\.hearth-key      # PowerShell 7
+     Read-Host -AsSecureString "gemini" | ConvertFrom-SecureString -AsPlainText | Set-Content \$HOME\\.hearth-gemini-key
+     Add to \$PROFILE:
+       \$env:HEARTH_SSH = "hearth"
+       \$env:HEARTH_CLOUD_MODEL = "${CLOUD_MODEL}"
+       . "\$HOME\\.hearth-client.ps1"
+
+4. ON THE LAPTOP — prove it: ai-tunnel, ai-ping, ai-models, ask, ask-cloud, ai-webui
+EOF
+fi
+cat <<EOF
+
+5. Zed on the laptop: docs/LAPTOP.md (api_url http://127.0.0.1:1234/v1 through
+   the tunnel; token via the UI; a Gemini provider is allowed on the laptop, D3).
+
+Revoke a laptop: delete its token in LM Studio, and its hearth-tunnel-${NAME}
+line in ${AK}.
+EOF

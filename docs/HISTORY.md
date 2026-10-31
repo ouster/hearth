@@ -26,6 +26,8 @@ redacted (billing/invoice substituted); figures are unchanged.
 | 2026-10-31 | Stall handling: 90 s timeout, no retries, `mlx-watchdog` kills a stuck runner | Treats the symptom (F7) | Superseded by 0016 | ADR 0015 |
 | 2026-10-31 | Phase 0 concurrency baseline on that stack | c1 TTFT p95 21.0 s; c3 p95 65.8 s, strictly serialised; no failures, peak 37 GB | Numbers to beat | `2026-10-31-phase0` |
 | 2026-10-31 | D6 switched to the LM Studio app owning the server | llmster and the app cannot share `~/.lmstudio`; app costs ~1.1 GB | Kept | ADR 0016 |
+| 2026-10-31 | Phase 4 as an SSH tunnel with tunnel-only keys (D8), not LAN serving | Host unexposed; tested against a throwaway sshd: `restrict` alone still ran remote commands, a forced command fixed it | Kept; laptop gate pending | ADR 0016, `docs/LAPTOP.md` |
+| 2026-10-31 | Zed picker labels generated from roles.tsv (`zed-sync.sh`) | Clients still call `local-big`; label cannot go stale | Kept; rule 1 amended for generated labels | — |
 | 2026-10-31 | Phase 5 scripts against LM Studio; weight hashing (D4); login agent | healthcheck 10 pass / 1 warn, preflight 29 pass; negative controls fail as designed; found saved settings drifted to 0.0.0.0 + CORS, and unknown model names served by local-big | Kept | ADR 0016 |
 | 2026-10-31 | Old stack deleted without a soak | Ports 4000/5433/11434 free; tool-smoke and sandbox-probe still pass | No rollback; backups in `~/hearth-backups/` | ADR 0016 |
 | 2026-10-31 | Phase 1: llmster direct, `local-big` 3 parallel × 64K | c3 TTFT p95 59.9 s (was 65.8); prefill still serialised, all three finish at ~61 s; peak 29.7 GB; 3/40 wrong-tool picks | Accepted by operator; no further bench | ADR 0016, `2026-10-31-phase1` |

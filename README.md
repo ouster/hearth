@@ -32,7 +32,7 @@ flowchart LR
         sbx["sandboxed.sh agents<br/>egress: 127.0.0.1:1234 only"]
         lms["LM Studio 127.0.0.1:1234<br/>local-big x3 slots, local-embed<br/>token required"]
     end
-    laptop["LAN laptop<br/>own token (phase 4)"]
+    laptop["Laptop<br/>own token, tunnel-only key"]
     cloud["Gemini<br/>tool's own key"]
     searx["SearXNG<br/>opt-in search"]
 
@@ -40,7 +40,7 @@ flowchart LR
     aider --> lms
     webui --> lms
     sbx --> lms
-    laptop -.->|"pending phase 4"| lms
+    laptop -->|"SSH tunnel"| lms
     aider -.->|"ask-cloud only"| cloud
     webui -.->|"opt-in per message"| searx
 
@@ -106,12 +106,13 @@ ai-log             # lms log stream
 
 Editors (aider + Zed): [`docs/IDES.md`](docs/IDES.md).
 
-## LAN clients
+## Laptops
 
-**Pending phase 4.** The server is localhost-only today. The plan: serve on
-the LAN with authentication on, one token per machine, never port-forward
-`:1234`, and an SSH tunnel off-LAN. Until then `docs/LAPTOP.md` and `client/`
-still describe the retired gateway.
+SSH tunnel only — the server never listens on the LAN. Each laptop gets its
+own LM Studio token and an SSH key that can forward to `:1234` / `:3000` and
+nothing else. `scripts/client-setup.sh <laptop-name>` prints the steps;
+details in [`docs/LAPTOP.md`](docs/LAPTOP.md). Never port-forward `:22`,
+`:1234` or `:3000`.
 
 ## Security notes
 
@@ -128,7 +129,7 @@ CLAUDE.md / AGENTS.md   rules for coding agents in this repo
 config/roles.tsv        role → LM Studio model key, context, slots
 docs/                   architecture, routing, models, runbook, history, ADRs
 scripts/                lms-load, benches, sandbox, client setup, …
-client/                 shims for other machines (rewritten in phase 4)
+client/                 laptop shims (bash/zsh + PowerShell), SSH-tunnel based
 bench/tasks/            fixed prompts for comparing models
 bench/results/          every bench run, committed
 ```

@@ -30,7 +30,7 @@
 | 1 | LM Studio beside the current stack, localhost only | done 2026-10-31: accepted by operator; wrong-tool picks (3/40) tracked as a metric, not a blocker; no GGUF bench — `bench/results/2026-10-31-phase1/report.md` |
 | 2 | GPU wired-limit headroom | skipped 2026-10-31: peak 29.7 GB, memory is not the bottleneck (operator) |
 | 3 | Cut host clients over (Zed, aider, WebUI, sandbox, MCP) | done 2026-10-31 — `bench/results/2026-10-31-phase3/report.md` |
-| 4 | LAN access with tokens; laptop clients | not started |
+| 4 | LAN access with tokens; laptop clients | host side done 2026-10-31 (SSH tunnel, D8); tunnel tested end to end on the host; **gate pending on the laptop** |
 | 5 | Stop the old stack; rewrite scripts and docs | done 2026-10-31 — reboot gate passed, `bench/results/2026-10-31-phase5/report.md` |
 | 6 | Soak one week, then delete old weights and services | uninstall done 2026-10-31 **without a soak** (operator); backups in `~/hearth-backups/`; ADR 0016 not yet marked accepted-complete |
 
@@ -44,6 +44,7 @@
 | D4 | Digest drift detection | Keep: hash the model directory in `config/roles.tsv` and check it in preflight | **Hash the weights** (2026-10-31): `weights` column in roles.tsv, fast check in preflight, `--deep` re-hash |
 | D5 | Keep Open WebUI? | Yes, pointed at `:1234`. It no longer needs the gateway's Postgres | **Keep** (2026-10-31) |
 | D6 | Headless runner: LM Studio app with "run server on login", or `llmster`? | `llmster` if it installs cleanly; the app otherwise | **The app** (changed 2026-10-31). Was `llmster`; it worked and honoured the app-set auth, but the app and llmster cannot share `~/.lmstudio` and the operator wants the GUI. The app runs the server with "Enable Local LLM Service (headless)" on; ~1.1 GB extra for its GUI processes. Removing Ollama.app: done (operator) |
+| D8 | Phase 4: LAN serving or SSH tunnel? | Tunnel: nothing exposed, encrypted, same on/off LAN | **SSH tunnel only** (2026-10-31). Per-laptop token + `restrict`ed tunnel-only key |
 | D7 | Soak length before phase 6 cleanup | — | **No soak** — operator deleted the old stack 2026-10-31 |
 
 ## Target
@@ -204,6 +205,28 @@ completes with no stall; aider `ask` and `ask-cloud` work; sandbox-probe
 passes; WebUI answers.
 
 ## Phase 4 — LAN
+
+**Decided 2026-10-31 (D8): SSH tunnel only.** The steps below describe LAN
+serving and are kept for the record; what was built instead:
+
+- Host stays bound to `127.0.0.1` (Serve on Local Network off).
+- `scripts/client-setup.sh <name>` prints laptop steps; `--authorize` adds the
+  laptop's key to `authorized_keys` as
+  `command="/usr/bin/false",restrict,port-forwarding,permitopen="127.0.0.1:1234",permitopen="127.0.0.1:3000"`.
+  Tested against a throwaway sshd: commands and shells refused, forwarding
+  to :8888 refused, :1234 and :3000 work. (`restrict` alone still allowed a
+  remote command — the forced command closed that.)
+- `client/hearth-client.sh` / `.ps1`: `ai-tunnel`, `ai-ping`, `ai-models`,
+  `ai-ask`, `ai-webui`, `ask*` → `local-big`, `ask-cloud` with the laptop's
+  own key. Secrets read from mode-600 files per command, never exported.
+  `client/hearth-webui.sh` removed — the laptop uses the host's WebUI.
+- `docs/LAPTOP.md` rewritten.
+
+**Gate (adjusted for the tunnel):** from the laptop — `ai-ping` up, a wrong
+token refused, `ai-models` lists the roles, a Zed agent session works,
+`ask-cloud` works with the laptop's key, the tunnel key cannot open a shell.
+From the host — `healthcheck.sh` section 5 still reports no LAN answer.
+
 
 1. LM Studio: serve on local network **ON**. Authentication stays on.
 2. One token per machine: `laptop-<name>`. Store on the laptop in

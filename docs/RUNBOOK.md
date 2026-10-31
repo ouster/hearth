@@ -13,6 +13,7 @@ Start, stop, diagnose. The LM Studio app serving `127.0.0.1:1234`, ADR 0016
 | Roles | `config/roles.tsv` → `scripts/lms-load.sh` | `local-big` 64K × 3 parallel, `local-embed` |
 | Token | `~/.config/hearth/env`, mode 600 | `LMSTUDIO_HOST_TOKEN`, created in the app |
 | Server settings | `~/.lmstudio/.internal/http-server-config.json` | edited through the app; auth/tokens are stored elsewhere |
+| Remote Login (sshd) | `:22` | laptops' tunnel; their keys are `restrict`ed to forwarding `:1234`/`:3000` |
 | Open WebUI | Podman, `127.0.0.1:3000` | `scripts/webui.sh` |
 | SearXNG | Podman, `:8888` | `scripts/searxng.sh` |
 
@@ -39,7 +40,7 @@ launchd agents. Ports 4000, 5433 and 11434 should be free.
    |---|---|
    | Port | 1234 |
    | Require Authentication | **on** |
-   | Serve on Local Network | off (until phase 4) |
+   | Serve on Local Network | off — laptops use an SSH tunnel |
    | Enable CORS | off |
    | Allow per-request MCPs | off |
    | Allow calling servers from mcp.json | off |
@@ -223,10 +224,17 @@ There is no old stack to roll back to: it was removed on 2026-10-31 (ADR
 0016, Rollback). Backups are in `~/hearth-backups/` (mode 700). Client config
 backups end in `.pre-lmstudio-2026-10-31`.
 
-## LAN and laptop access
+## Laptop access
 
-**Pending phase 4.** Today the server answers only on `127.0.0.1`. Phase 4
-turns on "Serve on Local Network" with authentication kept on, issues one
-token per machine (`laptop-<name>`), and documents
-`ssh -N -L 1234:127.0.0.1:1234 USER@HOST` for off-LAN. **Never port-forward
-`:1234`.**
+SSH tunnel only; the server stays on `127.0.0.1`. `docs/LAPTOP.md` has the
+whole setup. On the host:
+
+```bash
+scripts/client-setup.sh <laptop-name>                       # print the steps
+scripts/client-setup.sh <laptop-name> --authorize key.pub   # tunnel-only key
+```
+
+`healthcheck.sh` section 5 should say "LAN: no answer" — a LAN answer means
+someone turned on Serve on Local Network. Revoke a laptop: delete its token in
+LM Studio and its `hearth-tunnel-<name>` line in `~/.ssh/authorized_keys`.
+**Never port-forward `:22`, `:1234` or `:3000`.**

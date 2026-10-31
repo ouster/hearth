@@ -19,7 +19,7 @@ flowchart TB
         lms["LM Studio 127.0.0.1:1234<br/>local-big: 64K x 3 parallel<br/>local-embed<br/>token required, JIT off"]
     end
 
-    laptop["LAN laptop<br/>pending phase 4"]
+    laptop["Laptop<br/>SSH tunnel, own token"]
     cloud["Gemini<br/>ask-cloud only, tool's own key"]
     austlii["AustLII<br/>Zed Research profile only"]
 
@@ -28,7 +28,7 @@ flowchart TB
     scripts --> lms
     webui -->|"host.containers.internal"| lms
     sbx -->|"only allowed egress"| lms
-    laptop -.-> lms
+    laptop -->|"ssh -L, tunnel-only key"| lms
     aider -.-> cloud
     zed -.->|"auslaw MCP"| austlii
 
@@ -85,7 +85,7 @@ host token → 200.
 |---|---|
 | Port | 1234 |
 | Require Authentication | on |
-| Serve on Local Network | off (phase 4 turns it on) |
+| Serve on Local Network | off — laptops use an SSH tunnel (phase 4 decision) |
 | CORS | off |
 | Just-in-Time model loading | off |
 | Allow per-request MCPs / calling servers from mcp.json | off |
@@ -170,7 +170,8 @@ deliberately unrestricted; see `docs/THREAT-MODEL.md` and ADR 0007.
 
 ## Known gaps
 
-- **LAN access** — phase 4 (tokens per machine, serve on network with auth).
+- **Host SSH accepts passwords** (macOS default). `docs/LAPTOP.md` gives the
+  key-only override; not applied automatically.
 - **LM Studio's saved settings can change under you** (bind and CORS did
   once). `boot.sh` resets them at login; `healthcheck.sh` checks the live
   listener and CORS header, not the file.

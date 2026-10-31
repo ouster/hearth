@@ -1,122 +1,115 @@
-# hearth client for Windows PowerShell.
+# hearth client for Windows PowerShell. ADR 0016, phase 4: SSH tunnel only.
 #
 #   notepad $PROFILE
 #   # add:  . "$HOME\.hearth-client.ps1"
 #
-# PowerShell 5.1 (ships with Windows) and 7+ both work. No WSL needed.
+# PowerShell 5.1 and 7+. Needs the built-in OpenSSH client (ssh.exe).
 #
-# Required before dot-sourcing:
-#   $env:HEARTH_GATEWAY   e.g. http://192.168.1.10:4000
-#   the key goes in         $HOME\.hearth-key
+# The host's LM Studio listens on 127.0.0.1:1234 only; this machine reaches it
+# through an SSH tunnel, on and off the LAN.
 #
-# No Ollama here and nothing is downloaded. Every request goes to the gateway
-# host, which does the inference and the routing. If that machine is off, none
-# of this works — by design.
+# Set before dot-sourcing (scripts/client-setup.sh --windows prints these):
+#   $env:HEARTH_SSH          user@host, e.g. colin@Colins-Mac-Studio.local
+#   $env:HEARTH_CLOUD_MODEL  Gemini model id for ask-cloud (from the host's roles.tsv)
+# Secrets (files, never put in environment variables):
+#   $HOME\.hearth-key         this machine's LM Studio token (laptop-<name>)
+#   $HOME\.hearth-gemini-key  this machine's own Google API key, ask-cloud only
 
-if (-not $env:HEARTH_GATEWAY -and $env:AI_STACK_GATEWAY) {
-    $env:HEARTH_GATEWAY = $env:AI_STACK_GATEWAY
+if ($env:HEARTH_GATEWAY -or $env:AI_STACK_GATEWAY) {
+    Write-Host "hearth: HEARTH_GATEWAY is from the retired gateway and is ignored — set `$env:HEARTH_SSH." -ForegroundColor Yellow
 }
-if (-not $env:HEARTH_GATEWAY) {
-    Write-Host "hearth: set `$env:HEARTH_GATEWAY first (e.g. http://HOST:4000)" -ForegroundColor Yellow
-    Write-Host "          Run scripts/client-setup.sh on the gateway host for copy-paste instructions." -ForegroundColor Yellow
+if (-not $env:HEARTH_SSH) {
+    Write-Host "hearth: set `$env:HEARTH_SSH first (e.g. you@your-host.local)" -ForegroundColor Yellow
     return
 }
 
-$script:HearthKeyFile = Join-Path $HOME ".hearth-key"
-$script:LegacyKeyFile = Join-Path $HOME ".ai-stack-key"
-if (Test-Path $script:HearthKeyFile) {
-    $env:HEARTH_KEY = (Get-Content $script:HearthKeyFile -Raw).Trim()
-} elseif (Test-Path $script:LegacyKeyFile) {
-    $env:HEARTH_KEY = (Get-Content $script:LegacyKeyFile -Raw).Trim()
-} elseif ($env:AI_STACK_KEY) {
-    $env:HEARTH_KEY = $env:AI_STACK_KEY
+$script:HearthLocalPort = if ($env:HEARTH_LOCAL_PORT) { $env:HEARTH_LOCAL_PORT } else { "1234" }
+$script:HearthWebuiPort = if ($env:HEARTH_WEBUI_PORT) { $env:HEARTH_WEBUI_PORT } else { "3000" }
+$script:HearthUrl = "http://127.0.0.1:$($script:HearthLocalPort)/v1"
+
+function Get-HearthSecret([string]$Name) {
+    $f = Join-Path $HOME $Name
+    if (-not (Test-Path $f)) { Write-Host "hearth: $f missing" -ForegroundColor Yellow; return $null }
+    (Get-Content $f -Raw).Trim()
 }
 
-# OpenAI-compatible, so most tools pick these up with no further config.
-$env:OPENAI_API_BASE = "$($env:HEARTH_GATEWAY)/v1"
-$env:OPENAI_BASE_URL = "$($env:HEARTH_GATEWAY)/v1"
-$env:OPENAI_API_KEY  = $env:HEARTH_KEY
+function Test-HearthTunnel {
+    try {
+        $c = New-Object System.Net.Sockets.TcpClient
+        $c.Connect("127.0.0.1", [int]$script:HearthLocalPort); $c.Close(); return $true
+    } catch { return $false }
+}
 
-function Get-AiStackHeaders {
-    if (-not $env:HEARTH_KEY) {
-        Write-Host "No key. Put it in $($script:AiStackKeyFile)" -ForegroundColor Yellow
-        return $null
-    }
-    @{ "Authorization" = "Bearer $($env:HEARTH_KEY)"; "Content-Type" = "application/json" }
+function ai-tunnel {
+    if (Test-HearthTunnel) { Write-Host "tunnel: already listening on 127.0.0.1:$($script:HearthLocalPort)"; return }
+    Start-Process -WindowStyle Hidden ssh -ArgumentList @(
+        "-N", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30",
+        "-L", "127.0.0.1:$($script:HearthLocalPort):127.0.0.1:1234",
+        "-L", "127.0.0.1:$($script:HearthWebuiPort):127.0.0.1:3000",
+        $env:HEARTH_SSH)
+    Start-Sleep -Seconds 3
+    if (Test-HearthTunnel) { Write-Host "tunnel: up" } else { Write-Host "tunnel: FAILED — try: ssh $env:HEARTH_SSH" -ForegroundColor Red }
+}
+
+function ai-tunnel-stop {
+    Get-CimInstance Win32_Process -Filter "Name='ssh.exe'" |
+        Where-Object { $_.CommandLine -like "*127.0.0.1:$($script:HearthLocalPort):127.0.0.1:1234*" } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId; Write-Host "tunnel: stopped" }
 }
 
 function ai-ping {
-    # The gateway answers 503 {"db":"disconnected"} when its Postgres is down.
-    # Your key lives in that database, so "answering" is not "usable" — read the
-    # body. -SkipHttpErrorCheck needs PS7, hence the catch-and-inspect fallback.
-    Write-Host -NoNewline "gateway $($env:HEARTH_GATEWAY) ... "
-    $body = $null
+    $k = Get-HearthSecret ".hearth-key"; if (-not $k) { return }
+    if (-not (Test-HearthTunnel)) { Write-Host "DOWN — no tunnel. Run: ai-tunnel" -ForegroundColor Red; return }
     try {
-        $body = Invoke-RestMethod -Uri "$($env:HEARTH_GATEWAY)/health/readiness" -TimeoutSec 5
-    } catch {
-        $resp = $_.Exception.Response
-        if ($resp) {
-            try {
-                $sr = New-Object System.IO.StreamReader($resp.GetResponseStream())
-                $body = $sr.ReadToEnd() | ConvertFrom-Json
-            } catch { $body = $null }
-        }
-    }
-    if (-not $body) {
-        Write-Host "UNREACHABLE" -ForegroundColor Red
-        Write-Host "  - is the gateway host awake?"
-        Write-Host "  - same network? try: Test-NetConnection $($env:HEARTH_GATEWAY -replace 'https?://','') -Port 4000"
-    } elseif ($body.db -eq "connected") {
+        Invoke-WebRequest -UseBasicParsing -TimeoutSec 8 -Uri "$($script:HearthUrl)/models" `
+            -Headers @{ Authorization = "Bearer $k" } | Out-Null
         Write-Host "up" -ForegroundColor Green
-    } else {
-        Write-Host "DEGRADED" -ForegroundColor Yellow
-        Write-Host "  Answering, but its database is down — your key will return 401."
-        Write-Host "  On the gateway host: scripts/boot.sh"
+    } catch {
+        $code = $_.Exception.Response.StatusCode.value__
+        if ($code -eq 401) { Write-Host "BAD TOKEN — $HOME\.hearth-key was refused" -ForegroundColor Red }
+        else { Write-Host "NO ANSWER — host asleep or LM Studio down (on the host: scripts/boot.sh)" -ForegroundColor Red }
     }
 }
 
 function ai-models {
-    $h = Get-AiStackHeaders; if (-not $h) { return }
-    try {
-        $r = Invoke-RestMethod -Uri "$($env:HEARTH_GATEWAY)/v1/models" -Headers $h -TimeoutSec 15
-        Write-Host "roles this key can use:"
-        $r.data | ForEach-Object { Write-Host "  $($_.id)" }
-    } catch {
-        Write-Host "failed — is the gateway up and the key correct?" -ForegroundColor Red
-    }
+    $k = Get-HearthSecret ".hearth-key"; if (-not $k) { return }
+    (Invoke-RestMethod -TimeoutSec 8 -Uri "$($script:HearthUrl)/models" -Headers @{ Authorization = "Bearer $k" }).data |
+        ForEach-Object { "  " + $_.id }
 }
 
 function ai-ask {
-    # ai-ask "question"            -> local-chat
-    # ai-ask local-code "question" -> a specific role
-    param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Words)
-
-    $h = Get-AiStackHeaders; if (-not $h) { return }
-    $role = "local-chat"
-    if ($Words.Count -gt 1 -and $Words[0] -match '^(local|cloud)-') {
-        $role = $Words[0]; $Words = $Words[1..($Words.Count - 1)]
-    }
-    $body = @{
-        model    = $role
-        messages = @(@{ role = "user"; content = ($Words -join " ") })
-    } | ConvertTo-Json -Depth 5
-
-    try {
-        $r = Invoke-RestMethod -Uri "$($env:HEARTH_GATEWAY)/v1/chat/completions" `
-                               -Method Post -Headers $h -Body $body -TimeoutSec 600
-        Write-Output $r.choices[0].message.content
-    } catch {
-        Write-Host "error: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "if this is a 401, the key is wrong; if 400, the role may not exist for this key."
-    }
+    if (-not $args) { Write-Host 'usage: ai-ask "question"'; return }
+    $k = Get-HearthSecret ".hearth-key"; if (-not $k) { return }
+    $body = @{ model = "local-big"; messages = @(@{ role = "user"; content = ($args -join " ") }) } | ConvertTo-Json -Depth 5
+    $r = Invoke-RestMethod -TimeoutSec 300 -Method Post -Uri "$($script:HearthUrl)/chat/completions" `
+        -Headers @{ Authorization = "Bearer $k" } -ContentType "application/json" -Body $body
+    "$($r.choices[0].message.content)".Trim()
 }
 
-# Roles, never model names — the same contract as on the host. When the model
-# behind local-code changes, nothing here needs editing.
-function ask       { ai-ask local-code  @args }   # coding, private
-function ask-chat  { ai-ask local-chat  @args }   # general questions
-function ask-fast  { ai-ask local-chat  @args }
-function ask-big   { ai-ask local-big   @args }   # reasoning
-function ask-cloud { ai-ask cloud-cheap @args }   # leaves the machine
+function ai-webui {
+    if (-not (Test-HearthTunnel)) { ai-tunnel }
+    Start-Process "http://127.0.0.1:$($script:HearthWebuiPort)"
+}
 
-Write-Host "hearth client loaded. Try: ai-ping, ai-models, ask-chat ""say hello""" -ForegroundColor DarkGray
+# aider: token set only for the child process, then removed.
+function Invoke-HearthAider {
+    $k = Get-HearthSecret ".hearth-key"; if (-not $k) { return }
+    if (-not (Test-HearthTunnel)) { ai-tunnel }
+    $env:OPENAI_API_BASE = $script:HearthUrl; $env:OPENAI_API_KEY = $k
+    try { aider --model openai/local-big --weak-model openai/local-big @args }
+    finally { Remove-Item Env:OPENAI_API_KEY, Env:OPENAI_API_BASE -ErrorAction SilentlyContinue }
+}
+function ask       { Invoke-HearthAider @args }
+function ask-big   { Invoke-HearthAider @args }
+function ask-local { Invoke-HearthAider @args }
+function ask-chat  { Invoke-HearthAider @args }
+function ask-arch  { Invoke-HearthAider --architect --editor-model openai/local-big @args }
+
+# The only command that leaves for the cloud, with THIS machine's own key.
+function ask-cloud {
+    if (-not $env:HEARTH_CLOUD_MODEL) { Write-Host "hearth: set `$env:HEARTH_CLOUD_MODEL" -ForegroundColor Yellow; return }
+    $g = Get-HearthSecret ".hearth-gemini-key"; if (-not $g) { return }
+    $env:GEMINI_API_KEY = $g
+    try { aider --model "gemini/$($env:HEARTH_CLOUD_MODEL)" --weak-model "gemini/$($env:HEARTH_CLOUD_MODEL)" @args }
+    finally { Remove-Item Env:GEMINI_API_KEY -ErrorAction SilentlyContinue }
+}

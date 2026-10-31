@@ -133,32 +133,14 @@ this migration.
 
 ### On a laptop
 
-> **Stale until phase 4** — still the gateway (`:4000`) setup. Phase 4 replaces it
-> with `http://<host>:1234/v1` and a per-machine token.
+Through an SSH tunnel to the host — `docs/LAPTOP.md`. Zed points at
+`http://127.0.0.1:1234/v1` exactly as on the host (the tunnel's local end),
+with the **laptop's own** token. Run `ai-tunnel` before opening Zed. A Gemini
+provider is allowed on the laptop (D3).
 
-Full walkthrough in `docs/LAPTOP.md`. In short — Zed installs normally and edits
-local files; only inference comes from the gateway host. Two changes from the block
-above:
-
-```json
-"api_url": "http://HOST:4000/v1"
-```
-
-and use the **`lan`** key rather than `private`.
-
-**Where the code lives is a separate question.** Zed edits files on the machine
-it runs on, so either:
-
-- clone the repo to the laptop and work normally through git, or
-- use Zed's **SSH remote projects** to open a directory on the gateway host directly —
-  editing happens over SSH, the model call still goes to `:4000`.
-
-The second keeps one copy of the work and pairs well with the gateway host being the
-machine that never sleeps. It also means the laptop needs no toolchain.
-
-If the gateway host is asleep, Zed still opens and edits — you just lose the AI panel
-until it wakes. That degrades more gracefully than aider, which needs the
-gateway to start at all.
+Zed's SSH remote projects also work: edit files on the host over SSH while
+the model call goes through the tunnel. That needs a normal SSH key, not the
+tunnel-only one.
 
 ### Agent profiles — the reason Zed is here
 
