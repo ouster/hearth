@@ -1,0 +1,79 @@
+## Bugs Identified
+
+### 1. **Float Precision Issues for Currency**
+The most critical bug is using floating-point arithmetic for monetary calculations. This can cause rounding errors that accumulate and are unacceptable in financial systems.
+
+**What breaks:** 
+- `total * discount_pct / 100` can produce imprecise results
+- `round(total, 2)` doesn't solve the underlying precision problem
+- Example: 0.1 + 0.2 ≠ 0.3 in float arithmetic
+
+### 2. **No Input Validation**
+The function assumes all items have 'price' and 'qty' keys and that discount_pct is a number.
+
+**What breaks:** 
+- `items[i]['price']` raises KeyError if key missing
+- `items[i]['qty']` raises KeyError if key missing  
+- `discount_pct > 0` fails with TypeError if discount_pct is None, string, etc.
+
+### 3. **No Handling of Negative Values**
+The function doesn't validate that prices and quantities are non-negative.
+
+**What breaks:** 
+- Negative prices or quantities could produce incorrect results
+- No explicit validation prevents invalid inputs
+
+## Corrected Version
+
+```python
+from decimal import Decimal, ROUND_HALF_UP
+
+def apply_discount(items, discount_pct):
+    # Input validation
+    if not isinstance(items, list):
+        raise TypeError("Items must be a list")
+    
+    if not isinstance(discount_pct, (int, float, Decimal)):
+        raise TypeError("Discount percentage must be a number")
+    
+    if discount_pct < 0:
+        raise ValueError("Discount percentage cannot be negative")
+    
+    total = Decimal('0')
+    for item in items:
+        # Validate item structure
+        if not isinstance(item, dict):
+            raise TypeError("Each item must be a dictionary")
+        
+        if 'price' not in item or 'qty' not in item:
+            raise KeyError("Each item must have 'price' and 'qty' keys")
+        
+        price = Decimal(str(item['price']))
+        qty = Decimal(str(item['qty']))
+        
+        # Validate non-negative values
+        if price < 0 or qty < 0:
+            raise ValueError("Price and quantity must be non-negative")
+        
+        total += price * qty
+    
+    # Apply discount
+    if discount_pct > 0:
+        discount_rate = Decimal(str(discount_pct)) / Decimal('100')
+        discount_amount = total * discount_rate
+        total = total - discount_amount
+    
+    # Round to 2 decimal places using proper financial rounding
+    return total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+```
+
+## Key Improvements
+
+1. **Uses `Decimal`** instead of float for precise monetary calculations
+2. **Proper input validation** with meaningful error messages
+3. **Handles negative values** appropriately
+4. **Uses proper financial rounding** (`ROUND_HALF_UP`) 
+5. **Converts all inputs to Decimal** to avoid float precision issues
+6. **Clear error handling** that prevents silent failures
+
+The corrected version is suitable for financial applications where precision is critical, such as billing invoices.

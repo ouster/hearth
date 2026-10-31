@@ -1,0 +1,136 @@
+### Bugs – what *can* break the calculation
+
+| # | Bug | Why it matters in a billing / invoice system |
+|---|-----|-------------------------------------------------------|
+| 1 | **Floating‑point arithmetic**<br>`price`, `qty` and the discount are all floats/ints, so intermediate values can contain tiny binary errors. Rounding only at the very end (`round(total,2)`) does *not* guarantee a “clean” cent value – you might get `$10.229999… → 10.22` or `$10.2300001 → 10.23`. | In billing every cent counts. A wrong cent can cause an over‑/under‑payment that may trigger re‑invoice or legal issues. |
+| 2 | **No type checking / conversion**<br>It assumes every element of `items` has numeric `price` and `qty` values. If a caller passes strings (`"12.34"`), booleans, or even missing keys the function will raise `TypeError`, `KeyError` or silently produce wrong numbers. | Real‑world data may come from CSV/DB where numeric fields are stored as strings. Failing silently is worse than failing loudly. |
+| 3 | **Negative / unrealistic values**<br>Nothing stops a caller from passing `qty = -1`, `price < 0` or `discount_pct > 100`. The calculation will still run and produce nonsensical totals. | In billing you need to guard against accidental negative quantities (e.g., discounting more than the cost) – this can hide data‑entry errors. |
+| 4 | **Discount logic**<br>`if discount_pct > 0: total = total - (total * discount_pct / 100)` uses a division that can again introduce floating point noise, and it also applies the discount even when `discount_pct` is something like `None`. | A 10 % discount on `$1.00` might be computed as `$0.9000000000000004`, which then gets rounded incorrectly. |
+| 5 | **Rounding**<br>Python’s built‑in `round()` uses “bankers’ rounding” (even‑odd) and works on floats, not decimal cents. It will not give the expected commercial rounding rule (“half up”). | The invoice system typically expects half‑up (e.g., `$1.235 → $1.24`). |
+| 6 | **No context / precision control**<br>Even if you used `Decimal`, without setting a quantise step you risk ending up with many fractional digits in the intermediate result. | You want every monetary amount to be expressed exactly in two decimal places before it leaves the function. |
+
+---
+
+## Corrected implementation
+
+Below is a *drop‑in* replacement that:
+
+1. Uses **`decimal.Decimal`** for all arithmetic – no binary floating‑point error.
+2. Normalises/validates input (strings → Decimal, numeric checks).
+3. Rejects negative quantities/prices and discounts > 100 % or < 0 %.
+4. Applies the discount with a clean decimal formula.
+5. Rounds **half‑up** to two decimals (`ROUND_HALF_UP`) – the commercial rule used in billing.
+
+```python
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation, getcontext
+
+# Make sure all operations use at least 6 places of precision (extra is fine)
+getcontext().prec = 9
+
+CENTS = Decimal('0.01')          # useful for quantisation
+HALF_UP = ROUND_HALF_UP
+
+
+def _to_decimal(value):
+    """
+    Convert a numeric value to Decimal.
+    Accepts int, float, str or Decimal.
+    Raises ValueError if the conversion fails.
+    """
+    try:
+        # If it's already a Decimal we just copy it
+        if isinstance(value, Decimal):
+            return value
+
+        # For floats – convert via string first to avoid binary rounding issues
+        if isinstance(value, float):
+            return Decimal(str(value))
+
+        return Decimal(value)
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError(f"Cannot convert {value!r} to a decimal amount") from exc
+
+
+def apply_discount(items, discount_pct):
+    """
+    Calculate the total price for a list of line items and apply a percentage
+    discount. All arithmetic is performed with Decimal for exact money maths.
+    
+    Parameters
+    ----------
+    items : iterable of mapping
+        Each element must have numeric 'price' and 'qty' keys.
+    discount_pct : numeric
+        Discount as a percent value (e.g., 10 → 10 %).
+        
+    Returns
+    -------
+    Decimal
+        The total amount rounded half‑up to two decimal places.
+    
+    Raises
+    ------
+    ValueError
+        If any price, qty or discount is of an unsupported type,
+        if qty < 0, price < 0 or discount outside [0, 100].
+    """
+    # Normalise and validate the discount percentage
+    discount = _to_decimal(discount_pct)
+    if not (Decimal('0') <= discount <= Decimal('100')):
+        raise ValueError(
+            f"discount_pct must be between 0 and 100 inclusive; got {discount_pct!r}"
+        )
+
+    total = Decimal('0')
+    for idx, line in enumerate(items):
+        # Extract price and qty – error if missing
+        try:
+            price_raw = line['price']
+            qty_raw   = line['qty']
+        except KeyError as exc:
+            raise ValueError(f"Line item {idx} is missing a required key: {exc}") from exc
+
+        price = _to_decimal(price_raw)
+        qty   = _to_decimal(qty_raw)
+
+        # Guard against negative numbers
+        if price < 0:
+            raise ValueError(f"Negative price in line {idx}: {price_raw!r}")
+        if qty < 0:
+            raise ValueError(f"Negative quantity in line {idx}: {qty_raw!r}")
+
+        total += price * qty
+
+    # Apply the discount (if any)
+    if discount != Decimal('0'):
+        total -= total * discount / Decimal('100')
+
+    # Round to two decimal places with half‑up
+    return total.quantize(CENTS, rounding=HALF_UP)
+
+```
+
+### What changed & why it fixes each bug
+
+| Bug | Fix |
+|-----|-----|
+| 1 (float error) | All arithmetic is now `Decimal`, eliminating binary‑floating point errors. |
+| 2 (type issues) | `_to_decimal` accepts ints, floats, strings and Decimals; invalid types raise a clear `ValueError`. |
+| 3 (negative / unrealistic values) | Explicit checks reject negative prices/qtys and disallow discounts outside `[0,100]`. |
+| 4 (discount logic) | The discount is applied as a clean Decimal expression; no float division. |
+| 5 (rounding rule) | `quantize(..., rounding=ROUND_HALF_UP)` implements the commercial “half‑up” rule instead of Python’s bankers’ rounding. |
+| 6 (precision control) | `getcontext().prec = 9` gives enough precision for intermediate calculations; final result is always exactly two decimals. |
+
+### Example usage
+
+```python
+items = [
+    {'price': '12.34', 'qty': 3},
+    {'price': 5, 'qty': '2'},
+    {'price': 9.99, 'qty': 1}
+]
+
+print(apply_discount(items, 10))   # → Decimal('48.71')
+```
+
+The function now reliably returns a clean monetary amount that can be safely used in invoice reports or sent to accounting systems without risking subtle rounding errors.

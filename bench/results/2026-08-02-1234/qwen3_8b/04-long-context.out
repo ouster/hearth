@@ -1,0 +1,11 @@
+1. **Fallback chain for `cloud-frontier`:**  
+   The document does not explicitly define a fallback chain for `cloud-frontier`. However, it states that **local roles never fall back to cloud roles** (per the "Fallback rule" section). For cloud roles like `cloud-frontier`, fallback behavior is not described, implying no defined chain. The focus is on enforcing privacy boundaries rather than fallbacks.
+
+2. **Dormant roles and their blockers:**  
+   - **`cloud-code`**: Blocked on an **Anthropic API key** (deliberately unset; Claude Code runs on subscription, not the gateway).  
+   - **`cloud-frontier`**: Blocked on an **OpenRouter key** (primary frontier route).  
+   - **`cloud-frontier-direct`**: Blocked on a **Moonshot key** (same price, better K3 caching).  
+   - **`cloud-frontier-fast`**: Blocked on a **Fireworks key** (dearest; throughput or LoRA only).  
+
+3. **Postgres port and rationale:**  
+   Postgres is bound to **port 5433**. This port is chosen to **avoid collision with other PostgreSQL instances** (as 5432 is the default) and to **restrict LAN access**, ensuring the database remains unreachable from the network.

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SERVICE="com.example.service"
+PLIST="$HOME/Library/LaunchAgents/${SERVICE}.plist"
+
+if [ ! -f "$PLIST" ]; then
+  echo "Error: plist file '$PLIST' does not exist." >&2
+  exit 1
+fi
+
+# Check if the service is already loaded
+if launchctl list "$SERVICE" >/dev/null 2>&1; then
+  # Already loaded, nothing to do
+  exit 0
+else
+  # Load the agent
+  launchctl load -w "$PLIST"
+fi

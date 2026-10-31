@@ -1,0 +1,8 @@
+=== tool-smoke ollama model=gpt-oss:20b ===
+turn1: tool_calls=1 content_len=0
+  list_directory
+turn2: tool_calls=1 content_len=0
+  write_file
+  has_lt=True head='# hearth tool smoke\n#!/usr/bin/env bash\n\nhealthcheck() {\n  if [[ $x < 1 ]]; then'
+PASS — write/edit tool in turn 2
+exit=0 elapsed_s=18.2

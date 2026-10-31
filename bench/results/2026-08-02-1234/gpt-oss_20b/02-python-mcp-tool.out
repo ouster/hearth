@@ -1,0 +1,26 @@
+```python
+import sqlite3
+from typing import List, Dict
+
+
+def search_cases(query: str, limit: int = 10) -> List[Dict]:
+    """Return a list of case dictionaries that match the query."""
+    conn = sqlite3.connect("cases.db")
+    try:
+        cur = conn.cursor()
+        sql = """
+            SELECT id, citation, court, year, summary
+            FROM cases
+            WHERE LOWER(citation) LIKE ?
+               OR LOWER(summary) LIKE ?
+            ORDER BY year DESC
+            LIMIT ?
+        """
+        pattern = f"%{query.lower()}%"
+        cur.execute(sql, (pattern, pattern, limit))
+        rows = cur.fetchall()
+        columns = [desc[0] for desc in cur.description]
+        return [dict(zip(columns, row)) for row in rows]
+    finally:
+        conn.close()
+```

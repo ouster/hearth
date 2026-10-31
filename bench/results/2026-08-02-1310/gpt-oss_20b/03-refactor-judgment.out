@@ -1,0 +1,126 @@
+**What’s wrong – and why it matters**
+
+| # | Problem | Why it breaks (typical input) |
+|---|---------|--------------------------------|
+| 1 | **Floating‑point money** – the function uses `float` for prices, quantities, totals and discount calculations.  Binary floating‑point cannot represent most decimal fractions exactly, so  `0.10 * 3 = 0.30000000000000004`.  After all items are summed you `round(total,2)` which “hides” the error but the hidden bits can propagate into tax or further calculations. |
+| 2 | **Rounding after the fact** – `round` only gives you a *float* again.  You lose the guarantee that the result is exactly two decimal places (e.g.,  `1.005` becomes `1.0`, not `1.01`).  A float round‑off can change the last cent when adding/subtracting later. |
+| 3 | **Discount logic only applies for positive percentages** – a negative discount (i.e., surcharge) is silently ignored because of the `if discount_pct > 0:` guard, which is rarely what you want in a invoice engine. |
+| 4 | **Missing/invalid data isn’t checked** – if an item lacks `'price'` or `'qty'`, you’ll get a cryptic `KeyError`.  If the value isn’t numeric (e.g., `"10USD"`), the implicit conversion to float will raise a `ValueError`. |
+| 5 | **Type ambiguity for `discount_pct`** – passing a string (`"10%"`) or a non‑numeric type crashes later in the arithmetic. |
+
+Because invoice figures are *money*, you must avoid binary floating point altogether and use exact decimal arithmetic with proper rounding semantics.
+
+---
+
+## Corrected implementation
+
+```python
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+from typing import Iterable, Mapping
+
+
+def _to_decimal(value) -> Decimal:
+    """
+    Convert an int/float/str/Decimal to a Decimal.
+    Raises ValueError if conversion is impossible.
+    """
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError):
+        raise ValueError(f"Cannot convert {value!r} to Decimal") from None
+
+
+def apply_discount(items: Iterable[Mapping[str, object]],
+                   discount_pct: object) -> Decimal:
+    """
+    Sum up the price * qty for each item and optionally subtract a
+    percentage discount.  All arithmetic is performed with Decimals,
+    rounded to two places using ROUND_HALF_UP – the standard retail rule.
+
+    Parameters
+    ----------
+    items : iterable of mappings
+        Each mapping must contain at least 'price' and 'qty'.
+    discount_pct : numeric (int, float, Decimal or convertible string)
+        Positive values give a discount; negative values apply as surcharges.
+
+    Returns
+    -------
+    Decimal
+        Total after applying the discount, quantized to two decimal places.
+    """
+    # --- validate / convert discount -------------------------------------------------
+    if not isinstance(discount_pct, (int, float, Decimal)):
+        try:
+            discount_pct = _to_decimal(discount_pct)
+        except ValueError as exc:
+            raise TypeError("discount_pct must be a numeric value") from exc
+
+    discount_pct = Decimal(str(discount_pct))
+
+    # --- accumulate the line totals ---------------------------------------------------
+    total = Decimal('0.00')
+    for item in items:
+        if not isinstance(item, Mapping):
+            raise TypeError(f"Item {item!r} is not a mapping")
+
+        try:
+            price = _to_decimal(item['price'])
+            qty   = _to_decimal(item['qty'])
+        except KeyError as exc:
+            missing = 'price' if 'price' not in item else 'qty'
+            raise KeyError(f"Item {item!r} is missing '{missing}'") from None
+        except ValueError as exc:
+            raise ValueError(f"Invalid price or qty in item {item!r}: {exc}") from None
+
+        total += price * qty
+
+    # --- apply discount / surcharge ---------------------------------------------------
+    if discount_pct != Decimal('0'):
+        # total = total * (1 - discount_pct/100)
+        multiplier = Decimal('1') - (discount_pct / Decimal('100'))
+        total *= multiplier
+
+    # --- final rounding ---------------------------------------------------------------
+    return total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+```
+
+### Why this version fixes everything
+
+| Fix | What it does |
+|-----|--------------|
+| **`Decimal` arithmetic** | All numbers are represented exactly; no hidden binary fractions. |
+| **Explicit conversion helper `_to_decimal`** | Guarantees that any numeric‑looking input becomes a Decimal or fails early with a clear message. |
+| **Validation of each item** | Raises an informative `KeyError`/`ValueError` if `'price'` or `'qty'` are missing or non‑numeric, instead of letting the program crash later. |
+| **Accepts any numeric type for `discount_pct`** | Strings that represent numbers (e.g., `"10"`) work; otherwise a clear error is raised. |
+| **Discount applied regardless of sign** | A negative percentage correctly adds a surcharge. |
+| **Quantize to two decimal places with ROUND_HALF_UP** | Guarantees the result is exactly 2‑digit money, ready for display or further calculation. |
+| **Return type is `Decimal`** | Avoids converting back to float and keeps precision for downstream code; callers can cast to float if they must. |
+
+---
+
+## Quick sanity test
+
+```python
+>>> items = [
+...     {"price": 0.10, "qty": 3},
+...     {"price": 1.20, "qty": 2}
+... ]
+>>> apply_discount(items, 5)
+Decimal('2.55')      # 0.30 + 2.40 = 2.70 → 5% discount = 2.55
+
+# Compare to buggy version
+>>> def buggy_apply_discount(items, discount_pct):
+...     total = sum(i['price'] * i['qty'] for i in items)
+...     if discount_pct > 0:
+...         total -= total * discount_pct / 100
+...     return round(total, 2)
+
+>>> buggy_apply_discount(items, 5)
+2.55   # same here but only because inputs are nice.
+# However with a price like 0.1, the buggy version may give 2.549999… -> rounded to 2.55,
+# but if you later add tax it could be off by a cent.
+
+```
+
+The corrected implementation guarantees that every monetary calculation is exact up to the cent and safe for audit‑ready billing invoice figures.

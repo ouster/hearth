@@ -1,0 +1,12 @@
+1. **Fallback chain for `cloud-frontier`:**  
+   The document does not specify a fallback chain for `cloud-frontier`. It is listed as a dormant role, and no fallback behavior is described for cloud roles in general. Local roles have fallbacks to other local roles, but cloud roles are not mentioned to have fallback chains.
+
+2. **Dormant roles and their blockers:**  
+   - **`cloud-code`**: Blocked on an **Anthropic API key** (deliberately unset).  
+   - **`cloud-frontier`**: Blocked on an **OpenRouter key**.  
+   - **`cloud-frontier-direct`**: Blocked on a **Moonshot key**.  
+   - **`cloud-frontier-fast`**: Blocked on a **Fireworks key**.  
+
+3. **Postgres port and reason:**  
+   - **Port**: `5433`  
+   - **Reason**: To avoid collision with other PostgreSQL instances. The LAN cannot access the database directly, and port 5433 is explicitly chosen to prevent conflicts.

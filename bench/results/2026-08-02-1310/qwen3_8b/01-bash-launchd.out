@@ -1,0 +1,12 @@
+#!/bin/bash
+set -euo pipefail
+
+plist_path="$HOME/Library/LaunchAgents/com.example.service.plist"
+if [ ! -f "$plist_path" ]; then
+    echo "Plist file not found: $plist_path" >&2
+    exit 1
+fi
+
+if ! launchctl isloaded com.example.service; then
+    launchctl load "$plist_path"
+fi

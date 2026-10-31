@@ -1,0 +1,90 @@
+**What the current code does wrong**
+
+| # | Bug | What breaks it / under what input |
+|---|-----|------------------------------------|
+| 1 | **Floating‑point arithmetic** – `price` and `qty` are multiplied with normal `float`s, the discount is applied with a float division, and finally `round(total,2)` turns the result back into a `float`.  The well‑known *float‑for‑currency* problem (e.g. 0.1 + 0.2 ≠ 0.3 exactly) can produce invoice figures that are off by a cent or two – unacceptable in billing. |
+| 2 | **No type validation** – `discount_pct` is assumed to be numeric; passing a string, `None`, or an object without ordering will raise a `TypeError`.  The same goes for the `price` and `qty` keys inside each item. |
+| 3 | **Discount bounds not checked** – a discount greater than 100 % turns the total into a negative number; a negative discount flips the sign of the total.  In a invoice system this is usually an error, but it silently propagates in the current code. |
+| 4 | **`round()` returns a `float`** – after quantizing to two decimal places you end up with a plain `float`.  The value can still suffer from floating‑point representation errors when printed or used downstream (e.g. `"0.30"` might be stored as `0.2999999998`). |
+| 5 | **Missing default handling for missing keys** – if an item misses `'price'` or `'qty'`, a `KeyError` is raised.  In some data feeds the quantity defaults to 1, but that logic is not expressed here. |
+
+---
+
+## Corrected implementation
+
+The safest way to do money arithmetic in Python is with `decimal.Decimal`.  
+It gives you exact decimal representation and lets you round exactly to two places.
+
+```python
+from decimal import Decimal, ROUND_HALF_UP
+from typing import Iterable, Mapping, Any
+
+def apply_discount(items: Iterable[Mapping[str, Any]],
+                   discount_pct: Any) -> Decimal:
+    """
+    Calculate the total of *items* after applying *discount_pct*.
+
+    Parameters
+    ----------
+    items : iterable of mappings
+        Each mapping must contain numeric 'price' and optional 'qty'.
+        Missing 'qty' is treated as 1.
+    discount_pct : numeric (int/float/Decimal)
+        Discount percentage to apply. Must be between 0 and 100 inclusive.
+
+    Returns
+    -------
+    Decimal
+        The discounted total, rounded to two decimal places (cents).
+
+    Raises
+    ------
+    TypeError
+        If any of the required values cannot be converted to a numeric type.
+    ValueError
+        If *discount_pct* is outside [0, 100] or an item contains non‑numeric data.
+    """
+
+    # ----- Validate / normalise discount ---------------------------------
+    try:
+        disc = Decimal(str(discount_pct))
+    except Exception as exc:
+        raise TypeError("discount_pct must be a number") from exc
+
+    if disc < 0 or disc > 100:
+        raise ValueError("discount_pct must be between 0 and 100")
+
+    # ----- Accumulate the line totals ------------------------------------
+    total = Decimal('0')
+    for idx, item in enumerate(items):
+        try:
+            price = Decimal(str(item['price']))
+            qty   = Decimal(str(item.get('qty', 1)))   # default quantity = 1
+        except KeyError as exc:   # missing key
+            raise KeyError(f"Item #{idx} is missing a required field") from exc
+        except Exception as exc:   # non‑numeric value
+            raise ValueError(
+                f"Item #{idx} contains non‑numeric 'price' or 'qty'"
+            ) from exc
+
+        total += price * qty
+
+    # ----- Apply discount (if any) ---------------------------------------
+    if disc != 0:
+        total -= (total * disc / Decimal('100'))
+
+    # ----- Final rounding -------------------------------------------------
+    return total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+```
+
+### Why this version is correct
+
+| # | Fix | How it solves the bug |
+|---|-----|-----------------------|
+| 1 | `Decimal` for all money values | Eliminates binary‑floating errors (`0.1 + 0.2 == 0.3`). |
+| 2 | Explicit conversion of `discount_pct`, `price`, and `qty` to `Decimal` (via `str`) | Catches non‑numeric input early, gives deterministic errors instead of silent crashes. |
+| 3 | Bound check `0 <= disc <= 100` | Prevents accidental negative totals or over‑discounting. |
+| 4 | Return a `Decimal` rounded with `quantize(…, ROUND_HALF_UP)` | Guarantees the final value is an exact two‑decimal cent amount, not a float that may be mis‑displayed later. |
+| 5 | Default quantity to 1 and clear error messages for missing keys | Handles real‑world data where quantity might be omitted. |
+
+This implementation keeps the algorithmic simplicity of the original (linear scan over `items`) while making it **robust** for a financial application. It preserves every decimal cent, validates input types, limits discount values, and returns an immutable `Decimal` that callers can safely store or display.

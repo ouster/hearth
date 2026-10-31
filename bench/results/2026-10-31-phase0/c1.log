@@ -1,0 +1,40 @@
+round 1 slot 0: status=200 ttft=20.973 total=21.64 tool_ok=1 finish=stop 
+round 2 slot 0: status=200 ttft=20.389 total=20.835 tool_ok=1 finish=stop 
+round 3 slot 0: status=200 ttft=20.457 total=20.833 tool_ok=1 finish=stop 
+round 4 slot 0: status=200 ttft=20.657 total=21.175 tool_ok=1 finish=stop 
+round 5 slot 0: status=200 ttft=20.371 total=21.014 tool_ok=1 finish=stop 
+round 6 slot 0: status=200 ttft=20.556 total=20.957 tool_ok=1 finish=stop 
+round 7 slot 0: status=200 ttft=20.45 total=20.826 tool_ok=1 finish=stop 
+round 8 slot 0: status=200 ttft=20.465 total=20.843 tool_ok=1 finish=stop 
+round 9 slot 0: status=200 ttft=20.6 total=20.993 tool_ok=1 finish=stop 
+round 10 slot 0: status=200 ttft=20.611 total=20.998 tool_ok=1 finish=stop 
+# Concurrency bench — phase 0 baseline, LiteLLM → Ollama MLX, c1
+
+| | |
+|---|---|
+| Base URL | `http://127.0.0.1:4000/v1` |
+| Role | `local-big` |
+| Concurrency × rounds | 1 × 10 = 10 requests |
+| Target prompt tokens | 30000 (actual median 28132) |
+| Client timeout | 180 s |
+| Run | 2026-10-31T10:41:07 → 2026-10-31T10:44:37 (210 s wall) |
+| Footprint process match | `ollama (runner|serve)` |
+
+## Result
+
+| Metric | Value |
+|---|---|
+| Valid `read_file` tool calls | 10 / 10 |
+| Timeouts (client, 180 s) | 0 |
+| HTTP errors | 0 |
+| Other failures (bad/no tool call, stream error) | 0 |
+| TTFB p50 / p95 | 20.5 s / 21.0 s |
+| TTFT p50 / p95 (requests that produced a token) | 20.5 s / 21.0 s |
+| Total time p50 / p95 (successful) | 21.0 s / 21.6 s |
+| Peak footprint (sum of matched processes) | 36.0 GB |
+
+## Log lines during the run
+
+None.
+
+Raw: `raw.tsv`, `footprint.tsv`.

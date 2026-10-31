@@ -1,0 +1,100 @@
+### What’s wrong with the original routine?
+
+| # | Bug | Why it matters for money arithmetic | Example that breaks it |
+|---|-----|--------------------------------------|------------------------|
+| 1 | **Binary‐float precision** – `items[i]['price']` and `items[i]['qty']` are multiplied as *floats*.  Binary floats cannot represent most decimal fractions exactly. The tiny rounding error is carried through the whole calculation and can show up after the final `round()` call or when you compare totals later. | In a billing invoice even a fraction of a cent can lead to an audit trail that “doesn’t add up”. | ```python\nitems=[{'price':0.1,'qty':1},{'price':0.2,'qty':1}]\napply_discount(items,0)\n# → 0.3 (ok), but internally total was 0.30000000000000004\n``` |
+| 2 | **Banker’s rounding** – `round(total,2)` uses “round half to even”.  In finance the common convention is *half‑up* (e.g., 1.225 → 1.23).  The banker's rule can silently produce a different cent amount than expected. | A invoice that rounds 12 € 00½¢ down to 12 € 00¢ could be disputed. | ```python\nround(Decimal('1.225'),2)   # 1.22 with banker's rounding\n``` |
+| 3 | **No validation of the discount** – the function accepts any numeric value; negative discounts are silently ignored (`>0`), and values >100 % will produce a negative total without warning. | A bad input (e.g., -10 or 120) can lead to an unchanged or negative invoice figure that is not caught by anyone. | ```python\napply_discount(items,-5)   # no discount applied, but user probably wanted a surcharge\napply_discount(items,150)      # returns a negative amount\n``` |
+| 4 | **Returns a float** – even after you round it you get a `float` again. That defeats the point of using `round()`: the result may later be converted back to a binary float and lose precision again in downstream calculations. | Every time that returned value is used, you re‑introduce floating error. | ```python\n>>> apply_discount(items,0)\n0.3   # this is actually 0.29999999999999999 as a float\n``` |
+| 5 | **No defensive checks on item data** – if an item misses `price` or `qty`, the code raises a cryptic `KeyError`. If a price is supplied as a string like `'10.00'` it is accepted, but you don’t know whether the string uses comma‑decimal etc. | In production data may contain bad rows that slip through silently until they hit this routine. | ```python\napply_discount([{'price':'ten','qty':1}],0)\n# raises TypeError or ValueError from Decimal conversion, not a clean message\n``` |
+
+---
+
+## Corrected version (focus on monetary correctness)
+
+The replacement uses Python’s **`decimal.Decimal`** for exact decimal arithmetic,
+validates the inputs and applies *half‑up* rounding that is standard in financial
+contexts.
+
+```python
+from decimal import Decimal, getcontext, ROUND_HALF_UP
+
+# set the context to use half‑up globally (optional – quantize can override)
+getcontext().rounding = ROUND_HALF_UP
+
+
+def apply_discount(items, discount_pct):
+    """
+    Calculate the total price for *items* and optionally apply a discount.
+
+    Parameters
+    ----------
+    items : iterable of mapping
+        Each item must provide numeric ``price`` and ``qty`` (int/float/Decimal/string).
+    discount_pct : numeric
+        Discount percentage (0‑100 inclusive).  Must be a number; otherwise raises
+        TypeError.  Values outside 0–100 raise ValueError.
+
+    Returns
+    -------
+    Decimal
+        The final total, rounded to two decimal places with ROUND_HALF_UP.
+    """
+    # ---------- 1️⃣ Validate & convert the discount ----------
+    try:
+        discount = Decimal(str(discount_pct))
+    except Exception as exc:
+        raise TypeError("discount_pct must be numeric") from exc
+
+    if not (Decimal('0') <= discount <= Decimal('100')):
+        raise ValueError("discount_pct must be between 0 and 100 inclusive")
+
+    # ---------- 2️⃣ Sum the line totals ----------
+    total = Decimal('0')
+    for idx, item in enumerate(items):
+        try:
+            price = Decimal(str(item['price']))
+            qty   = Decimal(str(item['qty']))
+        except KeyError as exc:          # missing key
+            raise KeyError(
+                f"Item #{idx} is missing required key '{exc.args[0]}'"
+            ) from None
+        except Exception as exc:         # non‑numeric data
+            raise TypeError(
+                f"price and qty must be numeric in item #{idx}"
+            ) from exc
+
+        total += price * qty
+
+    # ---------- 3️⃣ Apply discount ----------
+    if discount > Decimal('0'):
+        total -= (total * discount / Decimal('100'))
+
+    # ---------- 4️⃣ Round to two places (cents) ----------
+    return total.quantize(Decimal('0.01'))   # uses the global ROUND_HALF_UP
+```
+
+### Why this works
+
+| Step | What it fixes |
+|------|---------------|
+| **Decimal conversion** | `Decimal(str(value))` guarantees that “10.00” → exactly 10, not an inexact float like 9.999999… |
+| **Explicit rounding** (`quantize`) | Forces two decimal places with the desired *half‑up* rule; no more banker’s rounding surprises. |
+| **Return type `Decimal`** | Subsequent financial calculations stay exact until you explicitly convert to a float for display or external API. |
+| **Input validation** | Negative discounts, over‑100% values, missing keys, and non‑numeric data all raise clear errors, preventing silent mis‑pricing. |
+
+### Quick test
+
+```python
+>>> items = [{'price': 0.1, 'qty': 1}, {'price': 0.2, 'qty': 1}]
+>>> apply_discount(items, 50)
+Decimal('0.15')
+```
+
+No floating‑point glitches: the internal math is exact, and the result is a clean `Decimal`. If you really need a float for legacy code:
+
+```python
+float(apply_discount(items, 50))   # 0.15 exactly as a float literal
+```
+
+But keep it in `Decimal` until you must output to the user or write to a file.

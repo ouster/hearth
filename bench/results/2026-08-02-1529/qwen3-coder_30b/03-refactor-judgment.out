@@ -1,0 +1,70 @@
+## Bugs Identified
+
+### 1. **Float Precision for Currency Arithmetic**
+The most critical bug is using floating-point arithmetic for monetary calculations. This can lead to precision errors like:
+- `0.1 + 0.2` not equaling exactly `0.3`
+- Rounding issues in financial calculations
+- Accumulation of small errors over multiple operations
+
+### 2. **No Input Validation**
+The function doesn't validate:
+- Whether `items` is a list or iterable
+- Whether each item has required keys ('price', 'qty')
+- Whether `discount_pct` is a number
+- Whether `items` contains any elements
+
+### 3. **Discount Logic Flaw**
+If `discount_pct` equals 0, the discount calculation is skipped (correct), but if `discount_pct` is negative, it applies a "surcharge" rather than treating it as no discount.
+
+## Corrected Version
+
+```python
+from decimal import Decimal, ROUND_HALF_UP
+
+def apply_discount(items, discount_pct):
+    # Input validation
+    if not isinstance(items, (list, tuple)):
+        raise TypeError("Items must be a list or tuple")
+    
+    if not isinstance(discount_pct, (int, float, Decimal)):
+        raise TypeError("Discount percentage must be a number")
+    
+    if not items:  # Handle empty items list
+        return Decimal('0.00')
+    
+    total = Decimal('0')
+    
+    for item in items:
+        if not isinstance(item, dict):
+            raise TypeError("Each item must be a dictionary")
+        
+        if 'price' not in item or 'qty' not in item:
+            raise KeyError("Each item must have 'price' and 'qty' keys")
+        
+        try:
+            price = Decimal(str(item['price']))
+            qty = Decimal(str(item['qty']))
+        except (ValueError, TypeError):
+            raise ValueError("Price and quantity must be convertible to numbers")
+        
+        total += price * qty
+    
+    # Apply discount
+    if discount_pct > 0:
+        discount_amount = total * Decimal(str(discount_pct)) / Decimal('100')
+        total = total - discount_amount
+    
+    # Round to 2 decimal places using proper financial rounding
+    return total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+```
+
+## Key Improvements
+
+1. **Uses `Decimal`** for exact decimal arithmetic instead of float
+2. **Proper error handling** for invalid inputs
+3. **Input validation** for all parameters and data structure requirements
+4. **Financial rounding** using `ROUND_HALF_UP` for proper currency handling
+5. **Handles edge cases** like empty lists and string-to-number conversion
+6. **Clear separation of concerns** with explicit type conversions
+
+This version is suitable for financial systems where exact monetary calculations are required, avoiding the pitfalls of floating-point arithmetic that could lead to incorrect invoice figures.

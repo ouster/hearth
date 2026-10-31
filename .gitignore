@@ -6,7 +6,8 @@
 *.pem
 secrets/
 reports/
-bench/results/
+# bench/results/ is committed (2026-10-31): it is the evidence behind role and
+# serving decisions. Never point a bench at private data.
 .DS_Store
 __pycache__/
 *.pyc

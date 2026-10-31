@@ -1,0 +1,25 @@
+**1. Fallback chain for `cloud‑frontier`**  
+There is **no fallback list defined for `cloud-frontier`.** The gateway configuration
+does not specify any alternative models to try if the requested cloud‑frontier
+role fails, so the role simply errors out when it cannot be served.
+
+---
+
+**2. Dormant roles and what blocks them**
+
+| Role            | Blocked on |
+|-----------------|------------|
+| `cloud-code`    | Anthropic API key (none provided) |
+| `cloud-frontier`  | OpenRouter key (none provided) |
+| `cloud-frontier-direct` | Moonshot key (none provided) |
+| `cloud-frontier-fast`   | Fireworks key (none provided) |
+
+These roles appear in the registry but remain inactive because their required
+provider keys are deliberately missing.
+
+---
+
+**3. Postgres port**
+
+- **Port:** **5433**  
+- **Reason:** Chosen to avoid collision with any other PostgreSQL instance that might be running on the host, and it keeps the database reachable only from localhost (the gateway), so LAN clients cannot access it directly.

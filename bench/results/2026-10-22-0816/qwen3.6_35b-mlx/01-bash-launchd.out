@@ -1,0 +1,16 @@
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+PLIST="${HOME}/Library/LaunchAgents/com.example.service.plist"
+SERVICE="com.example.service"
+
+if [ ! -f "$PLIST" ]; then
+    echo "Error: ${PLIST} does not exist" >&2
+    exit 1
+fi
+
+if ! launchctl print gui/"$UID"/"$SERVICE" > /dev/null 2>&1; then
+    launchctl load "$PLIST"
+fi
+```

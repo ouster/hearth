@@ -1,0 +1,5 @@
+model	task	tokens	seconds	verdict
+qwen3.6:35b-mlx	01-bash-launchd	5635	50.5	syntax-ok
+qwen3.6:35b-mlx	02-python-mcp-tool	4881	43.7	syntax-ok
+qwen3.6:35b-mlx	03-refactor-judgment	9522	82.8	needs-reading
+qwen3.6:35b-mlx	04-long-context	1934	20.0	needs-reading

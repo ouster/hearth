@@ -1,0 +1,9 @@
+1. **Fallback chain for `cloud-frontier`:** Not in the file. The documentation only defines fallback chains for local roles, explicitly stating that local roles never fall back to cloud roles.
+
+2. **Dormant roles and blockers:**
+   - `cloud-code` (`claude-sonnet-5`): Anthropic API key (deliberately unset)
+   - `cloud-frontier` (`kimi-k3` via OpenRouter): OpenRouter key
+   - `cloud-frontier-direct` (`kimi-k3` via Moonshot): Moonshot key
+   - `cloud-frontier-fast` (`kimi-k3` via Fireworks): Fireworks key
+
+3. **Postgres port and reason:** Port **5433**. It is used specifically to avoid collision (clashing) with any other Postgres instance on the system.

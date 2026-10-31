@@ -1,0 +1,2235 @@
+# Architecture
+
+Reference host shape: Apple Silicon Mac, 64 GB unified memory, macOS. LAN clients
+reach the gateway; Ollama stays on localhost.
+
+## Shape
+
+```mermaid
+flowchart TB
+    subgraph onHost["On the gateway host"]
+        aider["aider"]
+        zed["Zed"]
+        scripts["scripts"]
+        webui["Open WebUI :3000"]
+    end
+
+    laptop["LAN laptop"]
+
+    gw{{"LiteLLM :4000<br/>roles / key scope / spend"}}
+    pg[("Postgres :5433")]
+
+    ollama["Ollama 127.0.0.1:11434<br/>local-chat / code / big / embed"]
+    cloud["Cloud roles<br/>Gemini live; others dormant"]
+
+    aider --> gw
+    zed --> gw
+    scripts --> gw
+    webui --> gw
+    laptop -->|"lan or lan-cloud key"| gw
+
+    gw --> ollama
+    gw -->|"allowed keys only"| cloud
+    gw -.->|"private key refused"| cloud
+    gw <--> pg
+
+    classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
+    classDef cloudCls fill:#FAEEDA,stroke:#854F0B,color:#633806
+    classDef gwCls fill:#E6F1FB,stroke:#185FA5,color:#0C447C
+
+    class ollama,pg localCls
+    class cloud cloudCls
+    class gw gwCls
+```
+
+Everything addresses **roles**, never model names. Concrete models appear in
+exactly two files: `litellm/config.yaml` and `docs/MODELS.md`.
+
+## Why a gateway at all
+
+Before this, aider talked to Ollama directly and other tools talked to cloud
+providers directly. That meant several places to edit when a model changed, no
+spend visibility, no request log, and no way to enforce that client data stayed
+local. One gateway gives a single swap point, one audit trail, and — most
+importantly — a place where the privacy boundary can be *structural* rather than
+a rule you remember.
+
+## The three layers
+
+**1. Roles.** `local-chat`, `local-code`, `local-big`, `local-embed`, `cloud-cheap`,
+plus dormant `cloud-code` and the three `cloud-frontier*` variants. Clients ask for a
+role. Swapping the model behind a role is one config edit and a restart; no alias,
+script, or IDE setting changes. See `docs/MODELS.md`.
+
+**2. Keys.** Four virtual keys, each scoped to a model list:
+
+| Key | Reaches | Used by |
+|---|---|---|
+| `private` | `local-*` only | sensitive work, Open WebUI default |
+| `general` | everything live | this machine — aider, Zed, scripts |
+| `lan` | `local-*` + `cloud-cheap` | other machines, everyday |
+| `lan-cloud` | everything live | laptop, when it needs real cloud models |
+
+A request for a cloud role with the `private` key is refused by the gateway. There
+is no prompt that gets around it, which is the entire point — see `docs/ROUTING.md`.
+
+**3. Fallbacks.** Local roles degrade to *other local roles* and never to cloud.
+`local-big` has none at all — if it is down, fail loudly rather than quietly
+answer with a weaker model.
+The inherited config had `local-ollama → gemini`, so any Ollama timeout silently
+shipped the prompt to Google. Across a privacy boundary a fallback is a leak, not
+resilience. `scripts/audit-fallbacks.sh` fails the build if that reappears.
+
+## Process supervision
+
+LiteLLM runs under launchd (default label `com.hearth.litellm`; existing
+installs may keep a personal label — scripts resolve via `ai_litellm_label` in
+`scripts/lib.sh`). The agent executes `~/.config/litellm/run-litellm.sh`, which
+sources `~/.config/litellm/env` and starts LiteLLM with
+`--config ~/.config/litellm/config.yaml`.
+
+`~/.config/litellm/config.yaml` is a **symlink** into this repo. That is the whole
+deployment mechanism: the plist and wrapper script are never modified, so rollback
+is one `mv` (`scripts/deploy.sh --rollback`).
+
+Postgres runs as a Podman container, bound to `127.0.0.1:5433` — the LAN can reach
+the gateway but never the database. Port 5433 avoids collision with any other
+Postgres.
+
+### Two environment files, deliberately
+
+| File | Read by | Contains |
+|---|---|---|
+| `~/.config/litellm/env` | launchd, via `run-litellm.sh` | provider keys, `LITELLM_MASTER_KEY`, `DATABASE_URL` |
+| `~/dev/hearth/litellm/.env` | `scripts/*.sh` only | `POSTGRES_PASSWORD`, virtual keys, a copy of `DATABASE_URL` |
+
+**launchd does not read the repo's `.env`, and it does not read `~/.zshrc`.** A
+variable exported in your shell will look fine to a naive check and then fail at
+runtime. `scripts/preflight.sh` checks the service's environment specifically, and
+reports "set in your shell but NOT in ~/.config/litellm/env" as a failure.
+
+## Verification
+
+| Script | Answers |
+|---|---|
+| `preflight.sh` | Is it safe to deploy? Read-only. Exit 2 = check couldn't run, 1 = real problem |
+| `audit-fallbacks.sh` | Can any local role reach cloud? |
+| `deploy.sh` | Cut over, verify, auto-rollback on failure |
+| `healthcheck.sh` | Is every live role responding, and is the private key actually scoped? |
+| `bench.sh` | Does a candidate model beat the incumbent? |
+
+The leak test in `healthcheck.sh` has two halves: the private key must **succeed**
+on a local role (otherwise a merely broken key looks like perfect scoping) and must
+be **refused** on a live cloud role (probing a dormant role proves nothing, since
+"model not found" is also a 4xx).
+
+## The second boundary: containment
+
+The key scoping above governs **where data goes on purpose**. It has no
+jurisdiction over a compromised agent, which does not use that path at all — an
+injected aider that `curl`s a stolen key to an attacker never touches LiteLLM.
+
+`scripts/sandboxed.sh` closes that channel by denying egress to everything
+except the gateway, so an agent that reads a secret has nowhere to send it.
+Verified on macOS 26.4 by `scripts/sandbox-probe.sh`. Reads are deliberately
+unrestricted; the full reasoning and the accepted residual risk are in
+`docs/THREAT-MODEL.md` and ADR 0007.
+
+| Threat | Key scope | Sandbox |
+|---|---|---|
+| A prompt sends client data to a cloud model | **caught** | not caught |
+| An injected agent exfiltrates a key via curl | not caught | **caught** |
+
+## Known gaps
+
+- ~~Ollama open on the LAN~~ — **closed 2026-08-02**. Bound to 127.0.0.1, verified
+  unreachable from the LAN address. See ADR 0003.
+- ~~No agent sandboxing~~ — **closed 2026-08-02** for aider and Zed. Egress and
+  write confinement verified. See ADR 0007.
+- **Untrusted MCP servers are unaudited** — unknown tool surface, adjacent to real client
+  data. Now the largest unknown; see `docs/THREAT-MODEL.md` §3.
+- **Roles are not digest-pinned yet.** Ollama tags are mutable pointers, so a pull
+  can change the weights behind a role. Pinning lands with the bench harness.
+- **Resident set** is 37.5 GB of a ~48 GB GPU ceiling — all four local models stay
+  loaded, so switching roles evicts nothing. This replaced a set needing 65.7 GB.
+- **No auto-updater yet.** Discovery and benching are meant to be automatic;
+  promotion stays manual by choice.
+# Claude Project spec
+
+Paste the two fields below into claude.ai → Projects → New project.
+Keep this file as the source of truth; when the instructions change here, re-paste.
+
+---
+
+## Title
+
+```
+Hearth — Local + Cloud
+```
+
+## Description
+
+```
+Private-first AI infrastructure on a Mac Studio M4 Max. Ollama + LiteLLM as a single
+gateway for local models, with Claude and Fireworks as cloud tiers. Routing rules,
+model registry, cost control, and the plumbing that connects aider, Zed and
+Open WebUI to all of it. Built to be re-pointed at new models without rewriting anything.
+```
+
+---
+
+## Custom instructions
+
+```
+# Context
+
+Solo developer running a private-first local + cloud LLM gateway. Uses aider,
+Zed, and Open WebUI. Ollama serves models on this machine and to other machines
+on the LAN via LiteLLM.
+
+This project covers the AI stack itself — not the applications built on it.
+Source of truth is the hearth repo.
+
+# Architecture (assume this unless I say otherwise)
+
+LiteLLM is the single gateway. Every client — aider, Zed, Open WebUI, scripts,
+other machines on the LAN — talks OpenAI-compatible to LiteLLM. Nothing talks to
+Ollama or a cloud provider directly.
+
+Models are addressed by ROLE, never by vendor model name:
+
+  local-chat              general questions, not code. The chat-UI default
+  local-code              the default coding model — real work, still private
+  local-big               reasoning-heavy, still private
+  local-embed             embeddings for local RAG
+  cloud-cheap             Gemini Flash — bulk non-sensitive work, big context
+  cloud-code              Claude — hard coding and agentic work, non-sensitive
+  cloud-frontier          OpenRouter — very large open models (e.g. Kimi K3)
+  cloud-frontier-direct   Moonshot direct — same price, better K3 caching
+  cloud-frontier-fast     Fireworks — dearest; throughput or LoRA only
+
+Which concrete model backs each role lives in exactly two places:
+litellm/config.yaml and docs/MODELS.md. Nowhere else.
+
+# Rules
+
+1. Never hardcode a vendor model name outside litellm/config.yaml and
+   docs/MODELS.md. Aliases, scripts, IDE settings and code reference roles only.
+   If you catch yourself writing "qwen3-coder:30b" in a shell alias, stop.
+
+2. Privacy is structural, not advisory. Sensitive data, PII, any repo I have
+   flagged as holding real data, and anything else I mark sensitive: local
+   roles only. This is enforced by a LiteLLM virtual key scoped to local-*
+   models, so the wrong route should be impossible rather than merely
+   discouraged. If you are writing code or config that could send that class
+   of data to a cloud endpoint, refuse and say why.
+
+3. Treat your own knowledge of models as stale. The field moves faster than your
+   training data. Before asserting a price, a context window, a benchmark result,
+   or that a model exists, search — and give the date of what you found. Do not
+   recommend from memory.
+
+4. State the cost tier whenever you propose a cloud model, in $/M input and
+   $/M output, with the source. Cheap local work should stay local; say so when
+   I am about to spend money on something a 30B model would handle.
+
+5. Nothing replaces a role until it has been benched. New model claims get run
+   against bench/tasks/ and compared to the incumbent before the config changes.
+
+6. Routing and model-choice changes get an ADR in docs/decisions/ — short: context,
+   decision, consequences, date. I already work this way.
+
+7. Shell scripts: portable bash that runs under zsh on macOS. LF line endings only,
+   never CRLF — it breaks launchd and shebangs. Applies to .sh, .plist, configs.
+   macOS /bin/bash is 3.2: no declare -A, no mapfile, no ${x^^}, and guard empty
+   arrays as ${arr[@]+"${arr[@]}"} under set -u. Code that only works on bash 4
+   passes every test I can run and then dies on the target machine.
+
+7a. Every diagram is Mermaid. No ASCII art, no committed SVG or PNG. GitHub
+   renders Mermaid natively, it diffs as text, and it cannot drift out of sync
+   with the prose the way an exported image does. If something genuinely cannot
+   be expressed in Mermaid, use a Markdown table.
+
+8. Work in this order: plan → I refine → I approve → build. Do not start building
+   because a plan looks obviously right. Show me the plan first.
+
+9. Be concise and direct. No preamble, no restating my question back at me, no
+   summarising what you just did at length. If you can cut a sentence and keep the
+   meaning, cut it.
+
+10. When something is uncertain, say so plainly and tell me the cheapest way to
+    find out. Do not fill gaps with confident-sounding guesses.
+
+# Repo layout
+
+  <hearth-repo>/
+    CLAUDE.md              rules for agents working in this repo
+    AGENTS.md              shared agent rules (Zed, aider read this too)
+    docs/
+      ARCHITECTURE.md      how the gateway is wired
+      ROUTING.md           the decision table: what goes local vs cloud
+      MODELS.md            registry — role → model, date set, why
+      RUNBOOK.md           start, stop, diagnose
+      decisions/           ADRs
+    litellm/
+      config.yaml          the only file that names models
+      .env.example
+    scripts/               recon, healthcheck, pull, bench
+    bench/tasks/           fixed prompts for comparing models
+
+# Hardware envelope
+
+64 GB unified, but macOS caps GPU-accessible memory at ~48 GB (75%). Current resident set is
+37.5 GB across four local models, none evicting the others. A 70B dense model at
+Q4 (~42 GB) technically fits but evicts everything else — it measured 440 s to
+first reply and was retired. MoE models are what make the current set work. Say
+when a suggestion won't fit.
+```
+
+---
+
+## Knowledge files to attach
+
+Attach these from the repo (re-attach when they change):
+
+- `docs/ARCHITECTURE.md`
+- `docs/ROUTING.md`
+- `docs/MODELS.md`
+- `litellm/config.yaml`
+
+Do **not** attach anything containing API keys.
+# How this compares to other private-AI setups
+
+Read 2026-08-02. Two reference points worth knowing about: one person solving
+the same problem from a different angle, and one product solving the piece we
+found most annoying.
+
+---
+
+## Vitalik Buterin — "My self-sovereign / local / private / secure LLM setup"
+
+[April 2026](https://vitalik.eth.limo/general/2026/04/02/secure_llms.html).
+Near-identical brief: *"what kind of AI setup would we build if we took privacy,
+security and self-sovereignty as non-negotiable?"*
+
+### Where we independently landed on the same thing
+
+- **SearXNG** for search, for the same reason — reduce what any single engine
+  learns about you.
+- **AGENTS.md** as the shared instruction file.
+- **Local-first with a deliberate cloud escape hatch.** He hit the same wall we
+  did: local models are fine on well-trodden ground and fall apart on hard
+  problems. He tried and failed to get Qwen3.5:35B to implement BLS-12-381
+  hash-to-point, and sent it to Claude, which one-shotted it. Our `cloud-code`
+  role exists for exactly that moment.
+- **Roughly the same speed floor.** He says "anything slower than 50 tok/sec
+  feels too annoying to be worth it." Our roles run 65–120.
+
+### Where he is ahead — and these are real gaps for us
+
+**1. Sandboxing — closed, after this was written.**
+
+He runs LLM work inside [bubblewrap](https://github.com/containers/bubblewrap):
+`sbox` in any directory creates a sandbox rooted there, and anything started
+inside can only see that directory plus explicit whitelists. Ports, audio and
+filesystem are all constrained.
+
+We had nothing equivalent when this file was first written: `aider` and Zed's
+agent ran with full user permissions, able to read `~/.ssh`, `~/.aws`, every
+repo on the machine, and the gateway's own `.env`. `scripts/sandboxed.sh` and
+ADR 0007 answered that — an SBPL profile that restricts capability rather than
+attempting to detect injection. Different mechanism from bubblewrap, same
+instinct.
+
+**2. A threat model we never wrote down: prompt injection.**
+
+He cites research that roughly **15% of published agent skills contained
+malicious instructions**, and a demonstration where summarising a web page
+caused an agent to download and execute a shell script. Our stack has SearXNG
+wired into a chat UI and agents that read repositories. Both are injection
+surfaces. We have thought hard about where data *goes* and not at all about what
+untrusted content might *make the agent do*.
+
+**3. Human confirmation as a firewall.**
+
+His messaging daemon can read messages and send only to himself autonomously.
+Sending to anyone else requires explicit confirmation. His framing is the one
+worth stealing:
+
+> the new "two-factor confirmation" is that the two factors are the human and
+> the LLM ... the hope is that humans and LLMs fail in distinct ways
+
+We have `--no-auto-commits` and Zed's tool-restricted profiles, which are the
+same instinct applied only to code. Nothing gates an action with consequences.
+
+**4. A local `world_knowledge` corpus.**
+
+A Wikipedia dump plus manuals for things he cares about, so questions answerable
+locally never reach a search engine. For this repo that would be reference documents
+— the queries most worth not leaking. Our `local-embed` role
+exists and indexes nothing.
+
+### Where we are ahead
+
+**Multi-machine access.** He dismisses the DGX Spark partly because *"you have to
+figure out the networking details of how to connect to it from your actual work
+device"*. That is precisely what our gateway plus scoped keys plus client shim
+solves. His setup is one-machine; ours serves laptops with per-device keys,
+spend caps and revocation.
+
+**Structural privacy at a different layer.** His isolation is process-level
+(sandbox). Ours is route-level (key scope). They fail differently and are
+complementary rather than competing:
+
+| Threat | Sandbox | Key scope |
+|---|---|---|
+| Agent reads a file it shouldn't | **caught** | not caught |
+| Prompt sends client data to a cloud model | not caught | **caught** |
+| Compromised client machine | partly | **caught** — key is scoped |
+| Malicious skill exfiltrates via curl | **caught** | not caught |
+
+We have one column. He has the other. Having both is the correct answer.
+
+**Measurement.** He reports tok/s per hardware. We bench roles on real tasks and
+record the decision. His post is explicitly a starting point, not a finished
+product — he says so in a warning at the top.
+
+**Model indirection.** He swaps models by hand through llama-swap; we address
+roles, so nothing downstream changes.
+
+### One tooling disagreement worth noting
+
+He moved from Ollama to `llama-server` + `llama-swap`, because **Ollama could
+not fit Qwen3.5:35B on his GPU and llama-server could**. That is a real
+efficiency difference, not tribal preference. On 64 GB unified we are not
+memory-pressed at 37.5 GB resident, so it has not bitten us — but if a future
+role does not fit, that is the first thing to try before buying hardware.
+
+---
+
+## Routerly — the database-free gateway
+
+[github.com/Inebrio/Routerly](https://github.com/Inebrio/Routerly), AGPL-3.0.
+Directly addresses the thing we found most irritating.
+
+### What it does that LiteLLM does not
+
+| | Routerly | LiteLLM (ours) |
+|---|---|---|
+| Database | **none** — JSON in `~/.routerly/` | Postgres + Prisma, 64 tables |
+| Native Anthropic `/v1/messages` | **yes** | no — translates to OpenAI format |
+| Per-project tokens + budgets | yes | yes (virtual keys) |
+| Per-project model list | yes | yes |
+| Routing policies | 9, including LLM-picks-the-model | static fallbacks |
+| Provider breadth | 8 | 100+ |
+| MCP gateway | **none** | yes — scoped by key, team, org |
+| Maturity | v0.1.5, 43 stars, 3 contributors | widely deployed |
+
+**Checked again 2026-08-02: Routerly still has no MCP support.** That now cuts
+against switching. LiteLLM's MCP gateway applies the same key scoping to tools
+as to models, which is what ADR 0008 is built on — leaving would mean rebuilding
+tool access control as well as the routing verification below.
+
+**The interesting unlock is native Anthropic format.** Claude Code is currently a
+documented exception in our stack because LiteLLM only speaks OpenAI shape.
+Routerly handles `/v1/messages` natively, so Claude Code could route through the
+gateway and gain spend tracking and logging. That is a real capability, not a
+tidiness argument.
+
+### Why we are not switching yet
+
+- **v0.1.5, one release, three contributors, 43 stars.** This is pre-1.0
+  software that would hold our provider keys and enforce our privacy boundary.
+  LiteLLM's 64 tables are ugly; ugly is not the same as risky.
+- **The cost of switching is the verification, not the config.** The leak test,
+  fallback audit, digest pinning and every script touching `/key/*` would need
+  redoing and re-proving. That is the expensive part, and it buys removing
+  something that currently runs in a container we never look at.
+- **AGPL plus a commercial-licensing address** is an open-core shape. Worth
+  watching whether the free tier narrows.
+
+Revisit at 1.0, or the first time Postgres actually causes a problem rather
+than merely offending.
+
+---
+
+## What we should actually do about this
+
+In rough priority. Items 1 and 2 are now done; the rest stand.
+
+1. ~~**Sandboxing for agent work.**~~ Done — `scripts/sandboxed.sh`, ADR 0007.
+2. ~~**Write down a prompt-injection threat model.**~~ Partly done. ADR 0007
+   covers agent containment and ADR 0008 covers tool scope. Web search feeding
+   the chat UI is still unmodelled.
+3. **Confirmation gates for consequential actions.** Currently only `git commit`
+   qualifies, which is why this has not hurt. It would matter the moment
+   anything in this stack can send an email or move money.
+4. **`world_knowledge` for billing.** reference documents
+   indexed locally via `local-embed`, so the queries most worth not leaking
+   never reach SearXNG.
+5. **Note llama-server** as the first thing to try if a model does not fit,
+   before assuming the hardware is the limit.
+
+The honest summary as first written: **we built the routing and governance
+layer well, and the isolation layer not at all.** Vitalik built the isolation
+layer and skipped the routing. ADR 0007 closed most of our side of that gap,
+and ADR 0008 extended the governance layer to cover tools as well as models —
+which was a hole neither of us had named.
+# Editors: Zed and aider
+
+Two tools, deliberately. They are good at different halves of the work and both
+address roles rather than model names, so neither needs touching when a model
+changes.
+
+| | aider | Zed |
+|---|---|---|
+| Where | terminal | editor |
+| Unit of work | a diff you approve | inline edits and agent runs |
+| Best for | changes you want to review before they land | exploring, refactoring in place |
+| Agent | n/a — it always shows you the diff | yes, with restrictable tools |
+
+---
+
+## aider
+
+### Fix the inherited config first
+
+`~/.aider.conf.yml` was written before the gateway existed and names models that
+no longer exist. Replace it:
+
+```yaml
+# ~/.aider.conf.yml
+# Roles, not model names. Requires OPENAI_API_BASE + OPENAI_API_KEY, which
+# scripts/aliases.zsh sets.
+model: openai/local-code
+weak-model: openai/local-chat      # commit messages, summaries — cheap and fast
+dark-mode: true
+auto-commits: true
+map-tokens: 4096
+```
+
+`weak-model` matters more than it looks: aider uses it for commit messages and
+summarisation. Pointing it at `local-chat` keeps the 30B free for actual work.
+
+### Architect mode — the best fit for this stack
+
+aider can split planning from editing: one model reasons about the change,
+another applies it. That maps directly onto your roles.
+
+```bash
+aider --architect \
+      --model openai/local-big \
+      --editor-model openai/local-code
+```
+
+`local-big` (`gpt-oss:20b`) reasons, `local-code` (`qwen3-coder:30b`) writes
+the diff. Both private; with `OLLAMA_MAX_LOADED_MODELS=1` the second load
+evicts the first (ADR 0011). Add it as an alias:
+
+```bash
+alias ask-arch='OPENAI_API_BASE="${HEARTH_GATEWAY}/v1" \
+  OPENAI_API_KEY="$(_ai_key private)" \
+  aider --architect --model openai/local-big --editor-model openai/local-code'
+```
+
+### Switching mid-session
+
+```
+/model openai/local-big       swap to the reasoning role
+/model openai/cloud-cheap     reach for cloud (general key only)
+/ask                          question without editing anything
+/architect                    toggle architect mode
+```
+
+`/ask` is worth the habit — it answers without proposing a diff, which keeps you
+deciding what to change.
+
+### Deliberate review
+
+You have `auto-commits: true`, which is convenient and also the setting most
+likely to let a change land without you reading it. For anything touching
+billing code:
+
+```bash
+aider --no-auto-commits
+```
+
+---
+
+## Zed
+
+### Point it at the gateway
+
+Agent Settings, or directly in `settings.json`:
+
+```json
+{
+  "language_models": {
+    "openai_compatible": {
+      "hearth": {
+        "api_url": "http://127.0.0.1:4000/v1",
+        "available_models": [
+          { "name": "local-code", "display_name": "qwen3-coder:30b", "max_tokens": 65536 },
+          { "name": "local-chat", "display_name": "qwen3:8b", "max_tokens": 40960 },
+          { "name": "local-big",  "display_name": "gpt-oss:20b", "max_tokens": 65536 },
+          { "name": "cloud-cheap", "display_name": "gemini-3.5-flash", "max_tokens": 1048576 }
+        ]
+      }
+    }
+  }
+}
+```
+
+On a laptop use the gateway host's LAN address instead of `127.0.0.1`.
+
+Context windows come from each role's `model_info` on the gateway (ADR 0009).
+Prefer `zed-litellm` below over hand-editing numbers; it reads `/model/info`.
+An overstated window fails at request time with a confusing error.
+
+The API key goes in the UI so it lands in the keychain rather than a dotfile.
+Use the `private` key on this machine; `lan` on other machines.
+
+### Let a tool write that block
+
+Zed requires models to be listed by hand, because OpenAI's `/models` endpoint
+returns bare IDs with no context windows. LiteLLM's `/model/info` *does* return
+that metadata, and [`zed-litellm`](https://github.com/joby-brentsmith/zed-litellm)
+queries it and writes correct entries into `settings.json`, backing up first.
+
+Worth re-running after any role change so context windows stay honest.
+Default merge keeps hand-tuned fields like `display_name` (concrete Ollama
+tags in the picker while API `name` stays the role). Avoid `--replace` /
+`-f` unless you intend to wipe those labels.
+
+### On a laptop
+
+Full walkthrough in `docs/LAPTOP.md`. In short — Zed installs normally and edits
+local files; only inference comes from the gateway host. Two changes from the block
+above:
+
+```json
+"api_url": "http://HOST:4000/v1"
+```
+
+and use the **`lan`** key rather than `private`.
+
+`zed-litellm` works from the laptop too — point it at the same LAN address and
+it writes the model list with correct context windows.
+
+**Where the code lives is a separate question.** Zed edits files on the machine
+it runs on, so either:
+
+- clone the repo to the laptop and work normally through git, or
+- use Zed's **SSH remote projects** to open a directory on the gateway host directly —
+  editing happens over SSH, the model call still goes to `:4000`.
+
+The second keeps one copy of the work and pairs well with the gateway host being the
+machine that never sleeps. It also means the laptop needs no toolchain.
+
+If the gateway host is asleep, Zed still opens and edits — you just lose the AI panel
+until it wakes. That degrades more gracefully than aider, which needs the
+gateway to start at all.
+
+### Agent profiles — the reason Zed is here
+
+Zed's agent has **profiles with configurable tool access**. You can define one
+that reads and proposes but cannot apply edits or run commands, and a separate
+one that can.
+
+That is the closest thing shipping today to an assistant that helps without
+taking over, and it is why Zed earns its place over JetBrains here — JetBrains
+only supports chat on local models.
+
+Suggested split:
+
+- **explore** — read files, search, discuss. No edits, no terminal. Use when you
+  are trying to understand something.
+- **build** — full tools. Use when you already know what you want.
+
+The distinction is not about safety. It is about which mode you are in.
+
+---
+
+## Why two tools, and why this matters
+
+The 2026 research on AI-assisted development is not comfortable reading.
+Developers using AI assistance scored **17% lower on comprehension** afterwards,
+with the steepest decline among those who fully delegated (Shen and Tamkin,
+2026). The framing that stuck is **output up, capability down** — and the
+distinction between *atrophy*, losing skills you had, and *foreclosure*, never
+building them. Roughly half of programmer actions in LLM-assisted workflows show
+identifiable cognitive bias, mostly anchoring on whatever the model proposed
+first (Zhou et al., 2026).
+
+Nothing ships to address this. The one paper directly on it —
+[Agents That Teach](https://arxiv.org/html/2607.06101) — is a design proposal,
+not a product. The measurement is years ahead of the tooling.
+
+So the mitigations here are choices, not features:
+
+- **aider shows a diff and waits.** That is friction, and the friction is the
+  point. `/ask` and `--no-auto-commits` add more when you want it.
+- **Zed's explore profile can't edit.** Reading and discussing without the option
+  to apply keeps you deciding.
+- **Local models are weaker, and that is quietly protective.** A model that
+  cannot one-shot the answer keeps you in the loop — the opposite of how model
+  quality is usually discussed.
+- **Architect mode separates deciding from typing**, which keeps the design
+  decision visible instead of buried in a diff.
+
+None of this is about distrusting the output. It is about noticing when you have
+stopped thinking, which by definition is not something you notice.
+
+---
+
+## Other editors
+
+Not recommended here, recorded so the question does not come round again.
+
+| Editor | State |
+|---|---|
+| JetBrains | Native LiteLLM support, free tier, but **chat only** on local models — no agent, no next-edit |
+| VS Code + Continue | Works fully, but an extension rather than built in |
+| Cursor | Not used here — rejects non-HTTPS base URLs; agent mode unreliable with custom endpoints |
+# Laptop setup — aider and Zed
+
+Start to finish for a second machine. macOS and Linux; Windows notes at the end.
+
+Nothing here downloads a model. Inference happens on the gateway host; the laptop
+sends requests to the gateway. **If the gateway host is asleep, none of it works** —
+that is the trade for not putting 37 GB of weights on every device.
+
+---
+
+## 1. Get the key and the shim
+
+On the **gateway host**:
+
+```bash
+cd <hearth-repo>
+scripts/client-setup.sh lan                      # prints instructions + key
+scripts/client-setup.sh lan --install user@laptop   # or does it over ssh
+```
+
+Manually, on the **laptop**:
+
+```bash
+scp USER@HOST:<hearth-repo>/client/hearth-client.sh ~/.hearth-client.sh
+printf '%s' 'sk-...' > ~/.hearth-key && chmod 600 ~/.hearth-key
+
+# ~/.zshrc on macOS, ~/.bashrc on Linux
+echo 'export HEARTH_GATEWAY=http://<LAN-IP>:4000' >> ~/.zshrc
+echo 'source ~/.hearth-client.sh'                       >> ~/.zshrc
+```
+
+Use the **`lan`** key. `private` is for the gateway host; `lan-cloud` only differs once
+a frontier provider is configured.
+
+## 2. Verify before installing anything else
+
+```bash
+ai-ping                  # gateway reachable?
+ai-models                # which roles this key may use
+ai-ask "say hello"       # one-shot, no editor needed
+```
+
+If `ai-ping` fails, stop here — everything below depends on it. Check the gateway host
+is awake and you are on the same network.
+
+---
+
+## 3. aider
+
+```bash
+pipx install aider-chat          # or: pip install --user aider-chat
+```
+
+Create `~/.aider.conf.yml` on the laptop:
+
+```yaml
+model: openai/local-code
+weak-model: openai/local-chat
+dark-mode: true
+auto-commits: true
+map-tokens: 4096
+```
+
+Roles, not model names — so this file never needs editing when a model changes
+on the gateway host.
+
+The shim gives you:
+
+```bash
+ask "explain this repo"     # local-code
+ask-chat "..."              # local-chat, general questions
+ask-big "..."               # local-big, reasoning
+ask-cloud "..."             # cloud-cheap, leaves the machine
+```
+
+### Architect mode
+
+Worth setting up on the laptop too — `local-big` reasons about the change,
+`local-code` writes the diff:
+
+```bash
+alias ask-arch='OPENAI_API_BASE="${HEARTH_GATEWAY}/v1" \
+  OPENAI_API_KEY="$(cat ~/.hearth-key)" \
+  aider --architect --model openai/local-big --editor-model openai/local-code'
+```
+
+See `docs/IDES.md` for why this is the mode to reach for.
+
+---
+
+## 4. Zed
+
+Install Zed normally — it edits local files and only calls the gateway host for
+inference.
+
+`settings.json`:
+
+```json
+{
+  "language_models": {
+    "openai_compatible": {
+      "hearth": {
+        "api_url": "http://<LAN-IP>:4000/v1",
+        "available_models": [
+          { "name": "local-code", "max_tokens": 262144 },
+          { "name": "local-chat", "max_tokens": 40960 },
+          { "name": "local-big",  "max_tokens": 131072 },
+          { "name": "cloud-cheap", "max_tokens": 1048576 }
+        ]
+      }
+    }
+  }
+}
+```
+
+Enter the **`lan`** key through the UI so it lands in the keychain rather than a
+dotfile.
+
+Better: let [`zed-litellm`](https://github.com/joby-brentsmith/zed-litellm) write
+that block. It reads real context windows from the gateway's `/model/info`,
+which avoids hand-maintaining numbers that will drift.
+
+### Where does the code live?
+
+Zed edits files on the machine it runs on, so pick one:
+
+| | Clone to the laptop | Zed SSH remote projects |
+|---|---|---|
+| Copies of the work | two, synced by git | one, on the gateway host |
+| Toolchain needed on laptop | yes | no |
+| Works with Studio asleep | yes (minus AI) | no |
+
+SSH remote suits this setup — the gateway host is the machine that's always on — but
+cloning is more resilient when you're out.
+
+### Agent profiles
+
+Set up two, per `docs/IDES.md`:
+
+- **explore** — read, search, discuss. No edits, no terminal.
+- **build** — full tools.
+
+Not a safety measure. A way of being explicit about which mode you're in.
+
+---
+
+## 5. Optional — your own chat UI
+
+Only if you want a browser chat surface with history **local to this laptop**.
+Needs podman or docker.
+
+```bash
+scp USER@HOST:<hearth-repo>/client/hearth-webui.sh ~/hearth-webui.sh
+chmod +x ~/hearth-webui.sh && ~/hearth-webui.sh up      # http://127.0.0.1:3000
+```
+
+Alternative: browse the gateway host's instance and share history across machines.
+`scripts/webui.sh up --lan` on the gateway host, or tunnel port 3000.
+
+### Web search
+
+SearXNG is bound to the gateway host's localhost, so it needs forwarding:
+
+```bash
+~/hearth-webui.sh tunnel                              # prints the ssh line
+ssh -N -L 8888:127.0.0.1:8888 USER@HOST    # leave running
+~/hearth-webui.sh up                                  # detects it, wires search
+```
+
+Then enable it in Admin Panel → Settings → Web Search — Open WebUI's database
+overrides the env vars.
+
+Remember the search **query** leaves the network even though the conversation
+does not. Never on a chat involving client data. See `docs/ROUTING.md`.
+
+---
+
+## 6. Off your own network
+
+LAN traffic is plain HTTP. Fine at home, wrong on cafe or hotel wifi. Tunnel:
+
+```bash
+ssh -N -L 4000:127.0.0.1:4000 USER@HOST
+export HEARTH_GATEWAY=http://127.0.0.1:4000
+```
+
+**Never port-forward `:4000` to the internet.** Key auth is not hardening, and a
+public LiteLLM holding your provider keys becomes somebody else's budget.
+
+---
+
+## 7. Windows
+
+The `.sh` shim is POSIX shell. Three routes, easiest first:
+
+```bash
+scripts/client-setup.sh lan --windows    # prints all three, on the gateway host
+```
+
+- **WSL or Git Bash** — the `.sh` works unchanged.
+- **Native PowerShell** — `client/hearth-client.ps1` gives the same commands on
+  5.1 or 7+. Two gotchas: no `chmod`, so lock the key with `icacls`; and the
+  execution policy blocks `$PROFILE` until you set `RemoteSigned`.
+- **Nothing installed** — point any OpenAI-compatible tool at
+  `http://<LAN-IP>:4000/v1` with the key and a role as the model.
+
+Zed and aider both work on Windows independently of which route you pick.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| `ai-ping` says UNREACHABLE | Studio asleep, or different network |
+| `ai-models` lists nothing | Wrong key, or key not in `~/.hearth-key` |
+| A role 400s | It may not exist for this key — `ai-models` shows what does |
+| Zed sees no models | `api_url` missing `/v1`, or key entered in the wrong field |
+| Zed errors on long files | Context window in `settings.json` overstates the model |
+| Web search does nothing | Tunnel dropped, or not enabled in Admin Panel |
+| First request very slow | Cold model load on the gateway host; later ones are fast |
+
+Rotate a lost laptop's key on the gateway host with `scripts/create-keys.sh --force`,
+then re-run `client-setup.sh` for the machines you keep.
+# MCP registry
+
+Server → tools → who may reach them. This file and `litellm/config.yaml` are
+the only places a concrete MCP server may be named. Update both together, plus
+an ADR — see `docs/decisions/0008`.
+
+MCP tools are a **second egress path**. `scripts/healthcheck.sh` proves a
+prompt cannot reach a cloud *model*; it says nothing about a tool that calls
+the internet on its own account, and nothing about tool output re-entering the
+prompt on a cloud role. That is why every server below declares where it goes.
+
+## Registered
+
+| Server | Transport | Egress | Tools | Keys |
+|---|---|---|---|---|
+| `auslaw` | stdio | `austlii.edu.au` | 7 of 10 | `research` only |
+
+## auslaw
+
+Australian and NZ case law and legislation. Source: `~/dev/auslaw-mcp`.
+
+**stdio, not HTTP.** Its HTTP mode calls `listen(port)` with no host, so it
+binds every interface with no authentication, and defaults to `:3000` — which
+is Open WebUI. stdio spawns a child process with no listener at all.
+
+### Tools, by where they go
+
+| Tool | Reaches | Exposed |
+|---|---|---|
+| `format_citation` | nothing — pure AGLC4 string formatting | yes |
+| `search_legislation` | AustLII | yes |
+| `search_by_citation` | AustLII | yes |
+| `fetch_document_text` | AustLII | yes |
+| `generate_pinpoint` | AustLII | yes |
+| `validate_citation` | AustLII | yes |
+| `search_cases` | AustLII (+ jade.io, disabled) | yes |
+| `resolve_jade_article` | jade.io | **no** |
+| `jade_citation_lookup` | jade.io | **no** |
+| `search_citing_cases` | jade.io | **no** |
+
+The jade.io tools are excluded at the **server** level via `allowed_tools`, so
+they are not exposed to any key regardless of its grant, and
+`JADE_SESSION_COOKIE` is deliberately absent from the server's environment.
+Permission says no, and the credential to do it anyway is not present.
+
+Why exclude them: jade.io access is a reverse-engineered GWT-RPC endpoint
+driven by a session cookie lifted from a browser. That is a credential in a
+config file and a fragile contract with a commercial provider. AustLII is free,
+public, and has neither problem. `search_cases` stays because its jade half
+returns an empty array without the cookie while its AustLII half still works.
+
+### Who may reach it
+
+`research` only — local models plus these tools, and no cloud role.
+
+`private` deliberately gets nothing. Its promise is that nothing leaves this
+machine, and every useful auslaw tool sends a query to AustLII. Switching to
+`research` is the act of saying "this query is going to AustLII" rather than
+that being an ambient property of the everyday key.
+
+## Rules these enforce
+
+**Deny by default.** `require_key_mcp_access_defined: true` in
+`general_settings`. Without it, a key with an empty list inherits its team's,
+and a team with an empty list means "no restriction" — so registering one
+server would grant it to every key including `private`.
+
+**No key holds both a cloud role and a network-reaching tool.** Tool output
+re-enters the prompt; on a cloud role it goes to the provider. Enforced by
+`scripts/audit-mcp-scope.sh`, which reads the `x-hearth-egress` marker on each
+server. **A server with no marker fails the audit** — an unread server is
+exactly the one most likely to phone home.
+
+## Checks
+
+| Command | Proves |
+|---|---|
+| `scripts/audit-mcp-scope.sh` | no key holds a cloud role and a networked tool |
+| `scripts/healthcheck.sh` | private sees zero tools, against a master-key control |
+| `scripts/preflight.sh` | deny-by-default is on, stdio entry paths exist |
+
+## Adding a server
+
+1. Read its source and establish what it talks to. That is the whole job; the
+   rest is typing.
+2. Add it to `mcp_servers` in `config.yaml` with `x-hearth-egress` and an
+   `allowed_tools` list. Name it to comply with SEP-986 — since v1.80.18
+   LiteLLM namespaces tools by server name and rejects non-compliant new names.
+3. Add a `MCP_*` variable and grant it in `scripts/create-keys.sh`. A grant
+   needs a **team**: a key outside one may only be assigned servers flagged
+   `allow_all_keys`, and that flag unions the server into *every* key.
+4. Add a row to this file, and an ADR.
+5. Verify with the three checks above.
+
+### Traps
+
+**stdio entry paths cannot be templated.** LiteLLM's `os.environ/` resolver
+recurses into dicts but leaves plain strings inside a list alone, and `args` is
+`List[str]`. An `os.environ/` entry there is passed to the interpreter
+verbatim.
+
+**A wrong path is silent.** The process exits immediately, the log says
+`Connection closed`, and the tool list is empty — identical from the API to
+correct scoping. Preflight checks the paths for this reason.
+
+**stdio commands are allowlisted by basename:** `npx`, `uvx`, `python`,
+`python3`, `node`, `docker`, `deno`. An absolute path works because LiteLLM
+takes the basename; a shell script does not.
+
+**Tools depend on Postgres.** MCP auth reads the same database as virtual keys.
+A database outage takes tools down the same way it takes keys down.
+# Model registry
+
+Role → model. This file and `litellm/config.yaml` are the only places a concrete
+model name may appear. Update both together, plus an ADR.
+
+**Hardware envelope:** 64 GB unified. macOS caps GPU-accessible memory at ~75% above 36 GB,
+so the real ceiling is **~48 GB**, not the full 64. The resident set matters more than any single
+model's size — see the measurement below.
+
+## Live
+
+| Role | Model | Size | Set | Digest | Why |
+|---|---|---|---|---|---|
+| `local-chat` | `qwen3:8b` | 5.2 GB | 2026-08-02 | `500a1f067a9f` | General knowledge, **40K** ctx (native). **thinking off** — ADR 0006 |
+| `local-code` | `qwen3-coder:30b` | 18 GB | 2026-08-02 | `06c1097efce0` | 30B MoE, ~3B active. Native 256K; **runtime 64K** — ADR 0010 |
+| `local-big` | `gpt-oss:20b` | 13 GB | 2026-08-02 | `17052f91a42e` | Reasoning. Native 128K; **runtime 64K** — ADR 0010 |
+| `local-embed` | `nomic-embed-text` | 0.3 GB | 2026-08-01 | `0a109f422b47` | Local RAG |
+| `cloud-cheap` | `gemini-3.5-flash` | — | 2026-08-01 | n/a | 1M ctx, cheap. Bulk non-sensitive work |
+
+**Disk footprint: ~36.5 GB** across the four local weights (`ollama list`).
+Only **one** model stays GPU-resident (`OLLAMA_MAX_LOADED_MODELS=1`,
+ADR 0011) — switching roles evicts. KV cache uses `q8_0` when flash
+attention is active.
+
+Context windows and capability flags also live in each role's `model_info`
+block in `litellm/config.yaml`, so `/model/info` (and tools like
+`zed-litellm`) stay honest — ADR 0009. **Runtime `num_ctx` is capped at 64K
+for `local-code` / `local-big`** so Ollama does not allocate a 256K KV cache
+(~45 GB) on this machine — ADR 0010.
+
+**Bench candidate (not a role yet):** `qwen3.6:27b-coding-mtp-q4_K_M` (~18 GB)
+vs incumbent `qwen3-coder:30b`. Run `scripts/bench.sh` before any swap.
+
+Digests are **recorded and drift-checked** in `pins/digests.tsv`, not enforced —
+see below. Re-record with `scripts/pin-digests.sh` after any role change you trust.
+
+## Dormant
+
+Commented out in `config.yaml`. A model whose `os.environ/` key is missing fails
+the **entire** config load, not just that entry, so these stay off until their
+key exists.
+
+| Role | Model | Blocked on |
+|---|---|---|
+| `cloud-code` | `claude-sonnet-5` | Anthropic API key — **deliberately unset**. A Console key bills separately from any Claude subscription. Only worth opening if aider, Zed or a laptop should reach Claude through the gateway |
+| `cloud-frontier` | `kimi-k3` via OpenRouter | OpenRouter key. Primary frontier route |
+| `cloud-frontier-direct` | `kimi-k3` via Moonshot | Moonshot key. Same price, best K3 caching |
+| `cloud-frontier-fast` | `kimi-k3` via Fireworks | Fireworks key. Dearest; throughput or LoRA only |
+
+To enable one: uncomment its block in `config.yaml`, add the key to
+`~/.config/litellm/env`, add the role to `CLOUD_ALL` in `scripts/create-keys.sh`,
+re-run that script, then `audit-fallbacks.sh` and `healthcheck.sh`.
+
+There is **no local Kimi K3**. The smallest community quant is ~540 GB at 1.56
+bits, and Ollama cannot load it — support is an open llama.cpp pull request.
+Frontier is cloud-only by necessity, which is what these roles are for.
+
+## Retired
+
+| Model | Was | Removed | Why |
+|---|---|---|---|
+| `llama3.3:70b` | `local-big` | 2026-08-02 | 42 GB, could not stay resident. 440 s to first reply. ADR 0004 |
+| `qwen2.5-coder:32b` | `local-code` | 2026-08-02 | Superseded by the 30B MoE at the same size |
+| `qwen2.5-coder:7b` | `local-fast` | 2026-08-02 | Role retired — the MoE made a separate fast coder redundant. ADR 0005 |
+
+Note on the last one: Qwen3-Coder has **no variant below 30B**, so
+`qwen2.5-coder:7b` remained the best sub-10 GB coding model available. It went
+because the role became unnecessary, not because it was outdated. If a small
+dense coder appears, the role can return.
+
+## Verbosity, not speed
+
+Second measurement, from the first real bench run:
+
+| Model | tokens over 4 tasks | wall clock | avg tok/s |
+|---|---|---|---|
+| `qwen3-coder:30b` | 1,218 | 11.2 s | 108.8 |
+| `gpt-oss:20b` | 4,466 (3.7x) | 47.6 s | 93.8 |
+| `qwen3:8b` (thinking on) | 13,840 (11.4x) | 181.4 s | 76.3 |
+
+Throughput barely moves — 65–120 tok/s across everything, because the machine
+is memory-bandwidth bound. **Wall clock is set by how many tokens a model emits,
+not how fast.** A hybrid reasoning model can be the slowest role while being the
+smallest.
+
+Disabling thinking on `local-chat` took it from 2,370 tokens / 29.7 s to
+**386 tokens / 5.1 s** through the gateway. See ADR 0006.
+
+## The measurement that drove all of this
+
+Through the gateway, one short prompt each, from cold:
+
+| Role | Before | Time | After | Time |
+|---|---|---|---|---|
+| `local-code` | qwen2.5-coder:32b | 29 s | qwen3-coder:30b | **6 s** |
+| `local-big` | llama3.3:70b | **440 s** | gpt-oss:20b | **5 s** |
+| `cloud-cheap` | gemini-3.5-flash | 2 s | gemini-3.5-flash | 1 s |
+
+**440 s to 5 s — not a faster model, a resident one.**
+
+The old set needed 65.7 GB against a ~48 GB GPU ceiling, so something was always
+evicted and reaching for `local-big` meant reloading 42 GB from disk. The current
+set totals 37.5 GB and stays put.
+
+The lesson worth keeping: on a fixed-memory machine the **resident set** matters
+more than any individual model's quality. A 70B that evicts your coding model is
+slower in practice than a 20B that never leaves RAM, whatever the benchmarks say.
+MoE architectures are what make the newer set fit — ~3B active parameters gives
+near-30B reasoning at 7B speed.
+
+Disk: 63 GB before, ~37 GB after.
+
+## Cost reference
+
+Verified 2026-08-01. LiteLLM auto-syncs its own cost map; this table is for human
+decisions and does **not** update itself. Re-check before relying on it.
+
+| Kimi K3 via | $/M in | $/M out | Note |
+|---|---|---|---|
+| Moonshot (direct) | 3.00 | 15.00 | source of truth |
+| OpenRouter | 3.00 | 15.00 | ~92% cache hit reported → effective input ≈ 0.52 |
+| Fireworks serverless | 3.30 | 16.50 | 10% dearer; buys throughput and LoRA |
+
+- **Fireworks is the dearest of the three.** This stack originally defaulted to it
+  because it was the provider that came to mind first, not because it won on
+  price. That is exactly the failure mode this registry exists to catch.
+- **Output price is the one that bites** — it compounds through agentic loops.
+
+## Digest pinning
+
+Ollama tags are mutable pointers, not versions. `ollama pull qwen3-coder:30b`
+fetches whatever that tag points at today, which may be a different quantisation
+than the one you benched, and nothing warns you.
+
+Ollama offers **no way to bind a tag to a digest in the model name**, so pinning
+here is record-and-detect rather than enforce:
+
+```bash
+scripts/pin-digests.sh           # record, after a bench you trust
+scripts/pin-digests.sh --check   # compare live against recorded
+```
+
+`pins/digests.tsv` is git-tracked, so drift shows up in a diff.
+`scripts/preflight.sh` runs the check and fails on a mismatch. That is weaker
+than true pinning; the honest framing is that you will be told, not stopped.
+
+## Changing a role
+
+`scripts/swap-role.sh <role> <model>` does steps 1–5 and reverts on failure.
+
+1. Pull the candidate
+2. `scripts/bench.sh` against the incumbent
+3. Confirm it fits alongside whatever must stay resident
+4. Update this table and `litellm/config.yaml` together
+5. Deploy, then `audit-fallbacks.sh` and `healthcheck.sh`
+6. Write an ADR in `docs/decisions/`
+7. Delete the old weights only once the replacement has proven itself
+# Build status
+
+Last updated: 2026-08-02
+
+**Not the source of truth.** For current reality read, in this order:
+`litellm/config.yaml` → `docs/MODELS.md` → `docs/ARCHITECTURE.md` → `docs/RUNBOOK.md`.
+This file tracks progress only. The original plan is preserved in
+`docs/decisions/0001-inherited-state.md`.
+
+## Where things stand
+
+| Phase | State |
+|---|---|
+| 0 — capture inherited state | done — ADR 0001 |
+| 1 — repo scaffold | done |
+| 2 — role-based gateway config | **deployed and serving** |
+| Postgres via Podman on :5433 | done, running |
+| Virtual keys | done — four created, scoped |
+| Leak test | **passing** — boundary enforced, not just documented |
+| Aliases switched to roles | done |
+| 3 — lock Ollama to localhost | **done** — LAN unreachable, verified |
+| llama3.3:70b retired | done — ADR 0004. 440 s to 5 s |
+| 4 — bench harness | done and run — found the local-chat verbosity problem |
+| local-chat thinking disabled | done — ADR 0006. 29.7 s to 5.1 s |
+| digest pinning | recorded + drift-checked (not enforceable in Ollama) |
+| 5 — auto-update pipeline | deferred |
+| 6 — Open WebUI | **done** — chat UI on :3000, private-scoped, local-chat default |
+| Web search via SearXNG | **done** — opt-in per message, :8888, verified end to end |
+| `usage.sh` visibility | done — role, tier, model, tokens, LOCAL/CLOUD split |
+| 7 — verification tooling | done — preflight, deploy, healthcheck, audit |
+
+## What changed from the original plan
+
+- **Frontier providers: three, not one.** Fireworks was the original default purely
+  because it was the provider first mentioned. Verified 2026-08-01, it is the
+  dearest: $3.30/$16.50 versus $3.00/$15.00 from both OpenRouter and Moonshot
+  direct. OpenRouter is now primary — one key, day-zero access to new models.
+- **`cloud-code` is dormant by choice.** No Anthropic API key. A Console key bills
+  separately from a Claude subscription, so the gateway route only earns its
+  place if aider, Zed or a laptop should reach Claude through the gateway.
+- **Four keys, not three.** Added `lan-cloud` so the laptop can reach cloud models
+  without widening the everyday `lan` key.
+- **Postgres in Podman, not Docker Desktop.**
+- **`ask` now defaults to local.** The old `ask` pointed at Anthropic with no key
+  set, so it was broken. The safe default on a privacy-first stack should be the
+  private one; cloud is now the explicit reach (`ask-cloud`).
+- **Deployment does not touch launchd.** `run-litellm.sh` already loads
+  `~/.config/litellm/config.yaml`, so that path becomes a symlink into the repo.
+  Rollback is one `mv`.
+
+## Bugs the harness caught before deploy
+
+Kept as a record of why the tooling exists.
+
+1. **Fallback leak** in the inherited config — `local-ollama → gemini` meant any
+   Ollama timeout silently sent the prompt to Google.
+2. **`ollama/` vs `ollama_chat/`** — the completion-API prefix causes tool-call
+   loops and dropped context.
+3. **Preflight reported a fake leak** when PyYAML was missing. A check that cannot
+   run must never look like a finding; ERROR and FAIL are now distinct exit codes.
+4. **Env check read the wrong environment** — it consulted the interactive shell,
+   but launchd only sources `~/.config/litellm/env`. A false green.
+5. **Model presence check was tag-naive** — `nomic-embed-text` did not match
+   `nomic-embed-text:latest`.
+6. **launchd detection** used `launchctl list | grep`, which misses gui-domain
+   agents; it reported "not loaded" while the gateway was serving traffic.
+7. **`db.sh` went missing** from disk and nothing noticed. Preflight now verifies
+   every referenced script exists.
+8. **Leak test could false-pass** — it probed a dormant role, where "model not
+   found" also returns 4xx. Now probes a live cloud role and adds a positive
+   control, since a merely broken key also refuses everything.
+9. **`model_info: tier: local`** — `tier` is a real LiteLLM field accepting only
+   `free` or `paid`. Pydantic rejected it and LiteLLM logged "ignoring and
+   continuing with other deployments", silently dropping EVERY model. The
+   gateway started clean, passed readiness, and served nothing.
+10. **bash 4 syntax on bash 3.2** — `declare -A` and unguarded `"${arr[@]}"`
+    pass everywhere except macOS, which is the only place it runs.
+11. **`curl | python - args <<'PY'`** — the heredoc and the pipe both claim
+    stdin, so `json.load(sys.stdin)` reads nothing. Symptom is a bogus
+    "response was not JSON".
+12. **`/key/delete` accepted a token hash and did nothing** — it wants
+    `key_aliases`. A silent no-op that looks like success.
+13. **Open WebUI env vars were overridden by its database.** Env only seeds a
+    fresh DB; the persisted volume kept the first run's settings. `podman exec
+    ... env` showed the feature enabled while the UI had it off.
+
+## Next
+
+1. **Re-run `bench.sh`** now that thinking is off, so the recorded numbers
+   match reality, then **read the task 03 output.** `gpt-oss:20b` earned `local-big` on
+   capacity, not quality — nothing has yet confirmed it reasons well. Task 03
+   hides a float-for-currency bug in invoice arithmetic; a model that fixes
+   the obvious `range(len())` and misses that is the wrong tool for billing
+   work. Syntax checks cannot answer this. It needs a human read.
+2. **Record digests after that read**, with `scripts/pin-digests.sh`, so drift
+   is detectable from a known-good state rather than an arbitrary one.
+3. **Live with it for a week** before building the auto-updater. It is the
+   piece most likely to be overbuilt for a problem that turns out to be small.
+
+**Gaps identified 2026-08-02** by comparing against other setups
+(`docs/COMPARISON.md`):
+
+- ~~**No sandboxing.**~~ **Closed 2026-08-02** — `scripts/sandboxed.sh` denies
+  egress to everything but the gateway and confines writes to the working
+  directory. Verified on macOS 26.4, 10/10 checks. ADR 0007.
+- ~~**No prompt-injection threat model.**~~ **Written** — `docs/THREAT-MODEL.md`.
+  Conclusion: detection does not work, so the model exists to say which
+  capabilities to cut rather than what to filter.
+- **Untrusted MCP servers are unaudited.** Any MCP that fetches from the open
+  web and sits next to real client data needs a tool-surface audit before an
+  agent is allowed to call it. Highest value per effort of anything left.
+- **No confirmation gates** on consequential actions beyond git commits. Costs
+  nothing today because nothing in the stack can send mail or move money.
+- **`local-embed` indexes nothing** — a local reference corpus would keep
+  the most sensitive queries off SearXNG entirely.
+
+Optional, when the need arises:
+
+- Enable `cloud-code` if aider, Zed or a laptop should reach Claude — needs a
+  Console API key, which bills separately from any subscription.
+- Enable `cloud-frontier` (OpenRouter) for Kimi K3 and day-zero access to new
+  models. There is no local K3 at any quantisation.
+- A second Open WebUI without search configured, if you want "no web search on
+  client work" to be structural rather than remembered.
+# Routing rules
+
+The decision table. When in doubt, local.
+
+## What must stay local
+
+Route to `local-*` roles, always:
+
+- Any repo or path you have flagged as holding real client / matter data
+- Client names, addresses, contact details, invoice figures, ID documents
+- Anything covered by privacy-law obligations (e.g. Australian Privacy Principles)
+- Credentials, keys, `.env` contents, database dumps
+- Anything you would not paste into a public forum
+
+This is enforced by key scope, not by discipline — see below.
+
+## What can go to cloud
+
+- Open-source repos and public code
+- Synthetic or anonymised examples
+- Language, framework, and API questions with no data attached
+- Architecture and design discussion in the abstract
+- This repo itself
+
+## Roles
+
+| Role | Use for | State |
+|---|---|---|
+| `local-code` | default for code. Real work, still private | live |
+| `local-big` | long context, reasoning-heavy, still private | live |
+| `local-chat` | **general questions**, not code. Open WebUI default | live |
+| `local-embed` | embeddings for local RAG | live |
+| `cloud-cheap` | bulk non-sensitive work, big context | live |
+| `cloud-code` | hard coding and agentic work | dormant — no Anthropic key by choice |
+| `cloud-frontier` | very large open models via OpenRouter | dormant |
+| `cloud-frontier-direct` | same, via Moonshot. Best K3 caching | dormant |
+| `cloud-frontier-fast` | same, via Fireworks. Dearest | dormant |
+
+## Enforcement
+
+Privacy is structural. Four virtual keys:
+
+| Key | Reaches | Used by |
+|---|---|---|
+| `private` | `local-*` only | sensitive work, Open WebUI default |
+| `general` | everything live | this machine — aider, Zed, scripts |
+| `lan` | `local-*` + `cloud-cheap` | other machines, everyday |
+| `lan-cloud` | everything live | laptop, when it needs real cloud models |
+
+A request for a cloud role with the `private` key is rejected by the gateway.
+There is no prompt you can write that gets around it. That is the point.
+
+The dollar caps on these keys are fuses, not billing — you are the only user.
+They stop a leaked key or a runaway overnight agent loop from running up your
+provider account.
+
+## Web search punctures the boundary
+
+Open WebUI can give local models web search via self-hosted SearXNG
+(`scripts/searxng.sh`). The model, the conversation and your documents all stay
+on this machine. **The search query does not.**
+
+SearXNG stops Google, Bing and DuckDuckGo seeing your IP or building a profile —
+it queries them on your behalf. That is a genuine improvement over searching
+directly. It is not privacy. The search terms still leave.
+
+So the same local/cloud line applies to search, one level down:
+
+| Safe with web search on | Never with web search on |
+|---|---|
+| "How does the records system handle X?" | "Search for <client name> <address>" |
+| "What changed in the 2026 billing regulations?" | Anything quoting a private name, party, or figure |
+| Framework and API questions | Anything you would not type into Google |
+
+Web search is opt-in per conversation, not a global setting. Leave it off by
+default and turn it on for the specific question. A conversation that started
+with a client document should never have it enabled — earlier context can be
+pulled into a generated search query.
+
+If you want the guarantee to be structural rather than remembered, run a second
+Open WebUI without search configured and use that for client work.
+
+## The fallback rule
+
+**Local roles never fall back to cloud roles.**
+
+The inherited config had `local-ollama -> cloud-fallback (gemini)`, so any Ollama
+timeout, cold load, or restart silently routed the prompt to Google. A fallback is
+an invisible route change; on a privacy boundary that is a leak, not resilience.
+
+Local roles fall back to *other local roles*, never to cloud. Currently
+`local-code` and `local-chat` both fall back to `local-big`, and `local-big` has
+no fallback at all — if it is down, fail loudly rather than quietly answer with
+a weaker model. `scripts/audit-fallbacks.sh` enforces the local-only rule.
+
+## Break-glass
+
+If the gateway is down and you need local inference now, Ollama is reachable at
+`127.0.0.1:11434` from this machine. That path has no logging, no spend tracking,
+and no key scoping — use it to unblock yourself, then fix the gateway.
+# Runbook
+
+## Layout of the running system
+
+| Piece | Where | Managed by |
+|---|---|---|
+| Ollama | `127.0.0.1:11434` — localhost only since ADR 0003 | Ollama.app |
+| LiteLLM gateway | `:4000` | launchd (`com.hearth.litellm` by default) |
+| Postgres | `127.0.0.1:5433` | Podman, `hearth-postgres` |
+| Open WebUI | `127.0.0.1:3000` | Podman, `hearth-webui` |
+
+Config: `<repo>/litellm/config.yaml` (symlinked from `~/.config/litellm/config.yaml`)
+Launch wrapper: `~/.config/litellm/run-litellm.sh`
+Logs: `~/Library/Logs/litellm.log`, `litellm.error.log`
+
+Launchd label overrides (optional): `HEARTH_LITELLM_LABEL`, `HEARTH_OLLAMA_LABEL`,
+`HEARTH_BOOT_LABEL`. Scripts auto-discover an already-installed agent.
+
+### Two env files — know which is which
+
+**`~/.config/litellm/env`** is the only one launchd reads. Provider keys,
+`LITELLM_MASTER_KEY`, `DATABASE_URL` go here.
+
+**`<repo>/litellm/.env`** is read by `scripts/*.sh` only —
+`POSTGRES_PASSWORD`, the virtual keys, and a copy of `DATABASE_URL` for `db.sh`.
+
+launchd reads neither the repo `.env` nor `~/.zshrc`. A var exported in your shell
+will pass a careless check and then fail at runtime; `preflight.sh` deliberately
+checks the service environment and flags "set in your shell but NOT in
+~/.config/litellm/env" as a failure.
+
+## First-time setup
+
+```bash
+# Podman, once ever
+brew install podman
+podman machine init --cpus 2 --memory 2048 --disk-size 20
+podman machine start
+
+cd /path/to/hearth
+cp litellm/.env.example litellm/.env    # fill in keys + a real POSTGRES_PASSWORD
+scripts/db.sh up
+
+set -a; source litellm/.env; set +a
+scripts/create-keys.sh                  # paste the four keys back into .env
+scripts/deploy.sh                       # symlink + restart + verify
+scripts/healthcheck.sh
+```
+
+Or point the running gateway at this repo by hand — `run-litellm.sh` already
+loads `~/.config/litellm/config.yaml`, so replace that file with a symlink:
+
+```bash
+REPO=/path/to/hearth
+mv ~/.config/litellm/config.yaml ~/.config/litellm/config.yaml.pre-hearth
+ln -s "$REPO/litellm/config.yaml" ~/.config/litellm/config.yaml
+# restart: scripts/aliases.zsh defines ai-restart, or:
+launchctl kickstart -k "gui/$(id -u)/com.hearth.litellm"
+```
+
+Provider keys go in `~/.config/litellm/env`, which `run-litellm.sh` sources.
+Rollback is `mv` the `.pre-hearth` file back and kickstart.
+
+## Surviving a reboot
+
+```bash
+scripts/install-autostart.sh --check    # what does and does not come back
+scripts/install-autostart.sh --apply    # install the boot agent
+scripts/status.sh                       # is everything up right now
+```
+
+What already survives, and what does not:
+
+| Piece | After a reboot |
+|---|---|
+| LiteLLM | comes back — launchd `KeepAlive` |
+| `OLLAMA_HOST` | set at login by `com.user.setollamahost.plist` (also in serve plist) |
+| Ollama memory | `FLASH_ATTENTION=1`, `KV_CACHE_TYPE=q8_0`, `MAX_LOADED_MODELS=1`, `KEEP_ALIVE=-1` via serve plist — ADR 0011 |
+| Ollama itself | **only if "Open at Login" is ticked in its Settings** |
+| Podman VM | **does not start itself** — this is the real gap |
+| Containers | restart policies only apply once the VM is up |
+
+`scripts/boot.sh` closes the gap: starts the Podman VM, starts the containers,
+waits for Postgres, then kicks the gateway if it has not settled.
+
+LiteLLM would eventually recover on its own — it crash-loops against a missing
+database and launchd restarts it every 10 s — but a clean start beats a minute
+of restart noise in the log.
+
+### Sleep
+
+A sleeping Studio means every laptop loses the gateway. `install-autostart.sh`
+**prints** these rather than running them, because silently changing when your
+machine sleeps is not something a script should do:
+
+```bash
+sudo pmset -c sleep 0        # never sleep on AC
+sudo pmset -c disksleep 0
+sudo pmset -a womp 1         # wake on network access
+sudo pmset -c displaysleep 10   # displays can still sleep, that is free
+```
+
+`womp` is the interesting one — with it a laptop reaching the host can wake
+it. Without it, asleep means unavailable.
+
+## Everyday
+
+```bash
+# restart the gateway (or: source scripts/aliases.zsh && ai-restart)
+launchctl kickstart -k "gui/$(id -u)/com.hearth.litellm"
+
+# is it up
+curl -s localhost:4000/health/readiness | python3 -m json.tool
+
+# health of every role + the leak test
+scripts/healthcheck.sh
+
+# tail errors
+tail -f ~/Library/Logs/litellm.error.log
+
+# what's loaded in memory right now
+ollama ps
+
+# spend
+curl -s -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+  localhost:4000/spend/logs | python3 -m json.tool | head -50
+```
+
+## Chat UI and visibility
+
+```bash
+scripts/webui.sh up            # private scope — local roles only
+scripts/webui.sh up --general  # cloud reachable, deliberate
+scripts/webui.sh up --lan      # reachable from other machines (see below)
+scripts/webui.sh down
+```
+
+### Using the chat UI from a laptop
+
+Open WebUI is a **web app** — nothing to install on the laptop, and you get the
+same chat history rather than a second disconnected copy. It only needs to be
+reachable.
+
+**Preferred: SSH tunnel.** Keeps the UI localhost-only, works from anywhere you
+can ssh, and encrypts the traffic:
+
+```bash
+# on the laptop — USER@HOST is the gateway machine
+ssh -N -L 3000:127.0.0.1:3000 USER@HOST
+# then browse to http://127.0.0.1:3000
+```
+
+**Alternative: bind to the LAN.**
+
+```bash
+scripts/webui.sh up --lan     # then http://<LAN-IP>:3000
+```
+
+Open WebUI has its own login, so this is not wide open. But it is another
+authenticated surface on a machine whose other services — Ollama, Postgres — are
+deliberately localhost-only, and the traffic is plain HTTP. Fine on a trusted
+home network; the tunnel is better if you can be bothered.
+
+Either way, **do not port-forward :3000 to the internet.**
+
+Then `http://127.0.0.1:3000`. First visit creates a local account; signup is
+disabled afterwards. In Settings → Interface, enable **Display "Response Info"**
+to see the model and token count under each reply.
+
+`ENABLE_OLLAMA_API=False` is set deliberately. Left on, Open WebUI would talk to
+Ollama directly and bypass the gateway — reopening the hole Phase 3 closed.
+Title and tag generation is pinned to `local-chat` so background housekeeping
+cannot quietly become cloud spend.
+
+### Do not enable tools in Open WebUI without thinking
+
+Web search feeds arbitrary attacker-controlled page text straight into the
+model's context. That is tolerable **only** because the chat model has no tools:
+it can mislead you convincingly — which matters for research — but it
+cannot act.
+
+Enabling tools, functions, or code execution turns this into the highest-risk
+surface in the stack: untrusted web content plus the ability to do something
+with it. Open WebUI also stores these settings in its database, where they
+override the environment and survive container recreation, so a toggle flipped
+once stays flipped invisibly.
+
+Treat enabling them as an ADR-worthy decision, not a settings change. See
+`docs/THREAT-MODEL.md` §3, surface 5.
+
+### Web search: the env vars are not enough
+
+Open WebUI treats these as config values stored in its **database**, and the
+database value **takes precedence over the environment**. Environment variables
+only seed a *fresh* database. Because `webui.sh up` recreates the container but
+keeps the `hearth-webui-data` volume, whatever was written on first run wins —
+so the toggle can be absent even though `podman exec hearth-webui env` clearly
+shows `ENABLE_WEB_SEARCH=True`.
+
+Enable it where it actually counts:
+
+```
+Admin Panel -> Settings -> Web Search -> Enable Web Search
+  Engine:    searxng
+  Query URL: http://host.containers.internal:8888/search?q=<query>
+```
+
+The toggle then appears in the chat input, per message. If it later disappears,
+that is usually a stale access token — sign out and back in.
+
+This is a general trap with any tool that has both env config and a settings UI:
+checking the environment tells you what was *intended*, not what is *in effect*.
+
+Seeing where requests actually went:
+
+```bash
+scripts/usage.sh             # last 25: role, tier, model, tokens, cost
+scripts/usage.sh --summary   # totals by role, LOCAL vs CLOUD token split
+scripts/usage.sh --keys      # per-key spend against its cap
+```
+
+The LOCAL percentage in `--summary` is the number worth watching — it is the
+proportion of your work that never left the machine. LOCAL/CLOUD is derived from
+`config.yaml`, so it stays accurate when models are swapped.
+
+## Running agents contained
+
+```bash
+scripts/sandboxed.sh aider              # confine to $PWD
+scripts/sandboxed.sh --dir ~/dev/x aider
+scripts/sandboxed.sh --print-profile    # audit the profile, no Mac required
+scripts/sandbox-probe.sh                # re-verify the controls still hold
+```
+
+Inside a sandboxed session the agent can reach **only** the gateway. That means
+`pip install`, `npm install`, `git push` and any `curl` will fail — by design.
+Run those in a normal shell.
+
+**Re-run `sandbox-probe.sh` after every macOS update.** `sandbox-exec` is
+deprecated and Apple can change or remove it without notice. The probe is how
+you find that out on purpose instead of by being breached.
+
+If an agent crashes on a permission error naming a path outside the repo, that
+is the sandbox working. Either add a preset in `sandboxed.sh` (preferred, so it
+is remembered) or widen once with `--also-write PATH`. Every widening is printed
+at startup — if you see a `WIDENED` line you did not expect, stop and find out why.
+
+What this does **not** protect against: an agent reading your keys (reads are
+unrestricted on purpose) or corrupting the repo it was invited into. Commit
+before starting a session and `git diff` before accepting. Full reasoning in
+`docs/THREAT-MODEL.md`.
+
+## Diagnosing
+
+**Gateway won't start.** Check `litellm.error.log` first. Most common cause is a
+missing env var referenced by `os.environ/` in config.yaml — LiteLLM fails the whole
+config, not just that model.
+
+**A role 500s but others work.** Provider issue or a bad model name. `curl` the role
+directly with the master key to see the raw error.
+
+**Local role is slow on first call.** Cold load only. The current set totals
+37.5 GB against a ~48 GB GPU ceiling, so all four stay resident and nothing evicts
+anything. `ollama ps` shows what is loaded. If a role is suddenly slow again,
+check that a newly added model has not pushed the set over budget.
+
+**Everything local fails.** By design local roles do not fall back to cloud, so they
+fail loudly rather than silently shipping your prompt to Google. Check Ollama:
+`curl localhost:11434/api/tags`.
+
+**Break-glass.** If the gateway is down and you need inference now, hit Ollama directly
+at `127.0.0.1:11434`. No logging, no spend tracking, no key scoping — unblock yourself,
+then fix the gateway.
+
+## Rollback
+
+Inherited config and aliases are recorded verbatim in
+`docs/decisions/0001-inherited-state.md`. Restore
+`~/.config/litellm/config.yaml` from that file and kickstart the agent.
+
+## Upgrading LiteLLM
+
+Four steps, and skipping the third produces a failure that looks like success.
+
+```bash
+# 1. Dump the database. It holds your key VALUES, the research team and spend
+#    history — losing it means re-pasting keys on every laptop.
+mkdir -p ~/hearth-backups
+podman exec -e PGPASSWORD="$POSTGRES_PASSWORD" "$(. scripts/lib.sh; ai_container postgres)" \
+  pg_dump -U litellm -d litellm > ~/hearth-backups/litellm-$(date +%Y%m%d-%H%M%S).sql
+
+# 2. Upgrade. --force recreates the venv, so the injected packages go with it.
+pipx install --force 'litellm[proxy]==<version>'
+pipx inject litellm prisma psycopg2-binary
+
+# 3. Regenerate the prisma client AND sync the schema.
+scripts/setup-prisma.sh
+
+# 4. Restart and verify.
+launchctl kickstart -k "$(. scripts/lib.sh; ai_litellm_agent)"
+scripts/preflight.sh && scripts/healthcheck.sh && scripts/audit-mcp-scope.sh
+```
+
+**Why step 3 matters.** Recreating the venv deletes the generated prisma
+client, so the gateway will not start at all — that failure is loud and
+obvious. The quiet one comes next: a new LiteLLM expects database columns the
+live schema does not have, and then the gateway *does* start,
+`/health/readiness` reports `db:connected`, `/v1/models` answers, and every
+`/key/*` call returns 500 with
+
+```
+The column `LiteLLM_VerificationToken.key_type` does not exist
+```
+
+Scoped keys and MCP grants stop resolving while `status.sh` shows a green
+stack. Preflight now checks the key API directly for exactly this.
+
+Take the release LiteLLM marks **stable**, not the newest on PyPI — the latter
+is often hours old. 1.85.1 → 1.94.1 on 2026-08-02 needed all four steps and
+also rebuilt the venv on a newer Python.
+
+## Postgres (Podman)
+
+```bash
+scripts/db.sh up        # start (starts the Podman VM if needed)
+scripts/db.sh status
+scripts/db.sh logs
+scripts/db.sh psql
+scripts/db.sh down      # stop, keeps data
+scripts/db.sh destroy   # DESTROYS all keys and spend history, prompts first
+```
+
+Bound to `127.0.0.1:5433` — deliberately unreachable from the LAN, and on 5433 to
+avoid clashing with any other Postgres.
+
+**Podman gotcha:** the container runs inside a Linux VM, and that VM does not start
+itself after a reboot. `scripts/db.sh up` starts it for you, but if the gateway boots
+first it will come up with no database and virtual keys will fail until you run it.
+If that becomes annoying, add a launchd agent for `podman machine start`.
+
+## LAN and laptop access
+
+The gateway listens on `:4000` across interfaces and is protected by key auth, so
+other machines just need a base URL and a key:
+
+```bash
+# Prefer: scripts/client-setup.sh lan   (fills in this host's LAN IP)
+export OPENAI_API_BASE=http://<LAN-IP>:4000/v1
+export OPENAI_API_KEY=<the lan or lan-cloud key>
+```
+
+- `lan` — local roles plus `cloud-cheap`. The everyday key.
+- `lan-cloud` — every live cloud role. For a laptop that actually needs Claude
+  or K3. Same LAN, wider scope — the difference is reach, not location.
+
+The dollar figures on these keys are **fuses, not billing** — you are the only user.
+They cap spend on your provider account so that a leaked key or a runaway overnight
+agent loop hits a wall instead of your card. Raise them whenever they get in the way;
+just don't set `null` on a key that can reach a paid model.
+
+Two keys rather than one so the everyday key stays cheap and a lost laptop has a
+small, visible blast radius. Both are LAN-only; neither works off this network. Rotate with `scripts/create-keys.sh` and delete the old
+key via the admin API.
+
+This is LAN only. Do not port-forward `:4000` to the internet — key auth is not
+hardening, and a public LiteLLM holding your provider keys is somebody else's budget.
+# hearth — what it solves, what it measured, what's next
+
+Written 2026-08-02. All figures below are measured on the machine, not estimated.
+
+---
+
+## 1. The problems this actually solves
+
+### Privacy that survives forgetting
+
+The real risk was never "I might paste client data into ChatGPT." It was that
+in a hurry, on a deadline, the fast option and the safe option are different
+buttons — and eventually the wrong one gets pressed.
+
+So the boundary is **structural, not advisory**. Client work uses a `private`
+API key whose model list contains no cloud models. Ask it for Gemini and the
+gateway returns 403. There is no prompt that talks its way around a key scope.
+
+The inherited config had a fallback rule sending `local → gemini` on any Ollama
+timeout. Every slow local response was silently shipping the prompt to Google.
+Nothing in the setup would ever have told me. **Across a privacy boundary a
+fallback is a leak, not resilience** — `audit-fallbacks.sh` now fails the build
+if that pattern reappears.
+
+### One place to change models instead of four
+
+Before: aider pointed at Ollama, Cursor at cloud providers, scripts elsewhere.
+Changing model meant editing four things and missing one.
+
+Now everything asks for a **role** — `local-chat`, `local-code`, `local-big`,
+`local-embed`, `cloud-cheap`. Concrete model names live in exactly two files.
+Swapping a model is one config edit, no client changes. Given how fast this
+field moves, that indirection is the single most valuable design choice here.
+
+### Knowing where requests went, and what they cost
+
+`usage.sh --summary` gives the LOCAL vs CLOUD token split — the proportion of
+work that never left the machine. Virtual keys carry spend caps that act as
+fuses: a leaked key or a runaway overnight loop hits a wall instead of a card.
+
+### Containment for agents (added today)
+
+Coding agents run with full user permissions and read whatever you point them
+at. The gateway governs where data goes *on purpose*; it has no jurisdiction
+over a compromised agent, which would just call `curl` directly and never touch
+LiteLLM at all.
+
+Current state of the field, 2026: prompt injection **cannot be reliably
+detected** — adaptive attacks bypass essentially every published defence, and
+the best of them still miss around one in ten. OWASP has it as the leading
+agentic-AI failure in production, with coding agents driving most of the volume.
+
+So there is nothing to filter. The only thing that works is cutting capability.
+`scripts/sandboxed.sh` runs an agent with egress denied to everything except
+the gateway. It read a secret? Fine — there's no channel to send it down.
+
+Verified on macOS 26.4, 10 checks passed. It proved itself within seconds of
+first use: aider's startup call to pypi.org was refused by the sandbox.
+
+**Deliberately not solved:** reads stay unrestricted (restricting them breaks
+every language runtime), and an agent can still corrupt the repo it was invited
+into. That second one is handled by committing before a session and reading
+`git diff` after — a workflow habit, not a control.
+
+---
+
+## 2. Routerly comparison
+
+[github.com/Inebrio/Routerly](https://github.com/Inebrio/Routerly), AGPL-3.0.
+It targets the exact thing that is most annoying about the current setup.
+
+| | Routerly | LiteLLM (what I run) |
+|---|---|---|
+| Database | **none** — JSON files | Postgres + Prisma, 64 tables |
+| Native Anthropic `/v1/messages` | **yes** | no — OpenAI shape only |
+| Per-project tokens + budgets | yes | yes (virtual keys) |
+| Routing policies | 9, incl. LLM-picks-the-model | static fallbacks |
+| Providers | 8 | 100+ |
+| Maturity | v0.1.5 · 43 stars · 3 contributors | widely deployed |
+
+**The genuine unlock is native Anthropic format.** Claude Code is currently a
+documented exception in my stack because LiteLLM only speaks OpenAI shape.
+Routerly handles `/v1/messages` natively, so Claude Code could route through
+the gateway and pick up spend tracking and logging. That is a real capability
+gain, not a tidiness argument.
+
+**Why I am not switching:**
+
+- v0.1.5, one release, three contributors. This is pre-1.0 software that would
+  hold my provider keys and enforce my privacy boundary. LiteLLM's 64 tables
+  are ugly; **ugly is not the same as risky.**
+- The cost of switching is the *verification*, not the config. Leak test,
+  fallback audit, digest pinning, every script touching `/key/*` — all would
+  need redoing and re-proving. That is the expensive part, and it buys removing
+  a container I never look at.
+- AGPL plus a commercial-licensing contact is an open-core shape. Worth
+  watching whether the free tier narrows.
+
+Revisit at 1.0, or the first time Postgres causes an actual problem rather than
+merely offending my sense of proportion.
+
+---
+
+## 3. Token speed on a 64 GB Mac — the counter-intuitive part
+
+### Throughput is not the number that matters
+
+Benched three models across four fixed tasks, through the gateway:
+
+| Model | tokens emitted | wall clock | avg tok/s |
+|---|---|---|---|
+| `qwen3-coder:30b` | 1,218 | 11.2 s | 108.8 |
+| `gpt-oss:20b` | 4,466 (3.7x) | 47.6 s | 93.8 |
+| `qwen3:8b` (thinking on) | 13,840 (11.4x) | 181.4 s | 76.3 |
+
+Throughput barely moves — **65–120 tok/s across everything**, because the
+machine is memory-bandwidth bound. The 8B model is not meaningfully faster per
+token than the 30B one.
+
+**Wall clock is set by how many tokens a model emits, not how fast it emits
+them.** The smallest model was the slowest overall, by 16x, because it is a
+hybrid reasoning model that thinks out loud by default. On one task it spent
+**100 seconds and 7,548 tokens** where the coding model took 1.6 s and 192
+tokens — forty times the output for the same question.
+
+Fix: Ollama's `think: false` parameter. `local-chat` went from **2,370 tokens /
+29.7 s to 386 tokens / 5.1 s** through the gateway. From slowest role to
+fastest.
+
+Worth noting I got this wrong twice and measurement corrected me both times. I
+doubted `think: false` would work — it did. I was confident `/no_think` in the
+prompt would work — it was silently ignored, 2,236 tokens before and 2,261
+after.
+
+### Residency beats model quality
+
+The old `local-big` was llama3.3:70b at 42 GB. Cold, through the gateway:
+
+| Role | Model | Time to first reply |
+|---|---|---|
+| `local-code` | qwen2.5-coder:32b | 29 s |
+| `local-big` | **llama3.3:70b** | **440 s** |
+| `cloud-cheap` | gemini-3.5-flash | 2 s |
+
+Seven and a half minutes. Not because the model is slow — because at 42 GB it
+could not stay resident alongside anything else, so every switch meant
+reloading 42 GB from disk. Replaced with `gpt-oss:20b`: **440 s → 5 s.** Not a
+faster model, a resident one.
+
+### The real memory ceiling is not 64 GB
+
+macOS caps GPU-accessible unified memory at ~75% above 36 GB — so **~48 GB on a
+64 GB machine**, not 64. I had ~54 GB written in the docs and it was wrong.
+
+| | Old set | Current set |
+|---|---|---|
+| Weights resident | 65.7 GB (impossible) | **37.5 GB** |
+| Against ceiling | ~48 GB | ~48 GB |
+| Disk | 63 GB | ~37 GB |
+
+Current: `qwen3:8b` 5.2 GB + `qwen3-coder:30b` 19 GB + `gpt-oss:20b` 13 GB +
+`nomic-embed-text` 0.3 GB. All four stay loaded; switching roles evicts nothing.
+
+**MoE models are what make this work.** `qwen3-coder:30b` is 30B parameters but
+activates ~3B per token, so it runs at roughly 7B speed while fitting in 19 GB.
+
+### On switching to llama-server
+
+Looked at it after seeing Vitalik Buterin's writeup. **Expected saving: about
+zero.** His gain came from a hard VRAM wall on a discrete 24 GB GPU, where a
+model either fits or collapses to CPU offload. Unified memory has no such
+cliff, and Ollama on Apple Silicon now runs on MLX — Apple's own framework for
+this architecture. Cost would be ~15 scripts and ~60 call sites, to probably go
+slower. Not doing it.
+
+---
+
+## 4. What's left
+
+1. **Audit untrusted MCP servers** — the one remaining unknown. Fetches from the
+   open web, sits next to real client data, nobody has asked what tools it hands
+   a model.
+2. **Re-bench with thinking off** and actually *read* the task 03 output.
+   `gpt-oss:20b` earned `local-big` on capacity, not quality — nothing has yet
+   confirmed it reasons well. Task 03 hides a float-for-currency bug in
+   invoice arithmetic. A syntax check cannot answer that; it needs a human.
+3. **Record model digests** from a verified state, so drift is detectable.
+4. **Local reference corpus** via `local-embed`, so the queries most worth
+   not leaking never reach a search engine at all.
+5. **Confirmation gates** — costs nothing today because nothing in the stack can
+   send mail or move money. Matters the day something can.
+
+### Sharing the repo
+
+Close. No secrets in any tracked file, and no hardcoded home paths in
+executable code — 68 uses of `$HOME` instead. What remains is naming: a LAN IP
+as a default in the client scripts, a personal launchd label, business-specific
+rules in the agent instructions, and no LICENSE. Roughly half a day.
+
+One item there is a real bug rather than cosmetic: `healthcheck.sh` probes a
+hardcoded LAN address to confirm Ollama is *not* reachable. On any other
+machine that address is unreachable anyway, so the check passes and reports the
+hole closed on a box where it may be wide open. Same false-pass shape as the
+leak test bug — unreachable and secure produce identical output.
+
+---
+
+## The pattern worth keeping
+
+Nearly every real problem here was found by measurement, not reasoning:
+
+- The fallback leak — found by reading config, not by it failing.
+- `model_info: tier: local` — a valid-looking field that made LiteLLM silently
+  drop **every model** while still passing its own readiness check.
+- The leak test that passed against a dormant model, where "model not found"
+  also returns 4xx. A broken key and a perfectly scoped key looked identical.
+- The 70B — retired on a 440-second measurement, not on an opinion about 70B
+  models.
+- `/no_think` — confidently predicted to work, silently ignored.
+
+The recurring shape: **a check that cannot run must never look like a check
+that passed.** Preflight now separates ERROR (couldn't run) from FAIL (real
+problem), and every security test pairs a positive control with the negative
+one. That single distinction has caught more genuine problems than any
+individual feature in the stack.
+# Prompt injection threat model
+
+Last updated: 2026-08-02. Controls in §4 verified on macOS 26.4 by
+`scripts/sandbox-probe.sh` (10 passed, 0 failed).
+
+## 1. The claim this document rests on
+
+**Prompt injection cannot be detected reliably, and we do not try.**
+
+As of 2026 the strongest published defences still miss roughly one in ten
+optimisation-based attacks, and adaptive attacks bypass essentially every
+recommended defence. OWASP's 2026 data has prompt injection as the leading
+agentic-AI security failure in production, with coding agents driving most of
+the new attack volume — **aider is named among the five agents responsible**,
+and it is the one used daily here.
+
+The consequence for design: there is no filter to install, no delimiter scheme
+to adopt, and no classifier worth running. The only defences that hold are
+**capability restrictions** — reducing what an agent is able to do, so that a
+successful injection has nowhere to go.
+
+Anything in this repo that looks like injection *detection* is a bug.
+
+## 2. Why the existing privacy boundary does not help
+
+This is the important structural point, and it is easy to get wrong.
+
+The gateway is the control plane for **where data goes on purpose**. The
+`private` key cannot reach cloud roles, so a prompt cannot route client data to
+Google. That boundary is real and it works.
+
+Injection attacks do not use that path at all.
+
+```mermaid
+flowchart TB
+    subgraph inputs["Untrusted inputs into the agent"]
+        web["web pages via SearXNG"]
+        repo["repo files / vendored deps"]
+        mcpsrc["untrusted MCP - UNAUDITED"]
+    end
+
+    subgraph sandbox["sandbox-exec - one egress allowed"]
+        agent["aider / Zed agent"]
+        wd["working dir - writable"]
+    end
+
+    secrets["~/.ssh, .env, keychain<br/>readable - accepted"]
+
+    gw{{"LiteLLM :4000<br/>key scope / spend / audit"}}
+    localm["local models"]
+    cloudm["cloud models"]
+    outside["blocked: github / pypi / attacker"]
+
+    web --> agent
+    repo --> agent
+    mcpsrc --> agent
+    secrets -.-> agent
+
+    agent -->|"only permitted egress"| gw
+    agent --> wd
+    agent -.->|"blocked by sandbox"| outside
+
+    gw --> localm
+    gw -.->|"private key refused"| cloudm
+
+    classDef okCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
+    classDef badCls fill:#FBE9E7,stroke:#A32B18,color:#7A1F11
+    classDef warnCls fill:#FAEEDA,stroke:#854F0B,color:#633806
+    classDef boxCls fill:#EEEDFE,stroke:#534AB7,color:#3C3489
+
+    class gw,localm okCls
+    class outside badCls
+    class secrets,mcpsrc warnCls
+    class agent,wd boxCls
+```
+
+Two boundaries, doing different jobs:
+
+- **`sandbox-exec`** wraps the agent. One arrow leaves it, to the gateway.
+  Everything else — `github`, `pypi`, an attacker's host, DNS itself — is cut.
+- **The gateway** then applies key scope to that one permitted arrow, so even
+  intended traffic cannot reach a cloud model on a `private` key.
+
+An injection that lands still reads whatever it likes (the dashed arrow from
+secrets is deliberate) and can still write into the working directory. What it
+cannot do is get anything out.
+
+An injected agent that reads `~/.ssh/id_rsa` and POSTs it to an attacker
+**never touches LiteLLM**. The virtual key is not in that path. Spend logging
+does not see it. `audit-fallbacks.sh` has no opinion about it.
+
+So: the privacy boundary governs *intentional* routing. The containment
+boundary in §4 governs *everything else*. They are different axes and neither
+substitutes for the other.
+
+| Threat | Key scope | Sandbox |
+|---|---|---|
+| A prompt sends client data to a cloud model | **caught** | not caught |
+| An injected agent exfiltrates a key via curl | not caught | **caught** |
+| An injected agent reads a file it shouldn't | not caught | not caught |
+| An injected agent rewrites source in the repo | not caught | not caught |
+
+Note the bottom two rows. They are not oversights; see §5.
+
+## 3. Surfaces, ranked by capability rather than likelihood
+
+Ranking by likelihood invites guessing. Rank by *what an injection could do if
+it landed*, which is knowable.
+
+| # | Surface | Untrusted content arrives via | If injected, it can | Risk |
+|---|---|---|---|---|
+| 1 | **aider** | files you `/add`, vendored deps, cloned repos, sample data | edit source, run commands, reach the network | **high** |
+| 2 | **Zed agents** | same, plus anything the agent opens itself | same | **high** |
+| 3 | **untrusted MCP** | fetched docs / tools from an unaudited server | depends entirely on what the MCP exposes — **unaudited** | unknown |
+| 4 | **SearXNG → Open WebUI** | arbitrary web pages, per message | produce text. No tools are enabled, so it can mislead you but not act | low today |
+
+**Surface 3 is the one with no number next to it.** It can sit next to real
+  client data, it fetches from the open web, and nobody has asked what tools it
+  hands a model. That is the next thing to audit.
+
+**Surface 4's low rating is conditional and fragile.** The Open WebUI model is
+inert because it has no tools — it can lie to you convincingly, which matters
+for research, but it cannot act. **The moment tools, functions, or code
+execution are enabled in Open WebUI, this becomes surface 1 with a web feed
+attached.** Treat enabling them as a decision requiring an ADR, not a settings
+toggle.
+
+## 4. What is actually enforced
+
+`scripts/sandboxed.sh` runs an agent under a `sandbox-exec` profile. Verified
+on macOS 26.4, 2026-08-02:
+
+| Control | State |
+|---|---|
+| Egress to anything but `127.0.0.1:4000` | **blocked** — verified against 1.1.1.1 |
+| DNS resolution | **blocked** — hostnames do not resolve |
+| Writes outside the working directory | **blocked** — verified against `$HOME` |
+| Writes inside the working directory | allowed |
+| Reads | **unrestricted, deliberately** |
+
+Usage:
+
+```bash
+scripts/sandboxed.sh aider                 # confine to $PWD
+scripts/sandboxed.sh --dir ~/dev/x aider   # confine to a named repo
+scripts/sandboxed.sh --print-profile       # audit the profile, any machine
+scripts/sandbox-probe.sh                   # re-verify the controls hold
+```
+
+Re-run the probe after any macOS update. `sandbox-exec` is deprecated and Apple
+could remove or change it without notice; the probe is how you find out that
+happened deliberately rather than by being breached.
+
+### Why reads are open
+
+Restricting reads breaks dylib loading and every language runtime, and read
+confinement is not what stops the attack. An agent under this profile **can
+still read your SSH keys, `.env` files, and browser cookies.** It cannot send
+them anywhere. Exfiltration needs a channel, and there is exactly one open
+channel — the gateway, which speaks the OpenAI API and logs everything.
+
+This is a deliberate trade, not a limitation we failed to notice. Anyone
+reading this document should be able to state it back: *the sandbox protects
+against exfiltration, not against reading.*
+
+### Why the working directory is writable
+
+An agent that cannot write is not an agent. The residual risk is that an
+injected agent **corrupts the repo it was invited into** — plausible, and not
+mitigated by the sandbox. It is mitigated by git: commit before starting an
+agent session, and `git diff` before accepting anything. That is a workflow
+control and it depends on you, which is why it is written down here rather than
+assumed.
+
+### What the sandbox is not
+
+`sandbox-exec` is deprecated, has known weaknesses, and this profile allows
+broad `mach-lookup` and `process-exec` because nothing runs without them. A
+determined attacker with code execution may find leverage there.
+
+This is **not** a VM and not a security boundary of that grade. It raises the
+cost of an attack and closes the one channel that turns a compromise into a
+loss. Do not extend trust to it beyond that. If the threat model ever includes
+a motivated attacker specifically targeting this machine, the answer is a Lima
+VM or a separate user account, not a better SBPL profile.
+
+## 5. Accepted, unmitigated risk
+
+Recorded so nobody mistakes silence for safety.
+
+1. **An injected agent can read any file the user can.** Mitigated only by the
+   absence of an egress channel. If a future change opens egress — even to a
+   package registry — this becomes live. That is why `--also-write` and any
+   network widening need justification.
+2. **An injected agent can corrupt its own repo.** Mitigated by git hygiene,
+   not by the sandbox.
+3. **Untrusted MCP servers are unaudited.** Unknown capability, real-data adjacency.
+4. **No confirmation gates** beyond git commits. This costs nothing today
+   because nothing in the stack can send mail or move money. It becomes urgent
+   the day something can.
+
+## 6. Cheapest next checks
+
+In order of value per effort:
+
+1. Audit what tools each MCP exposes to a model. Surface 3 is the only
+   unknown on the list.
+2. Run aider under the sandbox for a week of real work and record what it
+   needed widened. A profile nobody can work under gets switched off.
+3. Confirm Open WebUI still has tools disabled after any upgrade — its settings
+   live in a database that overrides the environment, a trap already documented
+   in `RUNBOOK.md`.
+
+## Sources
+
+- [Prompt injection still drives most agentic AI security failures in production — Help Net Security / OWASP, June 2026](https://www.helpnetsecurity.com/2026/06/11/owasp-prompt-injection-ai-security-failures/)
+- [Adaptive Evaluation of Out-of-Band Defenses Against Prompt Injection in LLM Agents (arXiv)](https://arxiv.org/pdf/2606.26479)
+- [Prompt Injection Prevention for Coding Agents: Defenses That Hold in Production — Fiddler AI](https://www.fiddler.ai/blog/prompt-injection-prevention-coding-agents)
+- [Clarify `sandbox-exec` deprecation timeline — apple/containerization issue #737](https://github.com/apple/containerization/issues/737)
+- [Sandboxing Claude Code on macOS: What I Actually Found — Infralovers, Feb 2026](https://www.infralovers.com/blog/2026-02-15-sandboxing-claude-code-macos/)
+
+---
+
+
+You will be given a long file. Answer only from the file — do not use general
+knowledge, and say "not in the file" if the answer is not there.
+
+Questions:
+1. What is the fallback chain for `cloud-frontier`?
+2. Which roles are dormant, and what is each blocked on?
+3. What port is Postgres bound to, and why that port specifically?
+
+This task exists to separate models that genuinely use long context from ones
+that skim the start and confabulate the rest. Run it with the repo's own docs
+concatenated as input — see scripts/bench.sh.

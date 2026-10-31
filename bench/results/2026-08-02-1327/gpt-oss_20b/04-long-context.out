@@ -1,0 +1,16 @@
+**Answers**
+
+1. **Fallback chain for `cloud-frontier`**  
+   The role is dormant and has no fallback defined – it simply does not resolve to another model when requested.
+
+2. **Dormant roles and their blocks**  
+
+| Role           | Blocked on |
+|----------------|------------|
+| `cloud-code`   | Anthropic API key (unset) |
+| `cloud-frontier` | OpenRouter key |
+| `cloud-frontier-direct` | Moonshot key |
+| `cloud-frontier-fast` | Fireworks key |
+
+3. **Postgres binding**  
+   Postgres is bound to **127.0.0.1:5433**. The address is localhost only, and the port 5433 was chosen specifically to avoid colliding with any other PostgreSQL instance that might be running on the machine.

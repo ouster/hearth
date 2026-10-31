@@ -1,0 +1,18 @@
+1.  **What is the fallback chain for `cloud-frontier`?**
+
+    The file does not define a fallback chain for the `cloud-frontier` role. The entry for `cloud-frontier` in `litellm/config.yaml` (and its corresponding block in `docs/MODELS.md`) simply specifies the model (`kimi-k3` via OpenRouter) and its associated provider key (`OPENROUTER_API_KEY`). There is no `fallbacks` section listed for this role.
+
+2.  **Which roles are dormant, and what is each blocked on?**
+
+    The following roles are listed as dormant:
+    *   `cloud-code`: Blocked on having an Anthropic API key (`Anthropic API key`).
+    *   `cloud-frontier`: Blocked on having an OpenRouter key (`OpenRouter key`).
+    *   `cloud-frontier-direct`: Blocked on having a Moonshot key (`Moonshot key`).
+    *   `cloud-frontier-fast`: Blocked on having a Fireworks key (`Fireworks key`).
+
+    (Note: The file explicitly states that dormant roles are commented out in `config.yaml` and that a missing provider key will cause the entire config load to fail.)
+
+3.  **What port is Postgres bound to, and why that port specifically?**
+
+    Postgres is bound to port `5433`.
+    The reason given is: "Bound to `127.0.0.1:5433` — the LAN can reach the gateway but never the database. Port 5433 avoids collision with any other Postgres."

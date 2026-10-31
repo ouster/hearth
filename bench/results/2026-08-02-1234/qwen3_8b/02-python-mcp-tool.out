@@ -1,0 +1,24 @@
+```python
+import sqlite3
+
+def search_cases(query: str, limit: int = 10) -> list[dict]:
+    conn = None
+    try:
+        conn = sqlite3.connect('cases.db')
+        cursor = conn.cursor()
+        sql = """
+            SELECT id, citation, court, year, summary
+            FROM cases
+            WHERE (LOWER(citation) LIKE '%' || LOWER(?) || '%' OR LOWER(summary) LIKE '%' || LOWER(?))
+            ORDER BY year DESC
+            LIMIT ?
+        """
+        params = (query, query, limit)
+        cursor.execute(sql, params)
+        results = cursor.fetchall()
+        columns = ['id', 'citation', 'court', 'year', 'summary']
+        return [dict(zip(columns, row)) for row in results]
+    finally:
+        if conn:
+            conn.close()
+```

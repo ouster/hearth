@@ -1,0 +1,8 @@
+=== tool-smoke ollama model=qwen3-coder:30b ===
+turn1: tool_calls=1 content_len=166
+  read_file
+turn2: tool_calls=1 content_len=272
+  write_file
+  has_lt=True head='# hearth tool smoke\n\n#!/bin/bash\n\nfunction check() {\n    if [[ $x < 1 ]]; then e'
+PASS — write/edit tool in turn 2
+exit=0 elapsed_s=12.0

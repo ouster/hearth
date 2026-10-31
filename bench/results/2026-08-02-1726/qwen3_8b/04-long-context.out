@@ -1,0 +1,11 @@
+1. **Fallback chain for `cloud-frontier`:**  
+   The `cloud-frontier` role is **dormant** and does not have a fallback chain. It is blocked on an **OpenRouter key**. Since dormant roles are not active, they do not participate in fallback chains, which only apply to live roles.
+
+2. **Dormant roles and their blockers:**  
+   - **`cloud-code`**: Blocked on an **Anthropic API key** (deliberately unset; requires a Console API key for activation).  
+   - **`cloud-frontier`**: Blocked on an **OpenRouter key**.  
+   - **`cloud-frontier-direct`**: Blocked on a **Moonshot key**.  
+   - **`cloud-frontier-fast`**: Blocked on a **Fireworks key**.  
+
+3. **Postgres port and reason:**  
+   Postgres is bound to **port 5433**. This port is specifically used to **avoid collision with other Postgres instances** (the default PostgreSQL port is 5432).

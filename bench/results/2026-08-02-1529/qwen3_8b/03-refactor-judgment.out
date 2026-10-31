@@ -1,0 +1,75 @@
+The provided function `apply_discount` is intended to compute the total amount after applying a discount to a list of items, with a focus on financial correctness. However, it contains a critical flaw related to **floating-point arithmetic** that can lead to **precision errors** when dealing with currency.
+
+---
+
+### ✅ **Identified Bugs**
+
+1. **Use of Floating-Point Arithmetic for Currency**  
+   - The function uses `float` for all calculations (`total += items[i]['price'] * items[i]['qty']`, etc.).  
+   - **Issue**: Floating-point numbers cannot represent all decimal values exactly, leading to **precision errors** that can accumulate over multiple operations. For example, `0.1 + 0.2` in Python evaluates to `0.30000000000000004` rather than `0.3`.  
+   - **Impact**: These errors can cause **incorrect rounding** when the final amount is rounded to two decimal places, which is critical for financial systems.
+
+2. **Use of `round()` for Final Rounding**  
+   - The function uses `round(total, 2)` to round the final amount.  
+   - **Issue**: The `round()` function in Python uses **bankers rounding**, which rounds to the nearest even number in case of a tie. This is not always acceptable in financial contexts where **rounding up** is required for accuracy.  
+   - **Impact**: This could lead to **unexpected rounding behavior**, such as rounding `100.005` to `100.00` instead of `100.01`.
+
+---
+
+### ✅ **Corrected Version**
+
+To address the above issues, we should use the `decimal` module in Python, which provides **exact decimal arithmetic** and allows precise control over rounding. This is the **standard practice** for financial calculations.
+
+```python
+from decimal import Decimal, getcontext, ROUND_HALF_UP
+
+def apply_discount(items, discount_pct):
+    total = Decimal('0')
+    for item in items:
+        # Convert price and quantity to Decimal to avoid floating-point errors
+        price = Decimal(str(item['price']))
+        qty = Decimal(str(item['qty']))
+        total += price * qty
+    
+    if discount_pct > 0:
+        discount = Decimal(str(discount_pct)) / Decimal('100')
+        total = total - (total * discount)
+    
+    # Round to two decimal places using ROUND_HALF_UP for consistent financial rounding
+    return total.quantize(Decimal('0.00'), rounding=ROUND_HALF_UP)
+```
+
+---
+
+### ✅ **Explanation of Fixes**
+
+- **`Decimal` for All Calculations**:  
+  All monetary values are now stored and computed using `Decimal`, which avoids the precision issues inherent in floating-point arithmetic.
+
+- **String Conversion for Input Values**:  
+  `item['price']` and `item['qty']` are converted to strings before being passed to `Decimal` to ensure that any potential floating-point representation is avoided.
+
+- **Precise Rounding with `quantize()`**:  
+  The `quantize()` method is used instead of `round()` to ensure that the final amount is rounded to **exactly two decimal places** using **ROUND_HALF_UP** rounding, which is the standard for financial systems.
+
+---
+
+### ✅ **Example Use Case**
+
+```python
+items = [
+    {'price': 100.00, 'qty': 1},
+    {'price': 50.00, 'qty': 2}
+]
+discount_pct = 10
+result = apply_discount(items, discount_pct)
+print(result)  # Output: Decimal('135.00')
+```
+
+In this example, the total before discount is `200.00`, and applying a 10% discount gives `180.00`. The function returns `Decimal('180.00')`, which is precise and correctly rounded.
+
+---
+
+### ✅ **Conclusion**
+
+The original function was **correct in logic** but **inaccurate in practice** due to the use of `float` for financial calculations. The corrected version uses the `decimal` module to ensure **exact decimal arithmetic**, which is **essential for financial systems** where precision is paramount.

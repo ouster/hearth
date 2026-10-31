@@ -1,0 +1,28 @@
+import sqlite3
+from typing import Any, Dict, List
+
+
+def search_cases(query: str, limit: int = 10) -> List[Dict[str, Any]]:
+    conn: sqlite3.Connection | None = None
+    try:
+        conn = sqlite3.connect("cases.db")
+        cursor = conn.cursor()
+
+        pattern = f"%{query}%"
+        sql = """
+            SELECT id, citation, court, year, summary
+            FROM cases
+            WHERE citation LIKE ? COLLATE NOCASE
+               OR summary   LIKE ? COLLATE NOCASE
+            ORDER BY year DESC
+            LIMIT ?
+        """
+
+        cursor.execute(sql, (pattern, pattern, limit))
+        rows = cursor.fetchall()
+
+        columns: List[str] = [description[0] for description in cursor.description]
+        return [dict(zip(columns, row)) for row in rows]
+    finally:
+        if conn is not None:
+            conn.close()

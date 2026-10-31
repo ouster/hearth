@@ -1,0 +1,16 @@
+```bash
+#!/bin/bash
+set -euo pipefail
+
+LAUNCHD_NAME="com.example.service"
+PLIST_PATH="$HOME/Library/LaunchAgents/${LAUNCHD_NAME}.plist"
+
+if [[ ! -f "$PLIST_PATH" ]]; then
+    echo "Error: plist file does not exist: $PLIST_PATH" >&2
+    exit 1
+fi
+
+if [[ $(launchctl print user/$(id -u)/${LAUNCHD_NAME} 2>/dev/null | grep -c "loaded") -eq 0 ]]; then
+    launchctl load "$PLIST_PATH"
+fi
+```

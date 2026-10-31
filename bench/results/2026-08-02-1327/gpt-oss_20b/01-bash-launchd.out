@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+plist="$HOME/Library/LaunchAgents/com.example.service.plist"
+
+if [ ! -f "$plist" ]; then
+    printf 'Error: plist not found at %s\n' "$plist"
+    exit 1
+fi
+
+# If the job is already loaded, nothing else to do
+if launchctl list | awk '{print $3}' | grep -Fxq 'com.example.service'; then
+    exit 0
+fi
+
+# Try loading with bootstrap (macOS 10.15+)
+if ! launchctl bootstrap gui/"$UID" "$plist" >/dev/null 2>&1; then
+    # Fallback to load for older macOS versions
+    launchctl load "$plist"
+fi
+
+exit 0

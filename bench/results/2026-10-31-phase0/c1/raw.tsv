@@ -1,0 +1,11 @@
+round	slot	status	ttfb	ttft	total	tool_ok	tool_name	finish	prompt_tokens	completion_tokens	error
+1	0	200	20.973	20.973	21.64	1	read_file	stop	28132	54	
+2	0	200	20.389	20.389	20.835	1	read_file	stop	28133	52	
+3	0	200	20.457	20.457	20.833	1	read_file	stop	28132	52	
+4	0	200	20.657	20.657	21.175	1	read_file	stop	28136	52	
+5	0	200	20.371	20.371	21.014	1	read_file	stop	28131	54	
+6	0	200	20.556	20.556	20.957	1	read_file	stop	28134	54	
+7	0	200	20.45	20.45	20.826	1	read_file	stop	28135	56	
+8	0	200	20.465	20.465	20.843	1	read_file	stop	28130	54	
+9	0	200	20.6	20.6	20.993	1	read_file	stop	28135	55	
+10	0	200	20.611	20.611	20.998	1	read_file	stop	28129	54	

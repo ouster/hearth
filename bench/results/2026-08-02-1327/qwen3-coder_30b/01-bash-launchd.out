@@ -1,0 +1,17 @@
+```bash
+#!/bin/bash
+set -euo pipefail
+
+plist_file="$HOME/Library/LaunchAgents/com.example.service.plist"
+
+if [[ ! -f "$plist_file" ]]; then
+    echo "Error: plist file does not exist: $plist_file" >&2
+    exit 1
+fi
+
+if [[ $(launchctl print gui/$(id -u)/com.example.service 2>/dev/null | wc -l) -gt 0 ]]; then
+    exit 0
+else
+    launchctl load "$plist_file"
+fi
+```

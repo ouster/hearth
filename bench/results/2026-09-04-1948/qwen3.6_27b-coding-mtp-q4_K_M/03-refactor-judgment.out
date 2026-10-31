@@ -1,0 +1,74 @@
+Here is a breakdown of every bug, followed by a production-ready correction tailored for financial/invoice systems.
+
+### 🔍 Bug Identification
+
+| # | Bug | What breaks & under what input |
+|---|-----|--------------------------------|
+| 1 | **Binary float representation for currency** | IEEE 754 floats cannot exactly represent decimal fractions. <br>Input: `items=[{'price': 1.005, 'qty': 1}], discount_pct=0` <br>`1.005` is stored as `1.0049999999999999`. After `round(total, 2)`, it becomes `1.00` instead of `1.01`. In billing, this causes systematic off-by-one-penny errors across large batches. |
+| 2 | **Python's `round()` uses banker's rounding** | Python rounds ties to the nearest even number (`ROUND_HALF_EVEN`). Financial systems almost universally require `ROUND_HALF_UP`. <br>Input: `total = 0.005` <br>`round(0.005, 2)` → `0.0` (banker's) vs `0.01` (expected in accounting). This drift compounds in invoice ledgers. |
+| 3 | **Rounding only at the end causes accumulation drift** | Intermediate products (`price * qty`, `discount_amount`) are kept as unrounded floats. Floating-point errors accumulate before the final `round()`, violating double-entry ledger expectations where each line item and deduction is typically rounded to the nearest cent. |
+| 4 | **Unbounded discount percentage** | No upper bound check. <br>Input: `discount_pct = 150` <br>`total = total - (total * 1.5)` → negative invoice figure. Billing systems must never produce negative totals for valid inputs. |
+| 5 | **Missing type & value validation** | No checks for missing keys, negative prices/quantities, or non-numeric types. <br>Input: `items=[{'price': '-10', 'qty': 2}]` or `items=[{'price': 10, 'qty': 'two'}]` <br>Crashes silently or produces mathematically invalid invoice records. |
+| 6 | **Unpythonic indexing** | `for i in range(len(items)):` is inefficient, breaks on non-sequence iterables, and invites `IndexError` if the data structure changes. Minor, but unacceptable in production financial code. |
+
+---
+
+### ✅ Corrected Version
+
+```python
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+
+def apply_discount(items, discount_pct):
+    # 1. Validate discount bounds
+    if not (0 <= discount_pct <= 100):
+        raise ValueError("discount_pct must be between 0 and 100 inclusive")
+
+    total = Decimal('0')
+    
+    for item in items:
+        # 2. Safely convert to Decimal without carrying float imprecision
+        price = Decimal(str(item['price']))
+        qty   = Decimal(str(item['qty']))
+
+        # 3. Enforce non-negative financial values
+        if price < 0 or qty < 0:
+            raise ValueError("Price and quantity must be non-negative")
+
+        # 4. Round line total to nearest cent immediately (ledger compliance)
+        line_total = (price * qty).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        total += line_total
+
+    # 5. Apply discount with explicit rounding
+    if discount_pct > 0:
+        discount_amount = (total * Decimal(str(discount_pct)) / Decimal('100')).quantize(
+            Decimal('0.01'), rounding=ROUND_HALF_UP
+        )
+        total -= discount_amount
+
+    # 6. Return Decimal to preserve exact precision for invoice records
+    return total
+```
+
+---
+
+### 📝 Key Corrections Explained
+
+1. **`Decimal(str(value))` is mandatory**  
+   `Decimal(0.1)` inherits the float's binary imprecision. `Decimal(str(0.1))` parses the exact decimal string `'0.1'`. This is the single most important fix for currency arithmetic.
+
+2. **Explicit `ROUND_HALF_UP`**  
+   Financial rounding is jurisdiction-dependent, but `ROUND_HALF_UP` is the standard for billing/accounting. Python's default `round()` uses banker's rounding, which is mathematically sound but legally/accountingly incorrect for most invoice systems.
+
+3. **Stepwise rounding**  
+   Rounding is applied to each line item and the discount deduction before aggregation. This matches how invoice ledgers are audited: every transaction line is rounded to the penny, preventing hidden accumulation drift.
+
+4. **Boundary & Type Safety**  
+   - `discount_pct` is clamped to `[0, 100]`. Negative or >100 values raise `ValueError` rather than silently producing invalid invoice figures.
+   - Negative prices/quantities are rejected.
+   - `str()` conversion handles `int`, `float`, `str`, and `Decimal` inputs uniformly without triggering float representation bugs.
+
+5. **Return type**  
+   The function returns a `Decimal`. In invoice systems, converting back to `float` at the calculation boundary destroys the precision you just gained. If your downstream API strictly requires a float, convert it **only at the integration boundary**, not inside the financial logic.
+
+### 💡 Billing-Specific Note
+If your jurisdiction requires a different rounding policy (e.g., `ROUND_HALF_EVEN` for UK HMRC, or `ROUND_DOWN` for certain tax calculations), swap `ROUND_HALF_UP` in the `.quantize()` calls. The structure is designed to make the rounding policy explicit and auditable, which is a compliance requirement in most invoice workflows.

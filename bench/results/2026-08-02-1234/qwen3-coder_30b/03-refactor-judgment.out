@@ -1,0 +1,76 @@
+## Bugs Identified
+
+### 1. **Float Precision Error for Currency**
+The most critical bug is using floating-point arithmetic for monetary calculations. This can cause rounding errors that accumulate and become significant in financial systems.
+
+**Example of what breaks:**
+```python
+items = [{'price': 10.95, 'qty': 2}]
+discount_pct = 5
+# Expected: 21.90 - (21.90 * 0.05) = 20.805 → rounded to 20.81
+# Actual result may be 20.80 due to floating-point precision issues
+```
+
+### 2. **Missing Input Validation**
+No validation for negative prices, quantities, or discount percentages.
+
+**What breaks:** Negative values can cause incorrect calculations or unexpected behavior.
+
+### 3. **No Handling of Empty Items List**
+If `items` is empty, the function returns 0 but doesn't explicitly validate this case.
+
+### 4. **Discount Percentage Validation**
+The function accepts any discount percentage without validation (including negative percentages).
+
+## Corrected Version
+
+```python
+from decimal import Decimal, ROUND_HALF_UP
+
+def apply_discount(items, discount_pct):
+    # Input validation
+    if not isinstance(items, list):
+        raise TypeError("Items must be a list")
+    
+    if not isinstance(discount_pct, (int, float)):
+        raise TypeError("Discount percentage must be a number")
+    
+    if discount_pct < 0:
+        raise ValueError("Discount percentage cannot be negative")
+    
+    total = Decimal('0')
+    
+    # Process items
+    for item in items:
+        if not isinstance(item, dict):
+            raise TypeError("Each item must be a dictionary")
+        
+        if 'price' not in item or 'qty' not in item:
+            raise ValueError("Each item must have 'price' and 'qty' keys")
+        
+        price = Decimal(str(item['price']))
+        qty = Decimal(str(item['qty']))
+        
+        if price < 0 or qty < 0:
+            raise ValueError("Price and quantity cannot be negative")
+        
+        total += price * qty
+    
+    # Apply discount
+    if discount_pct > 0:
+        discount_amount = total * Decimal(str(discount_pct)) / Decimal('100')
+        total = total - discount_amount
+    
+    # Round to 2 decimal places using proper monetary rounding
+    return total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+```
+
+## Key Improvements
+
+1. **Uses `Decimal` for precise currency arithmetic** - Eliminates floating-point precision errors
+2. **Proper input validation** - Checks types, values, and required keys
+3. **Explicit error handling** - Raises meaningful exceptions for invalid inputs
+4. **Proper rounding** - Uses `ROUND_HALF_UP` for consistent monetary rounding
+5. **Type conversion safety** - Converts all numeric inputs to Decimal strings to avoid float conversion issues
+
+This version ensures that monetary calculations are accurate and suitable for financial systems like billing where precision is critical.

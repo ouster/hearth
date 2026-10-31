@@ -1,0 +1,69 @@
+The provided function `apply_discount` has several critical issues that can lead to **incorrect financial calculations**, particularly due to the use of **floating-point arithmetic** for monetary values. While the function appears logically correct at first glance, the **precision errors inherent in float arithmetic** can cause subtle but **critical inaccuracies** in financial contexts like billing.
+
+---
+
+### ✅ **Summary of Bugs and Issues**
+
+1. **Floating-Point Precision Errors**  
+   - The function uses `float` for all arithmetic operations, including prices, quantities, and discount percentages. This is **inappropriate for financial calculations**.
+   - Floating-point numbers like `0.1` cannot be represented exactly in binary, leading to **cumulative rounding errors** when performing operations such as addition or multiplication.
+   - These errors can cause **incorrect totals**, especially when dealing with multiple items or complex discount scenarios.
+
+2. **Incorrect Rounding Behavior**  
+   - Python's `round()` function can produce **unpredictable results** due to how floating-point numbers are stored. For example, `round(0.299999999999, 2)` may not round to `0.30` as expected.
+   - The function does **not** use a **controlled rounding method**, which is essential for financial accuracy.
+
+3. **Potential for Division by Zero or Invalid Inputs**  
+   - While not a bug per se, the function assumes that `discount_pct` is a valid number. If `discount_pct` is `None` or non-numeric, the function will raise an error.
+
+---
+
+### 🛠️ **Corrected Version Using Decimal Arithmetic**
+
+To ensure **precise decimal arithmetic**, we must use Python’s `decimal` module, which provides **exact decimal representation** and **controlled rounding**.
+
+```python
+from decimal import Decimal, getcontext, ROUND_HALF_UP
+
+def apply_discount(items, discount_pct):
+    total = Decimal('0')
+    for item in items:
+        total += Decimal(str(item['price'])) * Decimal(str(item['qty']))
+    
+    if discount_pct > 0:
+        discount = Decimal(str(discount_pct)) / Decimal('100')
+        total = total - (total * discount)
+    
+    return total.quantize(Decimal('0.00'), rounding=ROUND_HALF_UP)
+```
+
+---
+
+### 🔍 **Explanation of Fixes**
+
+- **Decimal Arithmetic**: All monetary values are now represented as `Decimal` objects, ensuring **exact decimal arithmetic** without floating-point approximation.
+- **Controlled Rounding**: The `quantize` method with `ROUND_HALF_UP` ensures that the result is **rounded to two decimal places** using **standard rounding rules**.
+- **String Conversion**: Prices and quantities are converted to strings before being passed to `Decimal` to avoid any floating-point misinterpretation.
+
+---
+
+### 🧪 **Example Test Cases**
+
+| Input | Expected Output | Actual Output (with corrected function) |
+|-------|------------------|------------------------------------------|
+| `[{'price': 1.00, 'qty': 1}]`, `10` | `0.90` | `0.90` |
+| `[{'price': 0.29, 'qty': 1}]`, `10` | `0.26` | `0.26` |
+| `[{'price': 0.1, 'qty': 10}]`, `5` | `0.95` | `0.95` |
+| `[{'price': 0.2999999999, 'qty': 1}]`, `0` | `0.2999999999` → `0.30` | `0.30` |
+
+---
+
+### 🧠 **Why This Matters in Billing**
+
+In billing systems, **even small errors in monetary calculations** can lead to **legal or financial discrepancies**, especially when dealing with large sums or multiple transactions. Using `float` can result in **subtle rounding errors** that accumulate over time, leading to **incorrect invoice figures**.
+
+---
+
+### 📌 **Conclusion**
+
+The function must be **revised to use `decimal.Decimal`** for all monetary operations to ensure **precision and correctness** in financial contexts. The corrected version avoids floating-point inaccuracies and provides **reliable, predictable rounding behavior**, which is **critical for systems handling money**.

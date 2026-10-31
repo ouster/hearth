@@ -1,0 +1,13 @@
+#!/bin/bash
+set -euo pipefail
+
+SERVICE="com.example.service"
+PLIST="$HOME/Library/LaunchAgents/$SERVICE.plist"
+
+if ! launchctl list | grep -qF "$SERVICE"; then
+    if [ ! -f "$PLIST" ]; then
+        echo "Plist file not found: $PLIST" >&2
+        exit 1
+    fi
+    launchctl load "$PLIST"
+fi

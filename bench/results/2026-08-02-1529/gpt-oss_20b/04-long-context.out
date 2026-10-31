@@ -1,0 +1,16 @@
+**Answers**
+
+1. **Fallback chain for `cloud‑frontier`**  
+   – It has *no fallback*; requests fail if the role itself is unavailable.
+
+2. **Dormant roles and what blocks each one**  
+
+| Role | Blocked on |
+|------|------------|
+| `cloud-code` | Anthropic API key (intentionally unset) |
+| `cloud-frontier` | OpenRouter key missing |
+| `cloud-frontier-direct` | Moonshot key missing |
+| `cloud-frontier-fast` | Fireworks key missing |
+
+3. **Postgres port and rationale**  
+   – Bound to **127.0.0.1:5433**; the port was chosen specifically to avoid collision with any other PostgreSQL instance that might be running on the machine.

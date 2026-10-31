@@ -1,0 +1,4 @@
+backend	model	pass	wall_s	turn1_tools	turn2_tools	has_lt	content_in_turns
+rapid-mlx	qwen3.6-35b-4bit	yes	2.6	read_file,read_file	write_file	yes	no
+ollama	gpt-oss:20b	yes	18.2	list_directory	write_file	yes	no
+ollama	qwen3-coder:30b	yes	12.0	read_file	write_file	yes	yes

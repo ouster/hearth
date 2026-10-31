@@ -1,0 +1,16 @@
+1.  **What is the fallback chain for `cloud-frontier`?**
+
+    According to the provided text, `cloud-frontier` is a **dormant** role. The text states: "Commented out in `config.yaml`. A model whose `os.environ/` key is missing fails the **entire** config load, not just that entry, so these stay off until their key exists." It also mentions that to enable one of these dormant roles, you need to uncomment its block in `config.yaml`, add the key to `~/.config/litellm/env`, and re-run scripts. Since `cloud-frontier` is commented out and its key is not set (as indicated by "OpenRouter key. Primary frontier route" and "Blocked on" table entry), it is **not currently configured** with a fallback chain or any concrete model backing it in the live system. It's not even defined in the running configuration.
+
+2.  **Which roles are dormant, and what is each blocked on?**
+
+    Based on the "Dormant" section of `docs/MODELS.md`:
+    *   `cloud-code`: Blocked on **Anthropic API key** — **deliberately unset**.
+    *   `cloud-frontier`: Blocked on **OpenRouter key**.
+    *   `cloud-frontier-direct`: Blocked on **Moonshot key**.
+    *   `cloud-frontier-fast`: Blocked on **Fireworks key**.
+
+3.  **What port is Postgres bound to, and why that port specifically?**
+
+    Postgres is bound to port `5433`.
+    The reason given is: "Port 5433 avoids collision with any other Postgres."

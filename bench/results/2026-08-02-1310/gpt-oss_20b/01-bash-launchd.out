@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PLIST="$HOME/Library/LaunchAgents/com.example.service.plist"
+
+if [ ! -f "$PLIST" ]; then
+  echo "Error: plist not found at $PLIST" >&2
+  exit 1
+fi
+
+if launchctl list com.example.service >/dev/null 2>&1; then
+  echo "com.example.service is already loaded."
+else
+  echo "Loading com.example.service from $PLIST"
+  launchctl bootstrap gui/$(id -u) "$PLIST"
+fi

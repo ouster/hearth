@@ -1,0 +1,9 @@
+1. **not in the file** — The documentation only defines fallback chains for local roles (which fall back to other local roles, with `local-big` having none), and does not specify a fallback chain for `cloud-frontier` or any cloud role.
+
+2. The dormant roles and what they are blocked on are:
+   - `cloud-code`: Blocked on an Anthropic API key (deliberately unset).
+   - `cloud-frontier`: Blocked on an OpenRouter key.
+   - `cloud-frontier-direct`: Blocked on a Moonshot key.
+   - `cloud-frontier-fast`: Blocked on a Fireworks key.
+
+3. Postgres is bound to **`5433`**. This specific port is used to avoid collision/clashing with any other local Postgres instance.

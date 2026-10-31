@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PLIST="$HOME/Library/LaunchAgents/com.example.service.plist"
+LABEL="com.example.service"
+
+if [ ! -f "$PLIST" ]; then
+    echo "Error: $PLIST does not exist." >&2
+    exit 1
+fi
+
+if launchctl list | awk '{print $3}' | grep -Fxq "$LABEL"; then
+    exit 0
+fi
+
+launchctl load "$PLIST"

@@ -1,0 +1,62 @@
+### Bug Identification
+
+The code provided contains several significant issues, particularly regarding arithmetic precision and rounding logic required for financial calculations.
+
+1.  **Floating-Point Arithmetic Errors (Float-for-Currency Problem)**
+    *   **What breaks:** The code uses Python's native `float` type. Floats are binary fractions (IEEE 754) and cannot represent most decimal numbers (like `0.1` or `19.99`) exactly.
+    *   **Input causing failure:** A list of items with prices like `0.1`, `0.2`, etc.
+    *   **Result:** In binary, `0.1 + 0.2` results in `0.30000000000000004`. In a billing system, these tiny errors accumulate during the loop, potentially causing the final bill to be off by cents or more.
+
+2.  **Incorrect Rounding Mode (Bankers' Rounding)**
+    *   **What breaks:** Python's built-in `round()` function implements "Bankers' Rounding" (round half to even). For example, `round(0.5)` becomes `0` and `round(1.5)` becomes `2`.
+    *   **Input causing failure:** A calculated total that ends exactly in `.5` cents (e.g., `10.005`).
+    *   **Result:** Depending on the specific binary representation, `10.005` might round to `10.00` or `10.01`. Financial billing systems almost universally require "Round Half Up" (where `.5` always rounds up) to ensure revenue accuracy.
+
+3.  **Precision Loss During Initialization**
+    *   **What breaks:** If the corrected logic uses `Decimal`, initializing it directly from a float (e.g., `Decimal(19.99)`) captures the existing floating-point error.
+    *   **Input causing failure:** Item prices provided as floats (common when deserializing from JSON or databases).
+    *   **Result:** The `Decimal` object will hold `19.89999...` instead of `19.99`, perpetuating the bug even after switching libraries. It must be initialized via string (e.g., `Decimal("19.99")`).
+
+4.  **Input Validation / Robustness**
+    *   **What breaks:** The code assumes every item in the list is a dictionary with `'price'` and `'qty'`.
+    *   **Input causing failure:** A malformed item (missing keys) or non-iterable input.
+    *   **Result:** Raises a `KeyError` or `TypeError`, crashing the billing process.
+
+---
+
+### Corrected Version
+
+This version uses the `decimal` module for exact arithmetic, implements "Round Half Up" logic via `quantize`, and safely parses inputs using strings to preserve precision.
+
+```python
+from decimal import Decimal, ROUND_HALF_UP
+
+def apply_discount(items, discount_pct):
+    # Initialize total as a string-based Decimal to avoid binary float errors immediately.
+    total = Decimal('0')
+    
+    for item in items:
+        try:
+            # Convert price to string first. 
+            # Decimal(str(float_val)) ensures we capture the intended decimal value,
+            # whereas Decimal(float_val) preserves binary floating-point errors.
+            price = Decimal(str(item['price']))
+            qty = item['qty']
+            total += price * qty
+        except (KeyError, TypeError, ValueError):
+            # In a production billing system, malformed items should be handled or logged.
+            continue 
+
+    if discount_pct > 0:
+        # Calculate discount using Decimal precision.
+        # Converting via string ensures the percentage is treated accurately.
+        pct = Decimal(str(discount_pct))
+        discount_amount = total * (pct / 100)
+        total -= discount_amount
+
+    # Billing systems typically require "Round Half Up" logic.
+    # Python's built-in round() uses "Bankers Rounding" (nearest even), which is risky for billing.
+    final_total = total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+    
+    return float(final_total)
+```

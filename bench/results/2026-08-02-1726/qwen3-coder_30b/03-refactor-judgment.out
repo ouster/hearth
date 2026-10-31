@@ -1,0 +1,61 @@
+## Bugs Identified
+
+### 1. **Float Precision for Currency Arithmetic**
+**What breaks:** The function uses floating-point arithmetic for monetary calculations, which can introduce rounding errors that accumulate and become significant in financial contexts.
+
+**Under what input:** Any calculation involving fractional currency amounts (e.g., items with prices like $19.99, or when discount percentages result in fractional cents).
+
+### 2. **Missing Input Validation**
+**What breaks:** The function doesn't validate that `items` contains valid data structures with required keys.
+
+**Under what input:** 
+- `items` is None
+- `items` contains elements without 'price' or 'qty' keys
+- `items` contains non-numeric price/quantity values
+
+### 3. **No Handling of Negative Discount Percentages**
+**What breaks:** The function allows negative discount percentages, which would incorrectly increase the total.
+
+**Under what input:** `discount_pct = -10`
+
+## Corrected Version
+
+```python
+from decimal import Decimal, ROUND_HALF_UP
+
+def apply_discount(items, discount_pct):
+    if items is None:
+        return 0.00
+    
+    total = Decimal('0')
+    for item in items:
+        if 'price' not in item or 'qty' not in item:
+            raise ValueError("Each item must have 'price' and 'qty' keys")
+        
+        try:
+            price = Decimal(str(item['price']))
+            qty = Decimal(str(item['qty']))
+        except (ValueError, TypeError):
+            raise ValueError("Price and quantity must be numeric")
+            
+        total += price * qty
+    
+    if discount_pct < 0:
+        raise ValueError("Discount percentage cannot be negative")
+    
+    if discount_pct > 0:
+        discount_amount = total * Decimal(str(discount_pct)) / Decimal('100')
+        total = total - discount_amount
+    
+    return float(total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+```
+
+## Key Improvements
+
+1. **Uses `Decimal` for currency arithmetic** to eliminate floating-point precision issues
+2. **Proper input validation** with meaningful error messages
+3. **Handles edge cases** like negative discounts appropriately
+4. **Quantizes to exactly 2 decimal places** using proper rounding rules
+5. **Converts back to float only at the end** for compatibility with existing code that expects float returns
+
+The corrected version ensures that monetary calculations are precise and reliable, which is critical in billing systems where even small errors can have significant financial implications.

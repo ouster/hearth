@@ -1,0 +1,9 @@
+model	task	tokens	seconds	verdict
+qwen3-coder:30b	01-bash-launchd	126	1.1	syntax-ok
+qwen3-coder:30b	02-python-mcp-tool	175	1.5	syntax-ok
+qwen3-coder:30b	03-refactor-judgment	664	5.9	needs-reading
+qwen3-coder:30b	04-long-context	361	6.3	needs-reading
+qwen3.6:27b-coding-mtp-q4_K_M	01-bash-launchd	3373	176.0	syntax-ok
+qwen3.6:27b-coding-mtp-q4_K_M	02-python-mcp-tool	7066	366.3	syntax-ok
+qwen3.6:27b-coding-mtp-q4_K_M	03-refactor-judgment	5993	318.4	needs-reading
+qwen3.6:27b-coding-mtp-q4_K_M	04-long-context	2216	109.5	needs-reading

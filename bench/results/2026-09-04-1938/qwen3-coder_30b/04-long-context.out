@@ -1,0 +1,17 @@
+1.  **What is the fallback chain for `cloud-frontier`?**
+
+    The file does not explicitly define a fallback chain for the `cloud-frontier` role. It is listed as a dormant role in the model registry (`docs/MODELS.md`) and the routing rules (`docs/ROUTING.md`), but there is no mention of its specific fallback behavior, nor is it present in the fallback audit script's checks (`scripts/audit-fallbacks.sh`) or the fallback chain definitions in `litellm/config.yaml`. The role itself is not a local one.
+
+2.  **Which roles are dormant, and what is each blocked on?**
+
+    According to `docs/MODELS.md`:
+
+    *   `cloud-code`: Blocked on having an **Anthropic API key** (specifically a Console key, which bills separately from any Claude subscription).
+    *   `cloud-frontier`: Blocked on having an **OpenRouter key**.
+    *   `cloud-frontier-direct`: Blocked on having a **Moonshot key**.
+    *   `cloud-frontier-fast`: Blocked on having a **Fireworks key**.
+
+3.  **What port is Postgres bound to, and why that port specifically?**
+
+    Postgres is bound to `127.0.0.1:5433`.
+    The reason given is that the LAN can reach the gateway (LiteLLM) but never the database, and port 5433 avoids collision with any other Postgres instance.

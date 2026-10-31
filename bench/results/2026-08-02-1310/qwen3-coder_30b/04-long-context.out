@@ -1,0 +1,13 @@
+1.  **What is the fallback chain for `cloud-frontier`?**
+    *   The `cloud-frontier` role is **dormant** in the provided configuration (`config.yaml` is commented out). Therefore, it does not have an active fallback chain defined in the running system. It is not configured to fall back to anything because it is not enabled.
+
+2.  **Which roles are dormant, and what is each blocked on?**
+    *   The dormant roles are:
+        *   `cloud-code`: Blocked on having an Anthropic API key (`Anthropic API key — **deliberately unset**`).
+        *   `cloud-frontier`: Blocked on having an OpenRouter key (`OpenRouter key`).
+        *   `cloud-frontier-direct`: Blocked on having a Moonshot key (`Moonshot key`).
+        *   `cloud-frontier-fast`: Blocked on having a Fireworks key (`Fireworks key`).
+
+3.  **What port is Postgres bound to, and why that port specifically?**
+    *   Postgres is bound to port `5433`.
+    *   The reason given is: "Port 5433 avoids collision with any other Postgres."

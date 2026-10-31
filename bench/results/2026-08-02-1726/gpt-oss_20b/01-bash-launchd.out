@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PLIST="$HOME/Library/LaunchAgents/com.example.service.plist"
+LABEL="com.example.service"
+
+if [ ! -f "$PLIST" ]; then
+    echo "Error: plist not found at $PLIST" >&2
+    exit 1
+fi
+
+# Load the agent only if it's not already loaded
+if ! launchctl list | awk '{print $3}' | grep -Fxq "$LABEL"; then
+    if ! launchctl bootstrap gui/$(id -u) "$PLIST"; then
+        echo "Error: failed to load $LABEL" >&2
+        exit 1
+    fi
+fi
+
+exit 0
