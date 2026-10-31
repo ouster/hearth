@@ -8,11 +8,13 @@ during this phase), `local-big` 64K × 3 parallel, `local-embed`.
 |---|---|---|
 | Zed agent session, ≥ 20 tool calls, two threads at once, no stall | **pass** | operator: both threads completed in ~1 min, no stall |
 | aider `ask` | **pass** (operator: local-big working) | alias builds `openai/local-big` at `:1234`, token per call |
-| aider `ask-cloud` | **open** — errors, text not yet captured | key valid (HTTP 200), `gemini-3.6-flash` listed for the key, alias builds `--model`/`--weak-model gemini/gemini-3.6-flash`; suspect aider 0.85.2's litellm 1.73.1 |
+| aider `ask-cloud` | **pass** (operator) | the earlier errors were a bare `aider ask-cloud` run; also found `GOOGLE_API_KEY` exported from `~/.zshenv.local` into every shell — moved to `~/.config/hearth/env` |
 | sandbox-probe | **pass** | 11/11, incl. new deny check on old `:4000` |
-| Open WebUI answers | **partial** | container sees `local-big`, `local-embed` from `host.containers.internal:1234` with the token; UI check pending |
+| Open WebUI answers | **pass** (operator) | saved connection still pointed at `:4000` (database wins over env); repointed in Admin → Connections to `:1234` with the host token |
 
 Also verified: Zed settings load cleanly on Zed 1.26.2 (a partial Write
 profile override failed the whole load — fixed by a full profile); auslaw
 enabled only in the Research profile; container → host `127.0.0.1:1234`
 works with "serve on local network" off.
+
+**Gate: passed 2026-10-31.**
