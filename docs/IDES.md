@@ -15,51 +15,39 @@ changes.
 
 ## aider
 
-### Fix the inherited config first
-
-`~/.aider.conf.yml` was written before the gateway existed and names models that
-no longer exist. Replace it:
+### Config
 
 ```yaml
 # ~/.aider.conf.yml
-# Roles, not model names. Requires OPENAI_API_BASE + OPENAI_API_KEY, which
-# scripts/aliases.zsh sets.
-model: openai/local-code
-weak-model: openai/local-chat      # commit messages, summaries — cheap and fast
+# Roles, not model names. OPENAI_API_BASE + OPENAI_API_KEY come from
+# scripts/aliases.zsh per invocation. One local model (ADR 0016, D1).
+model: openai/local-big
+weak-model: openai/local-big
 dark-mode: true
 auto-commits: true
 map-tokens: 4096
 ```
 
-`weak-model` matters more than it looks: aider uses it for commit messages and
-summarisation. Pointing it at `local-chat` keeps the 30B free for actual work.
+`weak-model` is used for commit messages and summaries. With one resident
+model there is nothing cheaper to point it at, and nothing to evict.
+`ask-cloud` overrides both with the Gemini id from `config/roles.tsv`, so a
+cloud session never sends its commit messages anywhere else.
 
-### Architect mode — the best fit for this stack
+### Architect mode
 
-aider can split planning from editing: one model reasons about the change,
-another applies it. That maps directly onto your roles.
-
-```bash
-aider --architect \
-      --model openai/local-big \
-      --editor-model openai/local-code
-```
-
-`local-big` reasons, `local-code` writes the diff. Both are Ollama and both
-are private. One model stays resident, so the second load evicts the first
-(ADR 0011, ADR 0013).
+aider can split planning from editing. With one local model both sides are
+`local-big`; the value left is that the design step stays visible.
 
 ```bash
-alias ask-arch='OPENAI_API_BASE="${HEARTH_GATEWAY}/v1" \
-  OPENAI_API_KEY="$(_ai_key private)" \
-  aider --architect --model openai/local-big --editor-model openai/local-code'
+ask-arch    # aider --architect --model openai/local-big --editor-model openai/local-big
 ```
 
 ### Switching mid-session
 
 ```
-/model openai/local-big       swap to the reasoning role
-/model openai/cloud-cheap     reach for cloud (general key only)
+/model openai/local-big       the only local role
+                              (cloud: quit and start `ask-cloud` instead —
+                               it uses its own key and endpoint)
 /ask                          question without editing anything
 /architect                    toggle architect mode
 ```
@@ -81,26 +69,29 @@ aider --no-auto-commits
 
 ## Zed
 
-### Point it at the gateway
+### Point it at LM Studio
 
-Agent Settings, or directly in `settings.json`. **Agent default is `local-big`.**
-Tool-smoke on 2026-10-22 passed on Ollama's MLX runner (ADR 0013). Keep
-`local-code` in the picker for short coding turns.
+Directly in `~/.config/zed/settings.json` (ADR 0016). Every model slot —
+agent, inline assistant, commit message, thread summary, compaction,
+subagent — is `hearth/local-big`, so nothing ever asks for a second model.
+**No cloud provider on this host (D3)**: cloud is `ask-cloud` in a terminal.
 
 ```json
 {
   "agent": {
-    "default_model": { "provider": "hearth", "model": "local-big" }
+    "default_model":          { "provider": "hearth", "model": "local-big" },
+    "inline_assistant_model": { "provider": "hearth", "model": "local-big" },
+    "commit_message_model":   { "provider": "hearth", "model": "local-big" },
+    "thread_summary_model":   { "provider": "hearth", "model": "local-big" },
+    "compaction_model":       { "provider": "hearth", "model": "local-big" },
+    "subagent_model":         { "provider": "hearth", "model": "local-big" }
   },
   "language_models": {
     "openai_compatible": {
       "hearth": {
-        "api_url": "http://127.0.0.1:4000/v1",
+        "api_url": "http://127.0.0.1:1234/v1",
         "available_models": [
-          { "name": "local-code", "display_name": "qwen3-coder:30b", "max_tokens": 65536 },
-          { "name": "local-chat", "display_name": "qwen3:8b", "max_tokens": 40960 },
-          { "name": "local-big",  "display_name": "qwen3.6:35b-mlx", "max_tokens": 65536 },
-          { "name": "cloud-cheap", "display_name": "gemini-3.6-flash", "max_tokens": 1048576 }
+          { "name": "local-big", "display_name": "local-big", "max_tokens": 65536 }
         ]
       }
     }
@@ -108,29 +99,32 @@ Tool-smoke on 2026-10-22 passed on Ollama's MLX runner (ADR 0013). Keep
 }
 ```
 
-`local-big` routes through the gateway to Ollama. For a Rapid-MLX experiment
-that bypasses the gateway, see `docs/MLX-BENCH.md`.
+`max_tokens` must match the load context in `config/roles.tsv` (65536). An
+overstated window fails at request time with a confusing error. LM Studio's
+`/v1/models` returns bare ids, so the list is written by hand; `zed-litellm`
+no longer applies.
 
-On a laptop use the gateway host's LAN address instead of `127.0.0.1`.
+The token goes in through the UI (Agent panel → settings → `hearth` → API
+key) so it lands in the keychain rather than a dotfile. Use the host token on
+this machine; each laptop gets its own (phase 4).
 
-Context windows come from each role's `model_info` on the gateway (ADR 0009).
-Prefer `zed-litellm` below over hand-editing numbers; it reads `/model/info`.
-An overstated window fails at request time with a confusing error.
+### MCP: auslaw, Research profile only
 
-The API key goes in the UI so it lands in the keychain rather than a dotfile.
-Use the `private` key on this machine; `lan` on other machines.
+`auslaw` is a `context_servers` stdio entry (same seven tools, no jade
+cookie — `docs/MCP.md`). Every one of its useful tools sends the query to
+AustLII, so it is enabled **only** in the `research` agent profile.
 
-### Let a tool write that block
+Zed's built-in **Write** profile sets `enable_all_context_servers: true`
+(Zed 1.26 defaults), which would expose auslaw in every thread. Settings
+override that to `false`. `tool_permissions.default` is `confirm`, so each
+tool call asks first.
 
-Zed requires models to be listed by hand, because OpenAI's `/models` endpoint
-returns bare IDs with no context windows. LiteLLM's `/model/info` *does* return
-that metadata, and [`zed-litellm`](https://github.com/joby-brentsmith/zed-litellm)
-queries it and writes correct entries into `settings.json`, backing up first.
+Switching to Research is the act of saying "this query goes to AustLII" —
+the same thing switching to the `research` key used to mean.
 
-Worth re-running after any role change so context windows stay honest.
-Default merge keeps hand-tuned fields like `display_name` (concrete Ollama
-tags in the picker while API `name` stays the role). Avoid `--replace` /
-`-f` unless you intend to wipe those labels.
+Note that Write and Ask still include Zed's built-in `fetch` and
+`search_web` tools, which reach the internet on their own. That predates
+this migration.
 
 ### On a laptop
 
@@ -143,9 +137,6 @@ above:
 ```
 
 and use the **`lan`** key rather than `private`.
-
-`zed-litellm` works from the laptop too — point it at the same LAN address and
-it writes the model list with correct context windows.
 
 **Where the code lives is a separate question.** Zed edits files on the machine
 it runs on, so either:

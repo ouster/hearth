@@ -1,11 +1,15 @@
 #!/bin/bash
-# Open WebUI — private chat surface on the gateway.
+# Open WebUI — private chat surface on LM Studio (ADR 0016, D5).
 #
 #   scripts/webui.sh up | down | status | logs | destroy
 #
-# Points at LiteLLM with the PRIVATE key, so the model picker shows local roles
-# only and a cloud request is refused by the gateway rather than by intent.
-# To reach cloud models deliberately, run `scripts/webui.sh up --general`.
+# Points at llmster on the host (:1234) with the host token. LM Studio holds
+# only local models, so nothing the browser sends can leave the machine. There
+# is no cloud mode: the gateway that made `--general` possible is gone.
+#
+# The container reaches the host's 127.0.0.1:1234 via host.containers.internal
+# (Podman's host forwarding) with "serve on local network" off — checked
+# 2026-10-31.
 #
 # Bound to 127.0.0.1 like everything else — this is a browser tab on this
 # machine, not a service for the LAN.
@@ -21,10 +25,8 @@ IMAGE=ghcr.io/open-webui/open-webui:main
 PORT=3000
 
 CMD="${1:-status}"
-SCOPE="private"
 BIND="127.0.0.1"
 for a in "$@"; do
-  [ "$a" = "--general" ] && SCOPE="general"
   # --lan exposes the UI to the whole network. Open WebUI has its own login, so
   # this is not wide open — but it is another authenticated surface on a machine
   # whose other services are deliberately localhost-only. The SSH tunnel in
@@ -34,30 +36,24 @@ done
 
 case "$CMD" in
   up)
-    if [ "$SCOPE" = "general" ]; then
-      KEY="${LITELLM_GENERAL_KEY:?LITELLM_GENERAL_KEY not set}"
-      echo "scope: GENERAL — cloud roles reachable from the browser"
-    else
-      KEY="${LITELLM_PRIVATE_KEY:?LITELLM_PRIVATE_KEY not set}"
-      echo "scope: PRIVATE — local roles only, cloud structurally refused"
-    fi
+    [ -f "$HOME/.config/hearth/env" ] && { set -a; . "$HOME/.config/hearth/env"; set +a; }
+    KEY="${LMSTUDIO_HOST_TOKEN:?LMSTUDIO_HOST_TOKEN not set in ~/.config/hearth/env}"
 
     podman info >/dev/null 2>&1 || { echo "podman VM not running: podman machine start"; exit 1; }
-    # db:connected, not just answering — Open WebUI authenticates with a virtual
-    # key, so a gateway with Postgres down gives it a model list of nothing.
-    case "$(ai_gateway_state http://127.0.0.1:4000 5)" in
-      ready) : ;;
-      nodb)  echo "gateway is up but db:disconnected — the ${SCOPE} key will 401."
-             echo "  fix: scripts/boot.sh"; exit 1 ;;
-      hung)  echo ":4000 is listening but readiness hangs — usually a dead database."
-             echo "  fix: scripts/boot.sh"; exit 1 ;;
-      *)     echo "gateway not responding on :4000"; exit 1 ;;
+    # 200 with the token, not just "answering": a 401 here means the UI would
+    # come up with an empty model list.
+    code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${KEY}" http://127.0.0.1:1234/v1/models)
+    case "$code" in
+      200) : ;;
+      401) echo "LM Studio refused the host token (401) — check LMSTUDIO_HOST_TOKEN"; exit 1 ;;
+      000) echo "LM Studio not answering on :1234 — lms server start --bind 127.0.0.1 -p 1234"; exit 1 ;;
+      *)   echo "LM Studio answered ${code} on /v1/models"; exit 1 ;;
     esac
 
     podman volume exists "$VOLUME" 2>/dev/null || podman volume create "$VOLUME" >/dev/null
 
     if podman container exists "$NAME" 2>/dev/null; then
-      echo "removing existing container so the key/scope takes effect"
+      echo "removing existing container so the endpoint and token take effect"
       podman rm -f "$NAME" >/dev/null
     fi
 
@@ -83,13 +79,13 @@ case "$CMD" in
       --name "$NAME" \
       --restart unless-stopped \
       -p "${BIND}:${PORT}:8080" \
-      -e OPENAI_API_BASE_URL="http://host.containers.internal:4000/v1" \
+      -e OPENAI_API_BASE_URL="http://host.containers.internal:1234/v1" \
       -e OPENAI_API_KEY="$KEY" \
       -e ENABLE_OLLAMA_API=False \
-      -e WEBUI_NAME="hearth (${SCOPE})" \
+      -e WEBUI_NAME="hearth" \
       -e ENABLE_SIGNUP=False \
-      -e TASK_MODEL_EXTERNAL="local-chat" \
-      -e DEFAULT_MODELS="local-chat" \
+      -e TASK_MODEL_EXTERNAL="local-big" \
+      -e DEFAULT_MODELS="local-big" \
       ${SEARCH_ENV[@]+"${SEARCH_ENV[@]}"} \
       -v "${VOLUME}:/app/backend/data" \
       "$IMAGE" >/dev/null
@@ -129,11 +125,16 @@ case "$CMD" in
   First visit asks you to create an account — it is local to the container,
   nothing leaves the machine. Signup is then disabled.
 
-  ENABLE_OLLAMA_API=False is deliberate: without it Open WebUI would talk to
-  Ollama directly and bypass the gateway, which is the exact hole Phase 3 closed.
+  CONNECTION — like web search below, Open WebUI stores the OpenAI endpoint
+  and key in its database, and the DATABASE VALUE wins over the environment.
+  If the model list is empty, set it where it counts:
+    Admin Panel -> Settings -> Connections -> OpenAI API
+      URL: http://host.containers.internal:1234/v1
+      Key: the host token (LMSTUDIO_HOST_TOKEN)
+    Delete any leftover :4000 or :11434 connection.
 
-  Default model and title/tag generation are pinned to local-chat, so general
-  questions do not land on a coding model and housekeeping cannot become spend.
+  Default model and title/tag generation are local-big (D1): one resident
+  model, so housekeeping never evicts anything.
 
   Two settings worth changing on first run:
     Settings -> Interface -> Display "Response Info"   (model + token counts)
@@ -158,8 +159,7 @@ case "$CMD" in
 
     To start genuinely fresh instead: scripts/webui.sh destroy (loses chat history).
 
-  For the fuller picture — which role, which actual model, local or cloud,
-  tokens and cost — use:  scripts/usage.sh
+  To see what the server is doing:  lms log stream
 EOF
     ;;
 
@@ -173,5 +173,5 @@ EOF
     podman volume rm "$VOLUME" >/dev/null 2>&1 || true
     echo "gone"
     ;;
-  *) echo "usage: $0 {up [--general] [--lan]|down|status|logs|destroy}"; exit 1 ;;
+  *) echo "usage: $0 {up [--lan]|down|status|logs|destroy}"; exit 1 ;;
 esac

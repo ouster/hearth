@@ -19,7 +19,8 @@ set -u
 
 SELF_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$SELF_DIR/.." && pwd)
-GATEWAY_PORT=${GATEWAY_PORT:-4000}
+GATEWAY_PORT=${GATEWAY_PORT:-1234}   # LM Studio (ADR 0016)
+OLD_PORT=4000                        # retired LiteLLM gateway: must now be denied
 
 PASS=0; FAIL=0; ERRS=0
 pass()  { printf "  \033[32mPASS\033[0m   %s\n" "$1"; PASS=$((PASS+1)); }
@@ -118,7 +119,7 @@ head_ "3. Positive controls (unsandboxed) -- what is even reachable right now"
 # internet "passes" an egress-blocking test trivially and tells you nothing.
 
 GW_LIVE=0
-if curl -s --max-time 4 -o /dev/null "http://127.0.0.1:$GATEWAY_PORT/health/liveliness" 2>/dev/null; then
+if curl -s --max-time 4 -o /dev/null "http://127.0.0.1:$GATEWAY_PORT/v1/models" 2>/dev/null; then
     pass "gateway reachable unsandboxed on :$GATEWAY_PORT"
     GW_LIVE=1
 else
@@ -142,7 +143,7 @@ SB="sandbox-exec -f $TMPD/profile.sb"
 # 4a. ALLOWED path must still work. If this fails the sandbox is useless --
 #     aider could not talk to the gateway and you would just turn it off.
 if [ "$GW_LIVE" -eq 1 ]; then
-    if $SB curl -s --max-time 4 -o /dev/null "http://127.0.0.1:$GATEWAY_PORT/health/liveliness" 2>/dev/null; then
+    if $SB curl -s --max-time 4 -o /dev/null "http://127.0.0.1:$GATEWAY_PORT/v1/models" 2>/dev/null; then
         pass "sandboxed process CAN still reach the gateway  (aider will work)"
     else
         fail "sandboxed process CANNOT reach the gateway -- profile is too tight"
@@ -168,6 +169,18 @@ if [ "$NET_LIVE" -eq 1 ]; then
     fi
 else
     err "skipped: no baseline internet to block"
+fi
+
+# 4b'. The retired gateway port must be denied too. Only meaningful while
+#      something still listens there; otherwise a block proves nothing.
+if curl -s --max-time 4 -o /dev/null "http://127.0.0.1:$OLD_PORT/" 2>/dev/null; then
+    if $SB curl -s --max-time 4 -o /dev/null "http://127.0.0.1:$OLD_PORT/" 2>/dev/null; then
+        fail "sandboxed process reached :$OLD_PORT -- allow-list is wider than :$GATEWAY_PORT"
+    else
+        pass "sandboxed process cannot reach :$OLD_PORT (old gateway)"
+    fi
+else
+    info "nothing listening on :$OLD_PORT -- old-gateway deny check not applicable"
 fi
 
 # 4c. Writes inside the workdir must succeed.

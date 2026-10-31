@@ -11,9 +11,9 @@ prompt on a cloud role. That is why every server below declares where it goes.
 
 ## Registered
 
-| Server | Transport | Egress | Tools | Keys |
+| Server | Transport | Egress | Tools | Clients |
 |---|---|---|---|---|
-| `auslaw` | stdio | `austlii.edu.au` | 7 of 10 | `research` only |
+| `auslaw` | stdio | `austlii.edu.au` | 7 of 10 | host Zed, `research` profile only (ADR 0016). Gateway `research` key until phase 5 |
 
 ## auslaw
 
@@ -51,7 +51,15 @@ returns an empty array without the cookie while its AustLII half still works.
 
 ### Who may reach it
 
-`research` only — local models plus these tools, and no cloud role.
+**After ADR 0016 (host Zed, 2026-10-31):** a `context_servers` stdio entry in
+`~/.config/zed/settings.json`, tools enabled only in the `research` agent
+profile. The built-in Write profile's `enable_all_context_servers` is
+overridden to `false`, and each tool call asks first. There is no cloud
+provider in host Zed (D3), so tool output only ever re-enters a local model.
+See `docs/IDES.md`.
+
+**Gateway era (until phase 5):** `research` only — local models plus these
+tools, and no cloud role.
 
 `private` deliberately gets nothing. Its promise is that nothing leaves this
 machine, and every useful auslaw tool sends a query to AustLII. Switching to

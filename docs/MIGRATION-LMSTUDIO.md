@@ -27,9 +27,9 @@
 | Phase | What | State |
 |---|---|---|
 | 0 | Baseline concurrency bench on the current stack | done 2026-10-31 — `bench/results/2026-10-31-phase0/report.md` |
-| 1 | LM Studio beside the current stack, localhost only | gate run 2026-10-31: 5 of 6 pass; wrong-tool picks 3/40, decision pending — `bench/results/2026-10-31-phase1/report.md` |
-| 2 | GPU wired-limit headroom | not started |
-| 3 | Cut host clients over (Zed, aider, WebUI, sandbox, MCP) | not started |
+| 1 | LM Studio beside the current stack, localhost only | done 2026-10-31: accepted by operator; wrong-tool picks (3/40) tracked as a metric, not a blocker; no GGUF bench — `bench/results/2026-10-31-phase1/report.md` |
+| 2 | GPU wired-limit headroom | skipped 2026-10-31: peak 29.7 GB, memory is not the bottleneck (operator) |
+| 3 | Cut host clients over (Zed, aider, WebUI, sandbox, MCP) | configs cut over 2026-10-31; sandbox-probe 11/0, WebUI sees roles; operator gate (Zed session, aider) pending |
 | 4 | LAN access with tokens; laptop clients | not started |
 | 5 | Stop the old stack; rewrite scripts and docs | not started |
 | 6 | Soak one week, then delete old weights and services | not started |
@@ -40,9 +40,9 @@
 |---|---|---|---|
 | D1 | Roles after migration: keep `local-code` and `local-chat` as separate models, or collapse to `local-big` + `local-embed`? | **Collapse.** Two heavy models cannot both stay resident with 3 × 64K slots inside the GPU limit, and evictions are failure F2. Keep the names as client-side aliases that resolve to `local-big` | **Collapse** (2026-10-31) |
 | D2 | Slots and context for `local-big` | 3 slots × 64K. Lower to 2 if the phase 1 footprint exceeds the limit | **3 × 64K** (2026-10-31) |
-| D3 | Does Zed **on the host** get a Gemini provider? | No on the host (keeps sensitive work local by default); yes on the laptop | |
+| D3 | Does Zed **on the host** get a Gemini provider? | No on the host (keeps sensitive work local by default); yes on the laptop | **No on host** (2026-10-31) |
 | D4 | Digest drift detection | Keep: hash the model directory in `config/roles.tsv` and check it in preflight | |
-| D5 | Keep Open WebUI? | Yes, pointed at `:1234`. It no longer needs the gateway's Postgres | |
+| D5 | Keep Open WebUI? | Yes, pointed at `:1234`. It no longer needs the gateway's Postgres | **Keep** (2026-10-31) |
 | D6 | Headless runner: LM Studio app with "run server on login", or `llmster`? | `llmster` if it installs cleanly; the app otherwise | **`llmster`** (2026-10-31). llmster cannot enable auth or create tokens (no CLI, lmstudio-ai/lms#489 open 2026-10-29), so: install the app once, set auth + token in the GUI, then verify llmster honours it; app with "run server on login" if not. Removing Ollama.app: ask the operator first |
 | D7 | Soak length before phase 6 cleanup | Operator: one week is excessive. Proposal pending | |
 
