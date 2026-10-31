@@ -31,7 +31,7 @@
 | 2 | GPU wired-limit headroom | skipped 2026-10-31: peak 29.7 GB, memory is not the bottleneck (operator) |
 | 3 | Cut host clients over (Zed, aider, WebUI, sandbox, MCP) | done 2026-10-31 — `bench/results/2026-10-31-phase3/report.md` |
 | 4 | LAN access with tokens; laptop clients | not started |
-| 5 | Stop the old stack; rewrite scripts and docs | done 2026-10-31 except the reboot gate: scripts rewritten (healthcheck, preflight, status, diagnose, boot + autostart, bench, swap-role, pull-candidates, tool-smoke, pin-digests per D4); mlx-bench deleted; client-setup stubbed until phase 4. **Gate pending: preflight + healthcheck after a real reboot** |
+| 5 | Stop the old stack; rewrite scripts and docs | done 2026-10-31 — reboot gate passed, `bench/results/2026-10-31-phase5/report.md` |
 | 6 | Soak one week, then delete old weights and services | uninstall done 2026-10-31 **without a soak** (operator); backups in `~/hearth-backups/`; ADR 0016 not yet marked accepted-complete |
 
 ## Decisions the operator must make
