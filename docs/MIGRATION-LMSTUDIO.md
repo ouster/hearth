@@ -29,7 +29,7 @@
 | 0 | Baseline concurrency bench on the current stack | done 2026-10-31 — `bench/results/2026-10-31-phase0/report.md` |
 | 1 | LM Studio beside the current stack, localhost only | done 2026-10-31: accepted by operator; wrong-tool picks (3/40) tracked as a metric, not a blocker; no GGUF bench — `bench/results/2026-10-31-phase1/report.md` |
 | 2 | GPU wired-limit headroom | skipped 2026-10-31: peak 29.7 GB, memory is not the bottleneck (operator) |
-| 3 | Cut host clients over (Zed, aider, WebUI, sandbox, MCP) | configs cut over 2026-10-31; sandbox-probe 11/0, WebUI sees roles; operator gate (Zed session, aider) pending |
+| 3 | Cut host clients over (Zed, aider, WebUI, sandbox, MCP) | gate 2026-10-31: Zed two-thread session pass, sandbox pass, ask pass; ask-cloud and WebUI UI check open — `bench/results/2026-10-31-phase3/report.md` |
 | 4 | LAN access with tokens; laptop clients | not started |
 | 5 | Stop the old stack; rewrite scripts and docs | partly done 2026-10-31: docs rewritten, ADRs marked superseded, CLAUDE.md rules updated, Ollama stopped; scripts, LiteLLM, Postgres, watchdog pending |
 | 6 | Soak one week, then delete old weights and services | not started |
