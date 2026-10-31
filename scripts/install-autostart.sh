@@ -38,6 +38,12 @@ write_plist() {
   </array>
   <key>RunAtLoad</key>
   <true/>
+  <!-- boot.sh exits once things are up. Without this, launchd kills every
+       process left in the job's process group at exit — which is the Podman
+       VM (vfkit, gvproxy) that boot.sh started. Observed and reproduced
+       2026-10-31. -->
+  <key>AbandonProcessGroup</key>
+  <true/>
   <key>StandardOutPath</key>
   <string>${LOG}</string>
   <key>StandardErrorPath</key>
@@ -88,6 +94,9 @@ case "$MODE" in
     rc=0
     if [ -f "$PLIST" ] && plutil -lint "$PLIST" >/dev/null 2>&1; then
       echo "OK    plist ${PLIST}"
+      grep -q '<key>AbandonProcessGroup</key>' "$PLIST" \
+        && echo "OK    AbandonProcessGroup set (the Podman VM survives boot.sh exiting)" \
+        || { echo "FAIL  AbandonProcessGroup missing — launchd will kill the Podman VM when boot.sh exits (--apply)"; rc=1; }
       grep -q "${ROOT}/scripts/boot.sh" "$PLIST" \
         && echo "OK    points at ${ROOT}/scripts/boot.sh" \
         || { echo "FAIL  plist points somewhere else"; rc=1; }

@@ -82,6 +82,10 @@ agent that runs `scripts/boot.sh` once at login:
 4. runs `scripts/lms-load.sh`;
 5. starts the Podman VM, SearXNG and Open WebUI.
 
+The plist sets `AbandonProcessGroup`: without it launchd kills every process
+`boot.sh` leaves behind when it exits — which is the Podman VM, so WebUI and
+SearXNG died minutes after login (seen and reproduced 2026-10-31).
+
 Log: `~/Library/Logs/hearth-boot.log`. Check it with
 `scripts/install-autostart.sh --check`. By hand: `scripts/boot.sh`.
 
