@@ -2,14 +2,15 @@
 """Zed-like multi-turn tool smoke — read then write with angle brackets in content.
 
 Usage:
-  bench/tool-smoke.py --backend ollama --model gpt-oss:20b
-  bench/tool-smoke.py --backend openai --url http://127.0.0.1:8000/v1 --model default
+  OPENAI_API_KEY=<token> bench/tool-smoke.py --model local-big    # LM Studio :1234
+  bench/tool-smoke.py --url <openai-compatible base> --model <id>
 
 Exit 0 on successful write tool call in turn 2; 1 on failure.
 """
 from __future__ import annotations
 
 import argparse
+import os
 import json
 import sys
 import urllib.error
@@ -201,10 +202,11 @@ def run_smoke(backend: str, base: str, model: str, api_key: str, timeout: int) -
 
 def main() -> int:
     p = argparse.ArgumentParser(description="Zed-like tool smoke test")
-    p.add_argument("--backend", choices=("ollama", "openai"), default="ollama")
-    p.add_argument("--url", default="http://127.0.0.1:11434")
+    p.add_argument("--backend", choices=("ollama", "openai"), default="openai")
+    p.add_argument("--url", default="http://127.0.0.1:1234/v1")
     p.add_argument("--model", required=True)
-    p.add_argument("--api-key", default="")
+    # Default from the environment so the token never appears in argv / ps.
+    p.add_argument("--api-key", default=os.environ.get("OPENAI_API_KEY", ""))
     p.add_argument("--timeout", type=int, default=300)
     args = p.parse_args()
     return run_smoke(args.backend, args.url, args.model, args.api_key, args.timeout)

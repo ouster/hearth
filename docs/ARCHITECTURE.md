@@ -101,9 +101,10 @@ The LM Studio app owns the daemon, with "Enable Local LLM Service
 still started with `lms server start --bind 127.0.0.1 -p 1234` and roles are
 loaded with `scripts/lms-load.sh`. The app's GUI costs ~1.1 GB of footprint
 over headless llmster. **Do not also run llmster**: whichever starts first owns
-`~/.lmstudio`. Start-at-login is a phase 5 item (`install-autostart.sh`).
-Until then, after a reboot: open the app, `lms server start …`,
-`scripts/lms-load.sh`.
+`~/.lmstudio`. At login `com.hearth.boot` runs `scripts/boot.sh` (`install-autostart.sh`):
+open the app hidden, restart the server with an explicit `--bind 127.0.0.1`
+(the saved settings drifted to `0.0.0.0` + CORS once), load roles.tsv, start
+Podman, SearXNG and Open WebUI.
 
 ### Environment files
 
@@ -118,17 +119,24 @@ anything an agent spawns, would then hold it.
 
 ## Verification
 
-| Check | Answers |
-|---|---|
-| `scripts/lms-load.sh --check` | Is exactly the roles.tsv set loaded, with the right context and slots? |
-| `scripts/tool-smoke.sh openai http://127.0.0.1:1234/v1 local-big` | Does a Zed-like read → write tool loop work? |
-| `scripts/concurrency-bench.sh` | TTFT, tool-call validity and footprint under N concurrent agent turns |
-| `scripts/sandbox-probe.sh` | Sandboxed agents reach `:1234` and nothing else (incl. the old `:4000`) |
-| `curl` without a token | Must be 401 |
+| Script | Answers | Exit |
+|---|---|---|
+| `healthcheck.sh` | host token 200 (positive control), no/wrong token 401, each role answers, only LM Studio on :1234, LAN silent or token-only, no CORS, an unlisted model never loads | 0 / 1 / 2 |
+| `preflight.sh` | roles.tsv well-formed and local-only on lmstudio, keys downloaded and in MODELS.md, rule 1, saved server settings, secrets placement, weight drift, autostart, bash 3.2 / CRLF | 0 / 1 / 2 |
+| `status.sh` | one glance, no model calls | — |
+| `diagnose.sh` | evidence dump — run before restarting anything | — |
+| `lms-load.sh --check` | exactly roles.tsv loaded, right context and slots | 0 / 1 / 2 |
+| `pin-digests.sh --check [--deep]` | weights unchanged since recorded (D4) | 0 / 1 / 2 |
+| `tool-smoke.sh` | Zed-like read → write tool loop | 0 / 1 |
+| `concurrency-bench.sh`, `bench.sh` | load behaviour; quality tasks | — |
+| `sandbox-probe.sh` | sandboxed agents reach :1234 and nothing else | 0 / 1 |
 
-`healthcheck.sh`, `preflight.sh` and `status.sh` still check the retired
-gateway; they are rewritten in phase 5 (server up, each role answers,
-no-token 401, LAN only with token, nothing else on 1234, JIT off).
+Exit 2 always means "could not run", never "found a problem".
+
+Known behaviour: with JIT off, LM Studio answers a request for an **unknown
+model name with the loaded LLM** rather than refusing. Nothing new loads (so
+nothing is evicted), but a typo'd model id silently gets `local-big`.
+`healthcheck.sh` reports it as a warning.
 
 ## Measured (2026-10-31)
 
@@ -163,9 +171,9 @@ deliberately unrestricted; see `docs/THREAT-MODEL.md` and ADR 0007.
 ## Known gaps
 
 - **LAN access** — phase 4 (tokens per machine, serve on network with auth).
-- **Boot supervision and the health scripts** — phase 5.
-- **Digest drift detection** — the Ollama digest pins no longer apply; D4
-  (hash the model directory) is undecided.
+- **LM Studio's saved settings can change under you** (bind and CORS did
+  once). `boot.sh` resets them at login; `healthcheck.sh` checks the live
+  listener and CORS header, not the file.
 - **Untrusted MCP servers are unaudited** — `docs/THREAT-MODEL.md` §3.
 - **Zed's built-in `fetch` and `search_web` tools** reach the internet in the
   Write and Ask profiles; that predates this migration.

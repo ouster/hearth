@@ -1,13 +1,15 @@
 # MCP registry
 
-Server → tools → who may reach them. This file and `litellm/config.yaml` are
-the only places a concrete MCP server may be named. Update both together, plus
-an ADR — see `docs/decisions/0008`.
+Server → tools → which clients may reach them. This file and the client config
+docs (`docs/IDES.md`) are the only places a concrete MCP server may be named.
+Update both together, plus an ADR. Since ADR 0016 servers live in the client
+(Zed `context_servers`), not the gateway (ADR 0008, superseded).
 
-MCP tools are a **second egress path**. `scripts/healthcheck.sh` proves a
-prompt cannot reach a cloud *model*; it says nothing about a tool that calls
-the internet on its own account, and nothing about tool output re-entering the
-prompt on a cloud role. That is why every server below declares where it goes.
+MCP tools are a **second egress path**. Keeping cloud models off `:1234`
+stops a prompt reaching a cloud *model*; it says nothing about a tool that
+calls the internet on its own account. That is why every server below declares
+where it goes, and why a networked server is enabled only in a profile named
+for that egress.
 
 ## Registered
 
@@ -68,56 +70,43 @@ that being an ambient property of the everyday key.
 
 ## Rules these enforce
 
-**Deny by default.** `require_key_mcp_access_defined: true` in
-`general_settings`. Without it, a key with an empty list inherits its team's,
-and a team with an empty list means "no restriction" — so registering one
-server would grant it to every key including `private`.
+**Off by default.** Zed's built-in Write profile enables every context server
+(`enable_all_context_servers: true` in Zed 1.26); host settings redefine
+Write with it `false`. A server's tools are switched on only in a profile
+named for its egress (`research` for auslaw).
 
-**No key holds both a cloud role and a network-reaching tool.** Tool output
-re-enters the prompt; on a cloud role it goes to the provider. Enforced by
-`scripts/audit-mcp-scope.sh`, which reads the `x-hearth-egress` marker on each
-server. **A server with no marker fails the audit** — an unread server is
-exactly the one most likely to phone home.
+**No cloud model alongside a networked tool.** Tool output re-enters the
+prompt. Host Zed has no cloud provider (D3), so tool output only ever reaches
+a local model.
+
+**Ask before each call.** `agent.tool_permissions.default` is `confirm`.
 
 ## Checks
 
-| Command | Proves |
+There is no automated MCP scope audit since the gateway went (ADR 0016).
+By hand, after any Zed upgrade or settings change:
+
+| Check | Proves |
 |---|---|
-| `scripts/audit-mcp-scope.sh` | no key holds a cloud role and a networked tool |
-| `scripts/healthcheck.sh` | private sees zero tools, against a master-key control |
-| `scripts/preflight.sh` | deny-by-default is on, stdio entry paths exist |
+| Agent panel → Write profile shows no auslaw tools | the default profile cannot reach AustLII |
+| Research profile shows exactly the 7 allowed tools | the jade.io tools stay off |
+| `grep -c JADE ~/.config/zed/settings.json` is 0 | the cookie is not configured |
 
 ## Adding a server
 
-> **Gateway-era procedure.** After ADR 0016 a server is added to the client
-> (Zed `context_servers`) and enabled only in a profile that matches its egress.
-> Steps 1 and 4 still apply: read its source, and add a row here plus an ADR.
-
 1. Read its source and establish what it talks to. That is the whole job; the
    rest is typing.
-2. Add it to `mcp_servers` in `config.yaml` with `x-hearth-egress` and an
-   `allowed_tools` list. Name it to comply with SEP-986 — since v1.80.18
-   LiteLLM namespaces tools by server name and rejects non-compliant new names.
-3. Add a `MCP_*` variable and grant it in `scripts/create-keys.sh`. A grant
-   needs a **team**: a key outside one may only be assigned servers flagged
-   `allow_all_keys`, and that flag unions the server into *every* key.
-4. Add a row to this file, and an ADR.
-5. Verify with the three checks above.
+2. Add it to Zed `context_servers` (stdio preferred — no listener).
+3. Enable its tools only in a profile named for its egress; never in Write.
+4. Add a row to this file, a note in `docs/IDES.md`, and an ADR.
 
 ### Traps
 
-**stdio entry paths cannot be templated.** LiteLLM's `os.environ/` resolver
-recurses into dicts but leaves plain strings inside a list alone, and `args` is
-`List[str]`. An `os.environ/` entry there is passed to the interpreter
-verbatim.
+**A wrong path is silent.** A stdio server whose command or script path is
+wrong exits immediately and shows no tools — identical in the UI to a
+correctly scoped profile. After adding one, confirm its tools appear in the
+profile that should have them.
 
-**A wrong path is silent.** The process exits immediately, the log says
-`Connection closed`, and the tool list is empty — identical from the API to
-correct scoping. Preflight checks the paths for this reason.
-
-**stdio commands are allowlisted by basename:** `npx`, `uvx`, `python`,
-`python3`, `node`, `docker`, `deno`. An absolute path works because LiteLLM
-takes the basename; a shell script does not.
-
-**Tools depend on Postgres.** MCP auth reads the same database as virtual keys.
-A database outage takes tools down the same way it takes keys down.
+**Zed profile overrides replace, they do not merge.** Overriding a built-in
+profile needs `name` and the full tool list, or the whole settings file fails
+to load (`missing field name`).

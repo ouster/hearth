@@ -1,100 +1,103 @@
 #!/bin/bash
-# Record and verify the digest behind every local role.
+# Record and verify the weights behind every LM Studio role (D4).
 #
-#   scripts/pin-digests.sh           record current digests (after a bench)
-#   scripts/pin-digests.sh --check   compare live against recorded, exit 1 on drift
+#   scripts/pin-digests.sh                  # record, after a bench you trust
+#   scripts/pin-digests.sh --check          # fast: file count, bytes, newest mtime
+#   scripts/pin-digests.sh --check --deep   # re-hash everything (~20 GB, ~30 s)
 #
-# Ollama tags are MUTABLE POINTERS, not versions. `ollama pull qwen3-coder:30b`
-# fetches whatever that tag points at today, which may be a different
-# quantisation than the one you benched. Nothing warns you.
+# Hashes the `weights` path from config/roles.tsv (under ~/.lmstudio/models):
+# sha256 of every file, then sha256 of the sorted "path sha" list. Written to
+# pins/digests.tsv, git-tracked, so drift shows in a diff. preflight.sh runs
+# the fast check.
 #
-# Ollama has no way to pin a tag to a digest in the model name, so "pinning"
-# here means RECORD + DETECT, not enforce: we store the digest that was in place
-# when the role was blessed, and fail loudly when the live one differs. That is
-# weaker than true pinning and it is the strongest thing available.
+# This detects; it does not enforce. LM Studio will load whatever is on disk.
+# Re-record only after re-benching.
+#
+# Exit 0 match / recorded, 1 drift, 2 could not run.
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
-ai_python_or_die || exit 2
 
-CFG="${ROOT}/litellm/config.yaml"
 PINS="${ROOT}/pins/digests.tsv"
-MODE="${1:-record}"
+MODELS="$HOME/.lmstudio/models"
+MODE=record; DEEP=0
+for a in "$@"; do
+  case "$a" in
+    --check) MODE=check ;;
+    --deep)  DEEP=1 ;;
+    *) echo "usage: $0 [--check [--deep]]"; exit 2 ;;
+  esac
+done
 
-live_models() {
-  "$AI_PY" - "$CFG" <<'PY'
-import sys, yaml
-cfg = yaml.safe_load(open(sys.argv[1])) or {}
-for m in cfg.get('model_list', []):
-    t = m['litellm_params']['model']
-    if t.startswith(('ollama/', 'ollama_chat/')):
-        print(m['model_name'] + "\t" + t.split('/', 1)[1])
-PY
+# Prints: files<TAB>bytes<TAB>newest_mtime for a file or directory.
+quick() {
+  find "$1" -type f ! -name '.DS_Store' -print0 \
+    | xargs -0 stat -f '%z %m' \
+    | awk '{n++; b+=$1; if ($2>m) m=$2} END {printf "%d\t%d\t%d\n", n, b, m}'
 }
 
-digest_of() {
-  ollama list 2>/dev/null | awk -v n="$1" 'NR>1 && ($1==n || $1==n":latest"){print $2; exit}'
+# Prints the combined sha256 for a file or directory.
+deep() {
+  local p="$1"
+  if [ -f "$p" ]; then
+    shasum -a 256 "$p" | awk '{print $1}'
+  else
+    (cd "$p" && find . -type f ! -name '.DS_Store' | LC_ALL=C sort \
+       | while IFS= read -r f; do printf '%s %s\n' "$f" "$(shasum -a 256 "$f" | awk '{print $1}')"; done) \
+      | shasum -a 256 | awk '{print $1}'
+  fi
 }
 
-if [ "$MODE" = "--check" ]; then
-  if [ ! -f "$PINS" ]; then
-    echo "no pins recorded — run scripts/pin-digests.sh"
-    exit 2
-  fi
-  drift=0; missing=0
-  while IFS=$'\t' read -r role model; do
-    [ -z "${role:-}" ] && continue
-    live="$(digest_of "$model")"
-    pinned=$(awk -F'\t' -v m="$model" '$2==m{print $3; exit}' "$PINS")
-    if [ -z "$live" ]; then
-      printf '  %-12s %-24s NOT PULLED\n' "$role" "$model"; missing=$((missing+1))
-    elif [ -z "$pinned" ]; then
-      printf '  %-12s %-24s no pin recorded\n' "$role" "$model"; missing=$((missing+1))
-    elif [ "$live" != "$pinned" ]; then
-      printf '  %-12s %-24s DRIFT  pinned=%s live=%s\n' "$role" "$model" "$pinned" "$live"
-      drift=$((drift+1))
-    else
-      printf '  %-12s %-24s ok  %s\n' "$role" "$model" "$live"
-    fi
-  done <<< "$(live_models)"
+rows=$(hearth_roles lmstudio)
+[ -n "$rows" ] || { echo "could not run: no lmstudio rows in config/roles.tsv"; exit 2; }
 
-  echo
-  if [ "$drift" -gt 0 ]; then
-    echo "${drift} role(s) drifted — the weights changed under a benched role."
-    echo "Re-bench, then re-record with: scripts/pin-digests.sh"
-    exit 1
-  fi
-  [ "$missing" -gt 0 ] && { echo "${missing} role(s) unpinned or unpulled"; exit 2; }
-  echo "all roles match their recorded digest"
+if [ "$MODE" = record ]; then
+  tmp=$(mktemp)
+  {
+    echo "# role	model_key	weights	files	bytes	newest_mtime	sha256	recorded"
+    echo "# Written by scripts/pin-digests.sh (D4). Hash of the weights on disk"
+    echo "# under ~/.lmstudio/models. Detects drift; does not enforce."
+  } > "$tmp"
+  while IFS="$(printf '\t')" read -r role _ key _ _ w; do
+    [ -n "$role" ] || continue
+    p="${MODELS}/${w}"
+    [ -n "$w" ] && [ "$w" != "-" ] && [ -e "$p" ] || { echo "could not run: ${role}: weights '${w}' not found under ${MODELS}"; rm -f "$tmp"; exit 2; }
+    printf 'hashing %s (%s)… ' "$role" "$w"
+    q=$(quick "$p"); h=$(deep "$p")
+    echo "${h:0:12}"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$role" "$key" "$w" "$q" "$h" "$(date +%Y-%m-%d)" >> "$tmp"
+  done <<EOF
+$rows
+EOF
+  mkdir -p "$(dirname "$PINS")"; mv "$tmp" "$PINS"
+  echo "recorded → pins/digests.tsv"
   exit 0
 fi
 
-# ---------------------------------------------------------------- record
-mkdir -p "$(dirname "$PINS")"
-TODAY="$(date +%Y-%m-%d)"
-TMP="$(mktemp)"; trap 'rm -f "$TMP"' EXIT
-
-{
-  echo "# role	model	digest	recorded"
-  echo "# Written by scripts/pin-digests.sh. Ollama tags are mutable pointers;"
-  echo "# this records what was in place when each role was blessed so drift is"
-  echo "# detectable. scripts/preflight.sh checks it."
-} > "$TMP"
-
-n=0
-while IFS=$'\t' read -r role model; do
-  [ -z "${role:-}" ] && continue
-  d="$(digest_of "$model")"
-  if [ -z "$d" ]; then
-    echo "  SKIP ${role} -> ${model} (not pulled)"
-    continue
+[ -f "$PINS" ] || { echo "could not run: ${PINS} missing (record first)"; exit 2; }
+rc=0
+while IFS="$(printf '\t')" read -r role _ key _ _ w; do
+  [ -n "$role" ] || continue
+  rec=$(awk -F'\t' -v r="$role" '$1 == r' "$PINS")
+  if [ -z "$rec" ]; then echo "DRIFT  ${role}: not recorded"; rc=1; continue; fi
+  if [ "$(printf '%s' "$rec" | cut -f2,3)" != "$(printf '%s\t%s' "$key" "$w")" ]; then
+    echo "DRIFT  ${role}: roles.tsv now ${key} / ${w}; recorded $(printf '%s' "$rec" | cut -f2,3 | tr '\t' ' ')"; rc=1; continue
   fi
-  printf '%s\t%s\t%s\t%s\n' "$role" "$model" "$d" "$TODAY" >> "$TMP"
-  printf '  %-12s %-24s %s\n' "$role" "$model" "$d"
-  n=$((n+1))
-done <<< "$(live_models)"
-
-mv "$TMP" "$PINS"
-echo
-echo "recorded ${n} role(s) to pins/digests.tsv — commit this"
+  p="${MODELS}/${w}"
+  [ -e "$p" ] || { echo "DRIFT  ${role}: weights missing at ${p}"; rc=1; continue; }
+  want_q=$(printf '%s' "$rec" | cut -f4-6); got_q=$(quick "$p")
+  if [ "$want_q" != "$got_q" ]; then
+    echo "DRIFT  ${role}: files/bytes/mtime changed (recorded $(printf '%s' "$want_q" | tr '\t' '/'), now $(printf '%s' "$got_q" | tr '\t' '/'))"; rc=1; continue
+  fi
+  if [ "$DEEP" -eq 1 ]; then
+    want_h=$(printf '%s' "$rec" | cut -f7); got_h=$(deep "$p")
+    [ "$want_h" = "$got_h" ] || { echo "DRIFT  ${role}: sha256 ${got_h:0:12} ≠ recorded ${want_h:0:12}"; rc=1; continue; }
+    echo "ok     ${role}: sha256 ${got_h:0:12} matches"
+  else
+    echo "ok     ${role}: files, bytes and mtime match (--deep to re-hash)"
+  fi
+done <<EOF
+$rows
+EOF
+exit "$rc"

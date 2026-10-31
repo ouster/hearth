@@ -1,13 +1,17 @@
 #!/bin/bash
-# Make the stack survive a reboot, and stop the Studio sleeping out from under
-# the laptops.
+# Make local inference come back after login, and print (never run) the sleep
+# settings a server-like Mac wants.
 #
-#   scripts/install-autostart.sh --check     what is and is not set up
-#   scripts/install-autostart.sh --apply     install the launchd agent
+#   scripts/install-autostart.sh --check    # default: report, change nothing
+#   scripts/install-autostart.sh --apply    # write + load the launchd agent
 #   scripts/install-autostart.sh --remove
 #
-# Power settings need sudo, so they are PRINTED rather than run. A script that
-# silently changes when your machine sleeps is not a script you want.
+# The agent runs scripts/boot.sh once at login (RunAtLoad, no KeepAlive):
+# open LM Studio hidden, start the server with an explicit --bind, load
+# config/roles.tsv, start Podman + SearXNG + Open WebUI. Log:
+# ~/Library/Logs/hearth-boot.log
+#
+# Exit 0 ok, 1 not installed / broken (--check), 2 could not run.
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -15,141 +19,90 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 LABEL="$(ai_boot_label)"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
+LOG="$HOME/Library/Logs/hearth-boot.log"
+DOMAIN="gui/$(id -u)"
+MODE="${1:---check}"
 
-ok()  { printf '  \033[32mOK\033[0m    %s\n' "$1"; }
-gap() { printf '  \033[33mGAP\033[0m   %s\n' "$1"; }
-
-check() {
-  echo "What survives a reboot:"
-  echo
-
-  launchctl print "$(ai_litellm_agent)" >/dev/null 2>&1 \
-    && ok "LiteLLM — launchd agent ($(ai_litellm_label)), KeepAlive" \
-    || gap "LiteLLM — launchd agent not loaded (expected $(ai_litellm_label))"
-
-  if [ -f "$HOME/Library/LaunchAgents/com.user.setollamahost.plist" ]; then
-    ok "OLLAMA_HOST — set at login (localhost binding survives)"
-  else
-    gap "OLLAMA_HOST — not set at login; Ollama may reopen on all interfaces"
-  fi
-
-  if [ -f "$HOME/Library/LaunchAgents/$(ai_ollama_label).plist" ]; then
-    ok "Ollama — launchd service ($(ai_ollama_label)), KeepAlive"
-  elif osascript -e 'tell application "System Events" to get the name of every login item' 2>/dev/null | grep -qi ollama; then
-    ok "Ollama — opens at login (app)"
-  else
-    gap "Ollama — no service and not a login item: scripts/install-ollama-service.sh --apply"
-  fi
-
-  if [ -f "$PLIST" ]; then
-    ok "podman + containers — boot agent installed"
-  else
-    gap "podman machine — does NOT start itself. Everything containerised stays down"
-  fi
-
-  echo
-  echo "Sleep:"
-  if command -v pmset >/dev/null 2>&1; then
-    s=$(pmset -g custom 2>/dev/null | awk '/^AC Power/,0' | awk '/ sleep/ {print $2; exit}')
-    w=$(pmset -g custom 2>/dev/null | awk '/^AC Power/,0' | awk '/womp/ {print $2; exit}')
-    [ "${s:-1}" = "0" ] && ok "system sleep disabled on AC" \
-                        || gap "system sleep after ${s:-?} min — laptops lose the gateway"
-    [ "${w:-0}" = "1" ] && ok "wake on network access enabled" \
-                        || gap "wake on network disabled — a sleeping Studio stays asleep"
-  fi
-}
-
-case "${1:---check}" in
-  --check) check ;;
-
-  --apply)
-    # launchd PATH is /usr/bin:/bin:/usr/sbin:/sbin — Homebrew podman is
-    # invisible without this. boot.sh also prepends these paths; belt + braces.
-    #
-    # AbandonProcessGroup is load-bearing, not tidiness. `podman machine start`
-    # leaves vfkit and gvproxy running in boot.sh's process group, and launchd
-    # kills the whole group when the job exits. Without this the boot log reads
-    # green, the VM dies seconds later, and LiteLLM crash-loops on Prisma P1001
-    # with no clue as to why.
-    cat > "$PLIST" <<EOF
+write_plist() {
+  cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key>
-    <string>${LABEL}</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/bin/bash</string>
-        <string>${ROOT}/scripts/boot.sh</string>
-    </array>
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    </dict>
-    <key>RunAtLoad</key>
-    <true/>
-    <key>AbandonProcessGroup</key>
-    <true/>
-    <key>StandardOutPath</key>
-    <string>${HOME}/Library/Logs/hearth-boot.log</string>
-    <key>StandardErrorPath</key>
-    <string>${HOME}/Library/Logs/hearth-boot.log</string>
+  <key>Label</key>
+  <string>${LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${ROOT}/scripts/boot.sh</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${LOG}</string>
+  <key>StandardErrorPath</key>
+  <string>${LOG}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
 </dict>
 </plist>
 EOF
-    # Prefer modern bootstrap; fall back to load for older macOS.
-    uid="$(id -u)"
-    launchctl bootout "gui/${uid}/${LABEL}" 2>/dev/null || launchctl unload "$PLIST" 2>/dev/null || true
-    launchctl bootstrap "gui/${uid}" "$PLIST" 2>/dev/null || launchctl load "$PLIST" 2>/dev/null
-    echo "installed ${PLIST}"
-    echo "log: ~/Library/Logs/hearth-boot.log"
-    echo
-    echo "Running it now to confirm it works:"
-    bash "${ROOT}/scripts/boot.sh"
-    echo
-    cat <<'EOF'
--------------------------------------------------------------
- Two things this script will NOT do for you
--------------------------------------------------------------
+}
 
-1. Ollama at boot
+print_sleep_advice() {
+  cat <<'EOF'
 
-   The menu-bar app has no dependable "open at login" on every build, so
-   run the server as a service instead:
-
-     scripts/install-ollama-service.sh --apply
-
-   That also puts OLLAMA_HOST in the plist, which makes the localhost
-   binding deterministic rather than depending on a GUI app reading an
-   environment variable — the thing that failed the first time round.
-
-2. Sleep, which needs sudo
-
-   A sleeping Studio means every laptop loses the gateway. On a desktop
-   on mains power there is little reason to sleep:
-
-     sudo pmset -c sleep 0        # never sleep on AC
-     sudo pmset -c disksleep 0    # keep the disk spun up
-     sudo pmset -a womp 1         # wake on network access
-
-   `womp` is the interesting one: with it, a laptop reaching the Studio
-   can wake it rather than failing. Without it, asleep means unavailable.
-
-   Displays can still sleep — that costs nothing:
-     sudo pmset -c displaysleep 10
-
-   To undo: sudo pmset -c sleep 10
+Sleep — a sleeping host means no inference for any client. Not run for you:
+  sudo pmset -c sleep 0           # never sleep on AC
+  sudo pmset -c disksleep 0
+  sudo pmset -a womp 1            # wake on network access
+  sudo pmset -c displaysleep 10   # displays can still sleep
+Current:
 EOF
-    ;;
+  pmset -g 2>/dev/null | grep -E '^ *(sleep|disksleep|womp|displaysleep) ' || echo "  (pmset unavailable)"
+}
 
+case "$MODE" in
+  --apply)
+    mkdir -p "$(dirname "$PLIST")" "$(dirname "$LOG")"
+    write_plist
+    plutil -lint "$PLIST" >/dev/null || { echo "FAIL: plist does not lint"; exit 1; }
+    launchctl bootout "${DOMAIN}/${LABEL}" >/dev/null 2>&1 || true
+    if launchctl bootstrap "$DOMAIN" "$PLIST"; then
+      echo "installed ${LABEL} — runs scripts/boot.sh at login (and just now)"
+    else
+      echo "FAIL: launchctl bootstrap"; exit 1
+    fi
+    print_sleep_advice
+    exec "$0" --check
+    ;;
   --remove)
-    launchctl unload "$PLIST" 2>/dev/null
+    launchctl bootout "${DOMAIN}/${LABEL}" >/dev/null 2>&1 || true
     rm -f "$PLIST"
-    echo "removed ${PLIST}"
-    echo "Power settings unchanged — revert manually with: sudo pmset -c sleep 10"
+    echo "removed ${LABEL}"
     ;;
-
-  *) echo "usage: $0 {--check|--apply|--remove}"; exit 1 ;;
+  --check)
+    rc=0
+    if [ -f "$PLIST" ] && plutil -lint "$PLIST" >/dev/null 2>&1; then
+      echo "OK    plist ${PLIST}"
+      grep -q "${ROOT}/scripts/boot.sh" "$PLIST" \
+        && echo "OK    points at ${ROOT}/scripts/boot.sh" \
+        || { echo "FAIL  plist points somewhere else"; rc=1; }
+    else
+      echo "FAIL  no valid plist at ${PLIST} (--apply)"; rc=1
+    fi
+    if launchctl print "${DOMAIN}/${LABEL}" >/dev/null 2>&1; then
+      last=$(launchctl print "${DOMAIN}/${LABEL}" | awk -F'= ' '/last exit code/ {print $2; exit}')
+      echo "OK    loaded in ${DOMAIN} (last exit: ${last:-not run yet})"
+      case "${last:-}" in ''|0|"(never exited)") ;; *) echo "WARN  last boot.sh run failed — see ${LOG}" ;; esac
+    else
+      echo "FAIL  not loaded"; rc=1
+    fi
+    [ -f "$LOG" ] && { echo "--- last lines of ${LOG}"; tail -5 "$LOG"; }
+    exit "$rc"
+    ;;
+  *) echo "usage: $0 [--check|--apply|--remove]"; exit 2 ;;
 esac

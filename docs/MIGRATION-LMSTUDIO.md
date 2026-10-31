@@ -31,7 +31,7 @@
 | 2 | GPU wired-limit headroom | skipped 2026-10-31: peak 29.7 GB, memory is not the bottleneck (operator) |
 | 3 | Cut host clients over (Zed, aider, WebUI, sandbox, MCP) | gate 2026-10-31: Zed two-thread session pass, sandbox pass, ask pass; ask-cloud and WebUI UI check open — `bench/results/2026-10-31-phase3/report.md` |
 | 4 | LAN access with tokens; laptop clients | not started |
-| 5 | Stop the old stack; rewrite scripts and docs | old stack removed 2026-10-31 (see phase 6); docs rewritten; 13 gateway scripts deleted; **remaining:** rewrite healthcheck, preflight, status, boot/autostart, diagnose, bench, swap-role, pull-candidates, pin-digests (D4), client-setup |
+| 5 | Stop the old stack; rewrite scripts and docs | done 2026-10-31 except the reboot gate: scripts rewritten (healthcheck, preflight, status, diagnose, boot + autostart, bench, swap-role, pull-candidates, tool-smoke, pin-digests per D4); mlx-bench deleted; client-setup stubbed until phase 4. **Gate pending: preflight + healthcheck after a real reboot** |
 | 6 | Soak one week, then delete old weights and services | uninstall done 2026-10-31 **without a soak** (operator); backups in `~/hearth-backups/`; ADR 0016 not yet marked accepted-complete |
 
 ## Decisions the operator must make
@@ -41,7 +41,7 @@
 | D1 | Roles after migration: keep `local-code` and `local-chat` as separate models, or collapse to `local-big` + `local-embed`? | **Collapse.** Two heavy models cannot both stay resident with 3 × 64K slots inside the GPU limit, and evictions are failure F2. Keep the names as client-side aliases that resolve to `local-big` | **Collapse** (2026-10-31) |
 | D2 | Slots and context for `local-big` | 3 slots × 64K. Lower to 2 if the phase 1 footprint exceeds the limit | **3 × 64K** (2026-10-31) |
 | D3 | Does Zed **on the host** get a Gemini provider? | No on the host (keeps sensitive work local by default); yes on the laptop | **No on host** (2026-10-31) |
-| D4 | Digest drift detection | Keep: hash the model directory in `config/roles.tsv` and check it in preflight | |
+| D4 | Digest drift detection | Keep: hash the model directory in `config/roles.tsv` and check it in preflight | **Hash the weights** (2026-10-31): `weights` column in roles.tsv, fast check in preflight, `--deep` re-hash |
 | D5 | Keep Open WebUI? | Yes, pointed at `:1234`. It no longer needs the gateway's Postgres | **Keep** (2026-10-31) |
 | D6 | Headless runner: LM Studio app with "run server on login", or `llmster`? | `llmster` if it installs cleanly; the app otherwise | **The app** (changed 2026-10-31). Was `llmster`; it worked and honoured the app-set auth, but the app and llmster cannot share `~/.lmstudio` and the operator wants the GUI. The app runs the server with "Enable Local LLM Service (headless)" on; ~1.1 GB extra for its GUI processes. Removing Ollama.app: done (operator) |
 | D7 | Soak length before phase 6 cleanup | — | **No soak** — operator deleted the old stack 2026-10-31 |
@@ -249,6 +249,8 @@ the Trash. Plist and model weights untouched. Rollback: Put Back the app,
      without token → 401; LAN interface answers only with token; nothing but
      LM Studio listens on 1234; JIT loading is off (a request for an unlisted
      model fails rather than loading it).
+     *Measured 2026-10-31: it does not fail — LM Studio answers an unknown
+     model name with the loaded LLM. Nothing loads; healthcheck warns.*
    - `preflight.sh` keeps CRLF / bash-3.2 scans; replaces config checks with
      `config/roles.tsv` ↔ `docs/MODELS.md` consistency and the D4 drift check.
 4. Keep unchanged: `searxng.sh`, `install-global-rules.sh`.

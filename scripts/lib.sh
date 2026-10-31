@@ -1,13 +1,22 @@
 # Shared helpers. Source, don't execute.
 #
 #   . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
-
-# ---- host identity (shareable defaults; override via env) --------------------
 #
-# Scripts never hardcode a LAN IP or a personal launchd label. Discovery order:
-#   1. explicit env override
-#   2. whatever agent/plist is already installed (keeps existing hosts working)
-#   3. generic com.hearth.* default for fresh installs
+# LM Studio on 127.0.0.1:1234 (ADR 0016). The app owns the server (D6);
+# `lms` drives whichever daemon is running.
+
+# launchd and non-interactive shells get a stripped PATH.
+case ":${PATH:-}:" in
+  *:/opt/homebrew/bin:*) ;;
+  *) PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" ;;
+esac
+
+HEARTH_LMS="${HEARTH_LMS:-$HOME/.lmstudio/bin/lms}"
+HEARTH_PORT="${HEARTH_PORT:-1234}"
+HEARTH_URL="${HEARTH_URL:-http://127.0.0.1:${HEARTH_PORT}/v1}"
+HEARTH_ENV="${HEARTH_ENV:-$HOME/.config/hearth/env}"
+HEARTH_APP="${HEARTH_APP:-/Applications/LM Studio.app}"
+LMS_SERVER_CFG="$HOME/.lmstudio/.internal/http-server-config.json"
 
 # HEARTH_* is canonical; AI_STACK_* still accepted during the rename.
 _hearth_env() {
@@ -17,7 +26,7 @@ _hearth_env() {
 
 # Primary LAN IPv4. Empty string if none — callers must treat that as
 # INCONCLUSIVE, never as "secure". An unreachable probe looks identical to a
-# closed port and is the same false-pass class as the leak-test bug.
+# closed port.
 ai_lan_ip() {
   local v
   v="$(_hearth_env HEARTH_LAN_IP AI_STACK_LAN_IP)"
@@ -29,63 +38,16 @@ ai_lan_ip() {
     ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true
     return 0
   fi
-  # Linux fallback
   hostname -I 2>/dev/null | awk '{print $1; exit}'
 }
 
-# Resolve a launchd label: env → loaded agent → on-disk plist → default.
-_ai_resolve_label() {
-  local env_val="$1" default="$2"
-  shift 2
-  if [ -n "$env_val" ]; then
-    printf '%s' "$env_val"
-    return 0
-  fi
-  local c uid
-  uid="$(id -u)"
-  for c in "$@"; do
-    if launchctl print "gui/${uid}/${c}" >/dev/null 2>&1; then
-      printf '%s' "$c"
-      return 0
-    fi
-  done
-  for c in "$@"; do
-    if [ -f "$HOME/Library/LaunchAgents/${c}.plist" ]; then
-      printf '%s' "$c"
-      return 0
-    fi
-  done
-  printf '%s' "$default"
-}
-
-ai_litellm_label() {
-  # Prefer generic, then any pre-existing personal/legacy label so upgrades don't break.
-  _ai_resolve_label "$(_hearth_env HEARTH_LITELLM_LABEL AI_STACK_LITELLM_LABEL)" \
-    "com.hearth.litellm" \
-    "com.hearth.litellm" "com.ai-stack.litellm" "com.colinnevin.litellm"
-}
-
-ai_ollama_label() {
-  _ai_resolve_label "$(_hearth_env HEARTH_OLLAMA_LABEL AI_STACK_OLLAMA_LABEL)" \
-    "com.hearth.ollama" \
-    "com.hearth.ollama" "com.ai-stack.ollama" "com.colinnevin.ollama"
-}
-
 ai_boot_label() {
-  _ai_resolve_label "$(_hearth_env HEARTH_BOOT_LABEL AI_STACK_BOOT_LABEL)" \
-    "com.hearth.boot" \
-    "com.hearth.boot" "com.ai-stack.boot" \
-    "com.colinnevin.hearth-boot" "com.colinnevin.ai-stack-boot"
-}
-
-# gui/<uid>/<label> — what launchctl kickstart wants.
-ai_litellm_agent() {
-  printf 'gui/%s/%s' "$(id -u)" "$(ai_litellm_label)"
+  local v; v="$(_hearth_env HEARTH_BOOT_LABEL AI_STACK_BOOT_LABEL)"
+  printf '%s' "${v:-com.hearth.boot}"
 }
 
 # Podman container name for a logical service. Prefers an already-running
-# legacy ai-stack-* container so a rename does not orphan Postgres data.
-# Fresh installs get hearth-*.
+# legacy ai-stack-* container so a rename does not orphan data.
 ai_container() {
   local kind="$1" c
   for c in "hearth-${kind}" "ai-stack-${kind}"; do
@@ -108,100 +70,17 @@ ai_volume() {
   printf 'hearth-%s' "$kind"
 }
 
-# ---- gateway readiness --------------------------------------------------
-#
-# /health/readiness answers HTTP 503 with {"status":"healthy","db":"disconnected"}
-# when Prisma is down. `curl -s -o /dev/null` exits 0 on a 503, so the obvious
-# check reports a gateway that cannot authenticate a single virtual key as "up".
-# Same false-pass shape as the leak test and the Ollama LAN probe: the failure
-# and the success are indistinguishable at the call site.
-#
-# db:disconnected is not a degraded state you can work through. Virtual keys
-# live in Postgres, so every scoped key 401s — which is the entire LAN.
-#
-# Echoes one of:
-#   ready  db:connected — the only state in which a virtual key works
-#   nodb   answered, but Prisma is down. Every scoped key 401s.
-#   hung   the port accepts connections and readiness did not answer in time.
-#          Observed when Postgres dies under a running gateway: LiteLLM blocks
-#          retrying the connection instead of returning its own 503. Reporting
-#          that as "not responding" sends you to launchctl when the gateway is
-#          fine and the database is not.
-#   down   nothing listening
-ai_gateway_state() {
-  local base="${1:-http://127.0.0.1:4000}" timeout="${2:-5}" body host port
-  body=$(curl -s -m "$timeout" "${base}/health/readiness" 2>/dev/null)
-  if [ -n "$body" ]; then
-    if printf '%s' "$body" | grep -qiE '"db"[[:space:]]*:[[:space:]]*"connected"|"database_status"[[:space:]]*:[[:space:]]*"connected"'; then
-      printf 'ready'; return 0
-    fi
-    printf 'nodb'; return 1
-  fi
-  # No body. Distinguish "hung" from "nothing there" at the TCP layer.
-  host="${base#*://}"; host="${host%%/*}"
-  port="${host##*:}"; [ "$port" = "$host" ] && port=80
-  host="${host%%:*}"
-  if command -v nc >/dev/null 2>&1 && nc -z -w 2 "$host" "$port" >/dev/null 2>&1; then
-    printf 'hung'; return 1
-  fi
-  printf 'down'; return 1
-}
-
-# True only when the gateway can actually serve a scoped key.
-ai_gateway_ready() { [ "$(ai_gateway_state "$@")" = "ready" ]; }
-
-# True when the gateway answered HTTP at all. `hung` is not answering.
-ai_gateway_answering() {
-  case "$(ai_gateway_state "$@")" in ready|nodb) return 0 ;; *) return 1 ;; esac
-}
-
-# macOS system python3 has no PyYAML and you cannot pip into it without
-# --break-system-packages. LiteLLM's own pipx venv already has yaml, so prefer
-# that over asking the user to install anything.
-ai_python() {
-  local p
-  for p in \
-    "$HOME/.local/pipx/venvs/litellm/bin/python" \
-    /opt/homebrew/bin/python3 \
-    /usr/local/bin/python3 \
-    python3
-  do
-    if command -v "$p" >/dev/null 2>&1 && "$p" -c 'import yaml' >/dev/null 2>&1; then
-      printf '%s' "$p"; return 0
-    fi
-  done
-  return 1
-}
-
-AI_PY="$(ai_python || true)"
-
-# Load both env files, service first then repo.
-#
-#   ~/.config/litellm/env      what launchd gives the gateway — master key,
-#                              provider keys, DATABASE_URL
-#   <repo>/litellm/.env        script-only — POSTGRES_PASSWORD, virtual keys
-#
-# Scripts need both, and requiring the caller to `source` by hand before every
-# invocation is a trap: it fails at the worst moment, mid-deploy.
+# Export ~/.config/hearth/env into THIS script's environment. Scripts are
+# subprocesses, so this does not leak into the interactive shell. Untouched
+# placeholders are dropped: an unset var gives a clear "not set", a
+# placeholder gives a 401 against a healthy server.
 ai_load_env() {
-  local root="${1:-${ROOT:-}}"
-  set -a
-  # Repo .env FIRST. It is copied from .env.example and routinely still holds
-  # placeholders, so it must never win over the service env.
-  [ -n "$root" ] && [ -f "${root}/litellm/.env" ] && . "${root}/litellm/.env"
-  # Service env LAST — authoritative for anything launchd also sees.
-  [ -f "$HOME/.config/litellm/env" ] && . "$HOME/.config/litellm/env"
-  set +a
-
-  # Drop untouched .env.example placeholders. An unset var produces a clear
-  # "not found" error; a placeholder produces a 401 against a healthy gateway,
-  # which is far harder to diagnose.
   local v val
-  for v in LITELLM_MASTER_KEY LITELLM_PRIVATE_KEY LITELLM_GENERAL_KEY \
-           LITELLM_LAN_KEY LITELLM_LAN_CLOUD_KEY GOOGLE_API_KEY ANTHROPIC_API_KEY \
-           OPENROUTER_API_KEY MOONSHOT_API_KEY FIREWORKS_API_KEY \
-           POSTGRES_PASSWORD DATABASE_URL
-  do
+  [ -f "$HEARTH_ENV" ] || return 0
+  set -a
+  . "$HEARTH_ENV"
+  set +a
+  for v in LMSTUDIO_HOST_TOKEN GOOGLE_API_KEY; do
     eval "val=\${${v}:-}"
     case "$val" in
       ''|*...|CHANGEME|*CHANGEME*) unset "$v" ;;
@@ -210,42 +89,53 @@ ai_load_env() {
   return 0
 }
 
-# Report placeholder values still sitting in the repo .env.
-#
-# Must strip inline comments the way the shell does. .env.example writes
-#   LITELLM_MASTER_KEY=sk-...            # admin. Was hardcoded ...
-# where sourcing yields "sk-..." but a naive read yields the comment too, so
-# the placeholder silently fails to match.
-ai_placeholders() {
-  local f="${1:?}" out="" k v
-  [ -f "$f" ] || return 0
-  while IFS='=' read -r k v; do
-    k="${k#"${k%%[![:space:]]*}"}"          # ltrim key
-    case "$k" in ''|\#*) continue ;; esac
-    k="${k#export }"
-    v="${v%%#*}"                            # drop inline comment
-    v="${v%"${v##*[![:space:]]}"}"          # rtrim
-    v="${v#\"}"; v="${v%\"}"                # unquote
-    case "$v" in
-      *...|CHANGEME|*CHANGEME*) out="${out} ${k}" ;;
-    esac
-  done < "$f"
-  printf '%s' "$out"
+# `lms` exists and a daemon (the app's, D6) answers.
+hearth_lms_ok() {
+  [ -x "$HEARTH_LMS" ] && "$HEARTH_LMS" daemon status >/dev/null 2>&1
 }
 
-ai_python_or_die() {
-  if [ -z "${AI_PY:-}" ]; then
-    cat >&2 <<'EOF'
-No python3 with PyYAML found.
+# Which daemon owns ~/.lmstudio: "app", "llmster", or "none".
+hearth_daemon_owner() {
+  local s
+  s=$("$HEARTH_LMS" daemon status 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g')
+  case "$s" in
+    *"LM Studio v"*"is running"*) printf 'app' ;;
+    *"llmster v"*"is running"*)   printf 'llmster' ;;
+    *)                            printf 'none' ;;
+  esac
+}
 
-This is a tooling problem, not a config problem — no conclusion below is valid.
-
-Fix with any one of:
-  brew install python                          # then pip3 install pyyaml
-  pip3 install --user --break-system-packages pyyaml
-  "$HOME/.local/pipx/venvs/litellm/bin/pip" install pyyaml
-EOF
-    return 1
+# HTTP status for GET <path> on the server. "000" means no answer.
+#   hearth_http /models            # no token
+#   hearth_http /models "$TOKEN"
+hearth_http() {
+  local path="$1" tok="${2:-}" base="${3:-$HEARTH_URL}"
+  if [ -n "$tok" ]; then
+    # Token via stdin config, not argv, so it never shows in ps.
+    printf 'header = "Authorization: Bearer %s"\n' "$tok" \
+      | curl -s -m 5 -o /dev/null -w '%{http_code}' -K - "${base}${path}" 2>/dev/null
+  else
+    curl -s -m 5 -o /dev/null -w '%{http_code}' "${base}${path}" 2>/dev/null
   fi
-  return 0
+}
+
+# Rows of config/roles.tsv, tab-separated: role backend key ctx slots weights.
+#   hearth_roles            # all rows
+#   hearth_roles lmstudio   # one backend
+hearth_roles() {
+  local root="${ROOT:?ROOT not set}" b="${1:-}"
+  awk -F'\t' -v b="$b" '!/^[[:space:]]*(#|$)/ && (b == "" || $2 == b) {print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6}' \
+    "${root}/config/roles.tsv"
+}
+
+# One key from LM Studio's server settings file, or "" if unreadable.
+hearth_server_setting() {
+  /usr/bin/python3 -I -c '
+import json, sys
+try:
+    v = json.load(open(sys.argv[1])).get(sys.argv[2])
+except Exception:
+    sys.exit(0)
+print("" if v is None else (str(v).lower() if isinstance(v, bool) else v))
+' "$LMS_SERVER_CFG" "$1"
 }

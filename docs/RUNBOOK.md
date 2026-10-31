@@ -70,13 +70,19 @@ launchd agents. Ports 4000, 5433 and 11434 should be free.
 
 ## Surviving a reboot
 
-Start-at-login supervision is a phase 5 item. Until then, after a reboot:
+`scripts/install-autostart.sh --apply` installs `com.hearth.boot`, a launchd
+agent that runs `scripts/boot.sh` once at login:
 
-```bash
-open -a "LM Studio"
-lms server start --bind 127.0.0.1 -p 1234
-scripts/lms-load.sh          # exits 0 only after re-reading lms ps
-```
+1. opens LM Studio hidden (stops llmster first if it grabbed the daemon);
+2. **restarts the server with an explicit `--bind 127.0.0.1`** — the app's
+   saved settings were found at `0.0.0.0` + CORS on (2026-10-31), and
+   `lms server start --bind` rewrites them;
+3. checks a no-token request gets 401;
+4. runs `scripts/lms-load.sh`;
+5. starts the Podman VM, SearXNG and Open WebUI.
+
+Log: `~/Library/Logs/hearth-boot.log`. Check it with
+`scripts/install-autostart.sh --check`. By hand: `scripts/boot.sh`.
 
 ### Sleep
 
@@ -94,6 +100,9 @@ sudo pmset -c displaysleep 10   # displays can still sleep, that is free
 ## Everyday
 
 ```bash
+ai-status                      # one glance: app, server, bind, roles, containers, autostart
+ai-health                      # scripts/healthcheck.sh — the real verdict (exit 0/1/2)
+scripts/preflight.sh           # static checks: roles.tsv, rule 1, saved settings, secrets, drift
 ai-loaded                      # lms ps — identifiers, context, parallel
 scripts/lms-load.sh --check    # drift against roles.tsv; changes nothing
 scripts/lms-load.sh            # fix drift
@@ -192,11 +201,12 @@ repo it was invited into. Commit first; `git diff` before accepting.
 | Symptom | Check | Fix |
 |---|---|---|
 | Every client 401s | `curl` with the host token | token wrong or missing in `~/.config/hearth/env`; Zed keeps its own copy in the keychain |
-| `model not found` | `lms ps`, `scripts/lms-load.sh --check` | `scripts/lms-load.sh`. JIT is off, so an unlisted model never loads by itself |
+| Wrong model answers | `scripts/lms-load.sh --check` | LM Studio answers an **unknown model name with the loaded LLM** instead of refusing (JIT off; nothing loads). Check the client's model id is a role |
 | `lms daemon status` says "llmster … is running" | llmster took the daemon | `lms daemon down`, then open the app |
 | Stuck "Local inference is changing ownership" | app and llmster both installed (lmstudio-bug-tracker#2485) | quit both; `lms daemon down; lms daemon up` |
 | Slow under load | `concurrency-bench.sh` at the failing settings | prefill is serialised at any `--parallel`; see `docs/ARCHITECTURE.md` |
-| Zed agent stalls | `ai-log`, footprint, bench | capture all three **before** changing anything |
+| Zed agent stalls | `scripts/diagnose.sh`, `ai-log`, bench | capture all three **before** changing anything |
+| Server LAN-visible or CORS on | `ai-status`, `ai-health` | `scripts/boot.sh` restarts it on 127.0.0.1 without CORS |
 | aider errors naming `ollama_chat/…` or `local-code` | an old `.aider.conf.yml` in the repo dir | roles are `openai/local-big` now |
 
 Bench any change the same way as the baseline:

@@ -17,7 +17,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
-ai_load_env "$ROOT"
+ai_load_env
 
 NAME="$(ai_container webui)"
 VOLUME="$(ai_volume webui-data)"

@@ -2,11 +2,11 @@
 # Concurrency bench — N simultaneous agent turns against one role.
 # See docs/MIGRATION-LMSTUDIO.md phase 0 and bench/concurrency.py.
 #
-#   scripts/concurrency-bench.sh --base-url http://127.0.0.1:4000/v1 \
-#       --token-env LITELLM_PRIVATE_KEY --model local-big --concurrency 3
+#   scripts/concurrency-bench.sh --base-url http://127.0.0.1:1234/v1 \
+#       --token-env LMSTUDIO_HOST_TOKEN --model local-big --concurrency 3
 #
 # Options (defaults): --concurrency 3, --rounds 10, --prompt-tokens 30000,
-#   --timeout 180, --proc-match 'ollama (runner|serve)', --out <auto>,
+#   --timeout 180, --proc-match '(\.lmstudio/|LM Studio)', --out <auto>,
 #   --label TEXT, --note-log FILE (repeatable).
 #
 # The token is read from the named env var (after loading the hearth env
@@ -17,8 +17,7 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
-ai_load_env "$ROOT"
-[ -f "$HOME/.config/hearth/env" ] && { set -a; . "$HOME/.config/hearth/env"; set +a; }
+ai_load_env
 
 PY=""
 for p in /usr/bin/python3 /opt/homebrew/bin/python3 python3; do

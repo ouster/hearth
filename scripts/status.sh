@@ -1,108 +1,57 @@
 #!/bin/bash
-# One glance at whether the stack is up.
+# One glance at whether local inference is up. Read-only, fast, no model calls.
+# For a real verdict run scripts/healthcheck.sh.
 #
 #   scripts/status.sh
-#
-# Read-only. Answers "is everything running" without the depth of
-# preflight.sh (safe to deploy?) or healthcheck.sh (do the roles answer?).
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
-ai_load_env "$ROOT" 2>/dev/null
+ai_load_env
 
-up()   { printf '  \033[32m●\033[0m %-22s %s\n' "$1" "$2"; }
-down() { printf '  \033[31m○\033[0m %-22s %s\n' "$1" "$2"; }
-warn() { printf '  \033[33m◐\033[0m %-22s %s\n' "$1" "$2"; }
+g() { printf '  \033[32m●\033[0m %s\n' "$1"; }
+r() { printf '  \033[31m●\033[0m %s\n' "$1"; }
+y() { printf '  \033[33m●\033[0m %s\n' "$1"; }
 
-echo "hearth"
-echo
-
-# ---------------------------------------------------------------- core
-if curl -s -m 3 -o /dev/null http://127.0.0.1:11434/api/tags 2>/dev/null; then
-  if [ -f "$HOME/Library/LaunchAgents/$(ai_ollama_label).plist" ]; then
-    up "ollama" "127.0.0.1:11434 (service)"
-  else
-    up "ollama" "127.0.0.1:11434 (app — will not survive reboot)"
-  fi
-else
-  down "ollama" "not responding — scripts/install-ollama-service.sh --apply"
-fi
-
-case "$(ai_gateway_state http://127.0.0.1:4000 3)" in
-  ready) up   "gateway" ":4000 (db:connected)" ;;
-  nodb)  warn "gateway" "responding but db not connected — every scoped key 401s. scripts/boot.sh" ;;
-  hung)  warn "gateway" ":4000 listening but readiness hangs — usually the database. scripts/boot.sh" ;;
-  *)     down "gateway" "not responding — scripts/boot.sh" ;;
+echo "LM Studio"
+case "$(hearth_daemon_owner)" in
+  app)     g "app owns the daemon" ;;
+  llmster) y "llmster owns the daemon (D6 is the app)" ;;
+  *)       r "not running — scripts/boot.sh" ;;
+esac
+code=$(hearth_http /models "${LMSTUDIO_HOST_TOKEN:-}")
+case "$code" in
+  200) g "server answering on ${HEARTH_URL}" ;;
+  401) r "server refuses the host token" ;;
+  000) r "server not answering on ${HEARTH_URL}" ;;
+  *)   y "server answered ${code}" ;;
+esac
+bound=$(lsof -nP -iTCP:"$HEARTH_PORT" -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $9}' | sort -u | tr '\n' ' ')
+case "$bound" in
+  "127.0.0.1:${HEARTH_PORT} ") g "bound to 127.0.0.1 only" ;;
+  "")                          : ;;
+  *)                           y "bound to: ${bound}(LAN-visible — phase 4, or run scripts/boot.sh)" ;;
 esac
 
-# Prefer host port checks: `podman info` can fail (API/SSH flap) while
-# published ports are still serving — or the reverse after a fresh stop.
-host_port() {
-  if command -v nc >/dev/null 2>&1; then
-    nc -z -w 1 127.0.0.1 "$1" >/dev/null 2>&1
-  else
-    (echo >/dev/tcp/127.0.0.1/"$1") >/dev/null 2>&1
-  fi
-}
+echo
+echo "Roles"
+if hearth_lms_ok; then
+  "${ROOT}/scripts/lms-load.sh" --check 2>/dev/null | sed 's/^/  /'
+  "$HEARTH_LMS" ps 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | awk 'NR>1 && NF' | sed 's/^/  /'
+fi
 
-export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
-if command -v podman >/dev/null 2>&1 || [ -x /opt/homebrew/bin/podman ]; then
-  PODMAN="$(command -v podman 2>/dev/null || echo /opt/homebrew/bin/podman)"
-  if "$PODMAN" info >/dev/null 2>&1; then
-    up "podman machine" "running"
-  elif host_port 5433 || host_port 8888 || host_port 3000; then
-    warn "podman machine" "API down but host ports still open"
-  else
-    down "podman machine" "stopped — everything containerised is down"
-  fi
-  for spec in postgres:5433 searxng:8888 webui:3000; do
-    kind="${spec%%:*}"; port="${spec##*:}"
-    name="$(ai_container "$kind")"
-    if host_port "$port"; then
-      up "$kind" ":${port}"
-    elif "$PODMAN" info >/dev/null 2>&1 && "$PODMAN" container exists "$name" 2>/dev/null; then
-      st=$("$PODMAN" inspect -f '{{.State.Status}}' "$name" 2>/dev/null)
-      down "$kind" "${st:-unknown} — podman start ${name}"
-    else
-      down "$kind" "not reachable on :${port}"
-    fi
+echo
+echo "Containers"
+if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then
+  for kind in webui searxng; do
+    c="$(ai_container "$kind")"
+    s=$(podman inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo "not created")
+    [ "$s" = "running" ] && g "${c}: running" || y "${c}: ${s}"
   done
-fi
-
-# ---------------------------------------------------------------- resident
-echo
-if command -v ollama >/dev/null 2>&1; then
-  # grep -c returns "0" AND exits 1 on no match, so `|| echo 0` yields "0\n0"
-  # and every numeric test after it fails. wc -l has no such opinion.
-  n=$(ollama ps 2>/dev/null | awk 'NR>1' | wc -l | tr -d ' ')
-  if [ "$n" -gt 0 ]; then
-    echo "  models resident:"
-    ollama ps 2>/dev/null | awk 'NR>1 {printf "    %-24s %s\n", $1, $3}'
-  else
-    echo "  models resident: none — first request will cold-load"
-  fi
-fi
-
-# ---------------------------------------------------------------- exposure
-echo
-LANIP="$(ai_lan_ip)"
-if [ -n "$LANIP" ]; then
-  curl -s -m 2 -o /dev/null "http://${LANIP}:11434/api/tags" 2>/dev/null \
-    && down "ollama on LAN" "EXPOSED — scripts/lock-ollama.sh --apply" \
-    || up "ollama on LAN" "closed"
-  curl -s -m 2 -o /dev/null "http://${LANIP}:4000/health/readiness" 2>/dev/null \
-    && up "gateway on LAN" "${LANIP}:4000 — laptops can reach it" \
-    || warn "gateway on LAN" "unreachable from ${LANIP}"
-fi
-
-# ---------------------------------------------------------------- sleep
-echo
-if command -v pmset >/dev/null 2>&1; then
-  s=$(pmset -g custom 2>/dev/null | awk '/^AC Power/,0' | awk '/ sleep/ {print $2; exit}')
-  [ "${s:-1}" = "0" ] && up "sleep" "disabled on AC" \
-                      || warn "sleep" "after ${s:-?} min — laptops lose the gateway"
+else
+  y "podman VM not running"
 fi
 
 echo
-echo "  deeper: scripts/healthcheck.sh    safe to deploy: scripts/preflight.sh"
+echo "Autostart"
+"${ROOT}/scripts/install-autostart.sh" --check >/dev/null 2>&1 && g "$(ai_boot_label) loaded" || y "$(ai_boot_label) not installed (scripts/install-autostart.sh --apply)"

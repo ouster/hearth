@@ -29,8 +29,7 @@ against the Ollama build: 3 of 40 concurrency-bench turns picked `grep`
 instead of the requested `read_file` (0 of 40 on Ollama); tracked, not
 blocking.
 
-**Digest drift:** the Ollama digest pins (`pins/digests.tsv`) no longer
-describe what serves. Replacement (hash the model directory) is D4, undecided.
+**Weight drift:** recorded and checked — see Weight pinning below (D4).
 
 **Bench candidate (not a role):** `qwen3.6:27b-coding-mtp-q4_K_M` on Ollama
 (~18 GB) — rejected for verbosity vs `qwen3-coder:30b` (ADR 0005 era bench).
@@ -130,13 +129,22 @@ decisions and does **not** update itself. Re-check before relying on it.
   price. That is exactly the failure mode this registry exists to catch.
 - **Output price is the one that bites** — it compounds through agentic loops.
 
-## Digest pinning (Ollama era)
+## Weight pinning (D4)
 
-Ollama tags were mutable pointers, so `scripts/pin-digests.sh` recorded each
-role's digest in `pins/digests.tsv` and preflight failed on drift — record and
-detect, never enforce. Those pins describe the retired Ollama weights. For LM
-Studio, the source repo and revision in the table above are the record; a
-directory-hash drift check is decision D4.
+`scripts/pin-digests.sh` hashes each role's `weights` path (column 6 of
+`config/roles.tsv`, under `~/.lmstudio/models`) into `pins/digests.tsv`:
+file count, bytes, newest mtime, and a sha256 over every file. Git-tracked,
+so drift shows in a diff.
+
+```bash
+scripts/pin-digests.sh                  # record, after a bench you trust (~40 s)
+scripts/pin-digests.sh --check          # fast; preflight runs this
+scripts/pin-digests.sh --check --deep   # re-hash everything
+```
+
+Recorded 2026-10-31. The embedding file's hash matches Hugging Face's
+published sha256 (`f7af6f66…`). This detects, it does not enforce — LM Studio
+loads whatever is on disk.
 
 ## Changing a role
 
@@ -149,4 +157,8 @@ directory-hash drift check is decision D4.
 6. Write an ADR in `docs/decisions/` and a row in `docs/HISTORY.md`
 7. Delete the old weights only once the replacement has proven itself
 
-`swap-role.sh` and `bench.sh` still target Ollama until phase 5.
+`scripts/swap-role.sh <role> <model key> <weights path> [ctx] [slots]` does
+steps 4–5 and reverts on failure; `scripts/bench.sh <model key>` loads a
+candidate as `bench-candidate` (`--evict` if it will not fit beside
+`local-big`); `scripts/pull-candidates.sh <url> …` sizes downloads against
+disk and the GPU ceiling.

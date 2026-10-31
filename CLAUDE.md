@@ -6,8 +6,8 @@ roles (never also run headless `llmster`); cloud (Gemini) is reached by each too
 Read `docs/ROUTING.md` before suggesting any routing change.
 
 **In flight:** migration to LM Studio direct — `docs/MIGRATION-LMSTUDIO.md`
-(ADR 0016, accepted 2026-10-31). Host clients are cut over and the old stack is
-deleted; LAN (phase 4) and the script rewrite (phase 5) are pending. Work one phase at a time, only when
+(ADR 0016, accepted 2026-10-31). Host clients are cut over, the old stack is
+deleted and the scripts are rewritten; LAN (phase 4) is pending. Work one phase at a time, only when
 the operator says to start it, and stop at every DECISION. Any doc or
 script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgres is the
 removed gateway — never suggest commands against it.
@@ -43,10 +43,11 @@ removed gateway — never suggest commands against it.
 5. **Nothing replaces a role until it is benched.** Run `bench/tasks/` and
    `scripts/concurrency-bench.sh` against the incumbent. Reputation is not evidence.
 
-6. **Weights are recorded, not pinned.** `docs/MODELS.md` records each role's
-   source repo and revision. Drift detection for LM Studio (hash the model
-   directory, D4) is not built yet, and the Ollama-era `pins/digests.tsv` no
-   longer describes what serves. Say so rather than implying roles are immutable.
+6. **Weights are hashed and drift is detected — not enforced.** `docs/MODELS.md`
+   records each role's source repo and revision; `scripts/pin-digests.sh` hashes
+   the files into `pins/digests.tsv` and `preflight.sh` fails on drift. LM Studio
+   still loads whatever is on disk; say so rather than implying roles are
+   immutable. Re-record only after re-benching.
 
 7. **Check the RAM envelope.** 64 GB total, but macOS caps GPU-accessible memory at ~48 GB
    (75% above 36 GB) — that is the real ceiling. Current resident set is ~29.7 GB peak (local-big 64K × 3 slots + local-embed, measured 2026-10-31). Say when a suggestion will not fit, or

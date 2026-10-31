@@ -1,25 +1,39 @@
 #!/bin/bash
-# Run bench/tasks against a set of models and write a comparison report.
+# Run bench/tasks against roles or candidate models and write a comparison
+# report. LM Studio on :1234 (ADR 0016).
 #
-#   scripts/bench.sh                          every local model in config.yaml
-#   scripts/bench.sh gpt-oss:20b qwen3:8b     specific models
+#   scripts/bench.sh                         every lmstudio LLM role in roles.tsv
+#   scripts/bench.sh local-big               a loaded role
+#   scripts/bench.sh <lms model key> ...     candidates (see `lms ls`)
+#   scripts/bench.sh --evict <key>           unload the roles first — for a
+#                                            candidate that will not fit beside
+#                                            local-big under the ~48 GB ceiling
 #
-# Hits Ollama directly, not the gateway: candidates are not roles yet, and that
-# is the point — nothing becomes a role until this says it should.
+# JIT is off, so a candidate is loaded explicitly as `bench-candidate`
+# (64K context, 1 slot), benched, and unloaded; roles.tsv is restored with
+# scripts/lms-load.sh on exit either way. Nothing becomes a role until this
+# (and scripts/concurrency-bench.sh) says it should — rule 5.
 #
 # Auto-checks what can be checked (syntax). Everything else is written out for
 # you to read. Do not let a script tell you a model "won" on quality.
 #
-# bash 3.2 compatible. macOS ships bash 3.2, which has no associative arrays,
-# so results accumulate in a TSV and python aggregates at the end.
+# bash 3.2: results accumulate in a TSV and python aggregates at the end.
+#
+# Exit 0 ran, 2 could not run.
 
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
-ai_python_or_die || exit 2
+ai_load_env
+AI_PY=/usr/bin/python3
+[ -n "${LMSTUDIO_HOST_TOKEN:-}" ] || { echo "could not run: LMSTUDIO_HOST_TOKEN not set"; exit 2; }
+hearth_lms_ok || { echo "could not run: LM Studio not running (scripts/boot.sh)"; exit 2; }
+export LMSTUDIO_HOST_TOKEN
 
-OLLAMA="${OLLAMA_API_BASE:-http://127.0.0.1:11434}"
+EVICT=0
+if [ "${1:-}" = "--evict" ]; then EVICT=1; shift; fi
+
 TASKDIR="${ROOT}/bench/tasks"
 STAMP="$(date +%Y-%m-%d-%H%M)"
 OUT="${ROOT}/bench/results/${STAMP}"
@@ -28,43 +42,43 @@ REPORT="${OUT}/report.md"
 TSV="${OUT}/raw.tsv"
 printf 'model\ttask\ttokens\tseconds\tverdict\n' > "$TSV"
 
-# Default to whatever local models the config currently uses. Hardcoding a list
-# is how this script ended up naming two models that had been deleted.
 if [ $# -gt 0 ]; then
   MODELS="$*"
 else
-  MODELS=$("$AI_PY" - "${ROOT}/litellm/config.yaml" <<'PY'
-import sys, yaml
-cfg = yaml.safe_load(open(sys.argv[1])) or {}
-seen = []
-for m in cfg.get('model_list', []):
-    if (m.get('model_info') or {}).get('mode') == 'embedding':
-        continue
-    t = m['litellm_params']['model']
-    if t.startswith(('ollama/', 'ollama_chat/')):
-        name = t.split('/', 1)[1]
-        if name not in seen:
-            seen.append(name)
-print(' '.join(seen))
-PY
-)
+  MODELS=$(hearth_roles lmstudio | awk -F'\t' '$3 !~ /embed/ {print $1}' | tr '\n' ' ')
 fi
+ROLE_NAMES=" $(hearth_roles lmstudio | cut -f1 | tr '\n' ' ') "
+
+restore() {
+  "$HEARTH_LMS" unload bench-candidate >/dev/null 2>&1 || true
+  "${ROOT}/scripts/lms-load.sh" >/dev/null 2>&1 || echo "WARNING: lms-load.sh failed — run it by hand"
+}
+trap restore EXIT
 
 echo "Models: ${MODELS}"
-echo "Ollama: ${OLLAMA}"
+echo "Server: ${HEARTH_URL}"
 echo
 
-available() { ollama list 2>/dev/null | awk 'NR>1{print $1}' | grep -qx -e "$1" -e "${1}:latest"; }
 body()      { awk 'BEGIN{n=0} /^---$/{n++; next} n>=2{print}' "$1"; }
 meta()      { awk -v k="$2" -F': *' '/^---$/{n++} n==1 && $1==k {print $2; exit}' "$1"; }
 
 for model in $MODELS; do
-  if ! available "$model"; then
-    echo "SKIP ${model} — not pulled"
-    continue
-  fi
+  target="$model"
+  case "$ROLE_NAMES" in
+    *" ${model} "*) : ;;
+    *)
+      if ! "$HEARTH_LMS" ls --json 2>/dev/null | grep -qF "\"${model}\""; then
+        echo "SKIP ${model} — not downloaded (lms get)"; continue
+      fi
+      "$HEARTH_LMS" unload bench-candidate >/dev/null 2>&1 || true
+      [ "$EVICT" -eq 1 ] && "$HEARTH_LMS" unload --all >/dev/null 2>&1
+      if ! "$HEARTH_LMS" load "$model" --identifier bench-candidate -c 65536 --gpu max -y </dev/null >/dev/null 2>&1; then
+        echo "SKIP ${model} — load failed (too big beside local-big? try --evict)"; continue
+      fi
+      target=bench-candidate ;;
+  esac
   echo "=== ${model} ==="
-  safe=$(printf '%s' "$model" | tr ':/' '__')
+  safe=$(printf '%s' "$model" | tr ':/@' '___')
   mkdir -p "${OUT}/${safe}"
 
   for task in "$TASKDIR"/*.md; do
@@ -81,21 +95,23 @@ for model in $MODELS; do
 
     printf '  %-24s ' "$tid"
 
-    stats=$("$AI_PY" - "$model" "${outfile}.prompt" "$OLLAMA" "$outfile" <<'PY'
-import sys, json, urllib.request
+    stats=$("$AI_PY" -I - "$target" "${outfile}.prompt" "$HEARTH_URL" "$outfile" <<'PY'
+import sys, json, os, time, urllib.request
 model, prompt_path, base, out_path = sys.argv[1:5]
 payload = json.dumps({
     "model": model, "stream": False,
     "messages": [{"role": "user", "content": open(prompt_path).read()}],
 }).encode()
-req = urllib.request.Request(base + "/api/chat", data=payload,
-                             headers={"Content-Type": "application/json"})
+req = urllib.request.Request(base + "/chat/completions", data=payload, headers={
+    "Content-Type": "application/json",
+    "Authorization": "Bearer " + os.environ["LMSTUDIO_HOST_TOKEN"]})
+t0 = time.monotonic()
 try:
     with urllib.request.urlopen(req, timeout=1800) as r:
         d = json.load(r)
-    open(out_path, "w").write(d.get("message", {}).get("content", ""))
-    toks = d.get("eval_count", 0) or 0
-    secs = (d.get("eval_duration", 0) or 0) / 1e9
+    secs = time.monotonic() - t0
+    open(out_path, "w").write(d["choices"][0]["message"].get("content") or "")
+    toks = (d.get("usage") or {}).get("completion_tokens", 0) or 0
     print(f"{toks} {secs:.1f}")
 except Exception as e:
     open(out_path, "w").write("")
@@ -121,22 +137,23 @@ PY
         if [ "$check" = "bash-syntax" ]; then
           bash -n "${outfile}.code" 2>/dev/null && verdict="syntax-ok" || verdict="SYNTAX-FAIL"
         else
-          "$AI_PY" -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "${outfile}.code" \
+          "$AI_PY" -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "${outfile}.code" \
             2>/dev/null && verdict="syntax-ok" || verdict="SYNTAX-FAIL"
         fi ;;
     esac
 
     # Tokens first, deliberately. On a memory-bandwidth-bound machine tok/s
     # barely varies between models, so wall-clock is driven by how MANY tokens
-    # a model emits. Leading with tok/s hid a role taking 100s to answer.
-    tps=$("$AI_PY" -c "import sys; t,s=float(sys.argv[1]),float(sys.argv[2]); print(f'{t/s:.1f}' if s>0 else '0')" "$toks" "$secs")
+    # a model emits.
+    tps=$("$AI_PY" -I -c "import sys; t,s=float(sys.argv[1]),float(sys.argv[2]); print(f'{t/s:.1f}' if s>0 else '0')" "$toks" "$secs")
     printf '%7s tok  %7ss  %6s tok/s  %s\n' "$toks" "$secs" "$tps" "$verdict"
     printf '%s\t%s\t%s\t%s\t%s\n' "$model" "$tid" "$toks" "$secs" "$verdict" >> "$TSV"
   done
+  [ "$target" = "bench-candidate" ] && "$HEARTH_LMS" unload bench-candidate >/dev/null 2>&1
 done
 
 # ---------------------------------------------------------------- report
-"$AI_PY" - "$TSV" "$OUT" "$STAMP" > "$REPORT" <<'PY'
+"$AI_PY" -I - "$TSV" "$OUT" "$STAMP" > "$REPORT" <<'PY'
 import sys, csv
 from collections import defaultdict
 
@@ -154,16 +171,15 @@ for r in rows:
     elif v == "error":     a["err"] += 1
 
 print(f"# Bench — {stamp}\n")
-print("Host: M4 Max, 64 GB. Ollama direct.\n")
+print("Host: M4 Max, 64 GB. LM Studio on :1234. Seconds are wall time per request, including prefill.\n")
 print("## Verbosity and speed\n")
 print("Tokens emitted is the number that matters. Throughput barely varies between")
 print("models on this machine — it is memory-bandwidth bound — so wall-clock is")
-print("driven by how much a model chooses to say. A *thinking* model can be the")
-print("slowest role while being the smallest.\n")
+print("driven by how much a model chooses to say.\n")
 print("| Model | tokens | total s | avg tok/s | syntax ok | syntax fail | errors |")
 print("|---|---|---|---|---|---|---|")
 ordered = sorted(agg.items(), key=lambda kv: kv[1]["toks"])
-least = ordered[0][1]["toks"] if ordered else 1
+least = ordered[0][1]["toks"] if ordered and ordered[0][1]["toks"] else 1
 for m, a in ordered:
     avg = a["toks"] / a["secs"] if a["secs"] > 0 else 0
     ratio = a["toks"] / least if least else 1
@@ -181,8 +197,6 @@ print(f"""
 
 Syntax checks prove a model emitted parseable code, nothing more.
 
-The two discriminating tasks cannot be scored automatically:
-
 - **03-refactor-judgment** hides a float-for-currency bug in money
   arithmetic. A weak model fixes the obvious `range(len())` and misses the one
   that matters. This is the task that should decide `local-big`.
@@ -197,7 +211,8 @@ Outputs:
 
 ## Decision
 
-If a candidate wins, use `scripts/swap-role.sh <role> <model>`, then update
+If a candidate wins, also run `scripts/concurrency-bench.sh` against it, then
+`scripts/swap-role.sh <role> <model key> <weights path>`, update
 `docs/MODELS.md` and write an ADR. Nothing is promoted on speed alone.
 """)
 PY

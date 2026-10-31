@@ -3,8 +3,10 @@
 # model_key is the modelKey from `lms ls --json`, with @variant when a model
 # has several quantisations on disk. ctx and slots are per load;
 # slots > 1 becomes `lms load --parallel`. Read by scripts/lms-load.sh.
+# weights is the path under ~/.lmstudio/models that scripts/pin-digests.sh
+# hashes (D4); `lms ls` reports a catalogue key, not the folder on disk.
 #
-# role	backend	model_key	ctx	slots
-local-big	lmstudio	qwen/qwen3.6-35b-a3b	65536	3
-local-embed	lmstudio	text-embedding-nomic-embed-text-v1.5@f16	2048	1
-cloud-cheap	gemini	gemini-3.6-flash	-	-
+# role	backend	model_key	ctx	slots	weights
+local-big	lmstudio	qwen/qwen3.6-35b-a3b	65536	3	lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit
+local-embed	lmstudio	text-embedding-nomic-embed-text-v1.5@f16	2048	1	nomic-ai/nomic-embed-text-v1.5-GGUF/nomic-embed-text-v1.5.f16.gguf
+cloud-cheap	gemini	gemini-3.6-flash	-	-	-

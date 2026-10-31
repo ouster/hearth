@@ -1,165 +1,117 @@
 #!/bin/bash
-# Bring the stack up after a reboot. Called by the launchd agent that
+# Bring local inference up after login. Called by the launchd agent that
 # scripts/install-autostart.sh installs, and safe to run by hand.
 #
 #   scripts/boot.sh
 #
-# What actually needs help:
+# What actually needs help (ADR 0016, D6 = the LM Studio app):
 #
-#   LiteLLM   launchd KeepAlive — comes back on its own, but crash-loops
-#             with Prisma P1001 until Postgres is reachable on the host
-#   Ollama    the app, if "Open at Login" is set
-#   Podman    the VM does NOT start itself. This is the gap.
-#   containers restart policies only apply once the VM is running
+#   LM Studio   the app owns the daemon. It is opened hidden; nothing serves
+#               until it is running.
+#   server      autoStartOnLaunch is off, and the app's saved settings can
+#               differ from what we want (bind 0.0.0.0 + CORS on was observed
+#               2026-10-31). So the server is always (re)started with an
+#               explicit --bind, which also rewrites the saved settings.
+#   models      not loaded at launch. scripts/lms-load.sh loads roles.tsv.
+#   Podman      the VM does not start itself; container restart policies only
+#               apply once it is up. SearXNG and Open WebUI live there.
 #
-# launchd gives agents a stripped PATH (/usr/bin:/bin:/usr/sbin:/sbin).
-# Homebrew podman lives at /opt/homebrew/bin — without that on PATH this
-# script used to log "podman not installed" and skip containers, leaving
-# LiteLLM crash-looping forever.
+# HEARTH_BIND overrides the bind address (phase 4: the LAN IP or 0.0.0.0).
+#
+# Exit 0 serving with roles loaded, 1 something failed, 2 could not run.
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
+ai_load_env
 
-# launchd / non-interactive shells: ensure Homebrew tools are visible.
-export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
+BIND="${HEARTH_BIND:-127.0.0.1}"
+log() { printf '%s [hearth boot] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$1"; }
+rc=0
 
-log() { printf '[hearth boot] %s\n' "$1"; }
+[ -x "$HEARTH_LMS" ] || { log "could not run: lms not found at $HEARTH_LMS"; exit 2; }
+[ -d "$HEARTH_APP" ] || { log "could not run: $HEARTH_APP not installed"; exit 2; }
 
-# Host TCP reachability — Podman port forwards can lag behind in-container
-# pg_isready. LiteLLM connects via 127.0.0.1:5433, so that is the real gate.
-host_tcp_open() {
-  local host="$1" port="$2"
-  if command -v nc >/dev/null 2>&1; then
-    nc -z -w 1 "$host" "$port" >/dev/null 2>&1
-    return $?
-  fi
-  # bash /dev/tcp fallback
-  (echo >/dev/tcp/"$host"/"$port") >/dev/null 2>&1
-}
-
-# Readiness is db-aware and lives in lib.sh — see ai_gateway_state there.
-gateway_db_connected() { ai_gateway_ready http://127.0.0.1:4000 3; }
-
-wait_podman_info() {
-  local i
-  for i in $(seq 1 60); do
-    podman info >/dev/null 2>&1 && return 0
-    sleep 1
-  done
-  return 1
-}
-
-# ---------------------------------------------------------------- podman VM
-PODMAN="$(command -v podman 2>/dev/null || true)"
-if [ -z "$PODMAN" ]; then
-  for cand in /opt/homebrew/bin/podman /usr/local/bin/podman; do
-    [ -x "$cand" ] && PODMAN="$cand" && break
-  done
+# ---------------------------------------------------------------- LM Studio
+case "$(hearth_daemon_owner)" in
+  app)     log "LM Studio running" ;;
+  llmster) log "llmster owns ~/.lmstudio — stopping it so the app can (D6)"
+           "$HEARTH_LMS" daemon down >/dev/null 2>&1
+           open -g -j -a "$HEARTH_APP" ;;
+  *)       log "opening LM Studio (hidden)"
+           open -g -j -a "$HEARTH_APP" ;;
+esac
+up=0
+for _ in $(seq 1 90); do
+  [ "$(hearth_daemon_owner)" = "app" ] && { up=1; break; }
+  sleep 2
+done
+if [ "$up" -ne 1 ]; then
+  log "FAILED: LM Studio daemon not up after 180 s"
+  exit 1
 fi
 
-if [ -n "$PODMAN" ]; then
-  if "$PODMAN" info >/dev/null 2>&1; then
-    log "podman machine already running"
-  else
-    log "starting podman machine"
-    if "$PODMAN" machine start >/dev/null 2>&1; then
-      log "  ok"
-    else
-      # "already running" races show up as non-zero; re-check.
-      "$PODMAN" info >/dev/null 2>&1 && log "  ok (already up)" || log "  FAILED"
-    fi
-  fi
+# ---------------------------------------------------------------- server
+"$HEARTH_LMS" server stop >/dev/null 2>&1 || true
+if "$HEARTH_LMS" server start --bind "$BIND" -p "$HEARTH_PORT" >/dev/null 2>&1; then
+  log "server started on ${BIND}:${HEARTH_PORT}"
+else
+  log "FAILED: lms server start"
+  exit 1
+fi
+code=000
+for _ in $(seq 1 30); do
+  code=$(hearth_http /models)
+  [ "$code" != "000" ] && break
+  sleep 1
+done
+case "$code" in
+  401) log "auth on (no token → 401)" ;;
+  200) log "WARNING: no token → 200. Require Authentication is OFF — turn it on in the app"; rc=1 ;;
+  *)   log "FAILED: server answered ${code} on /v1/models"; rc=1 ;;
+esac
 
-  if ! wait_podman_info; then
-    log "podman API still unreachable after start — skipping containers"
+# ---------------------------------------------------------------- models
+if "${ROOT}/scripts/lms-load.sh" >/dev/null 2>&1; then
+  log "roles loaded per config/roles.tsv"
+else
+  log "FAILED: scripts/lms-load.sh (run it by hand to see why)"
+  rc=1
+fi
+
+# ---------------------------------------------------------------- podman
+PODMAN="$(command -v podman 2>/dev/null || true)"
+if [ -z "$PODMAN" ]; then
+  log "podman not installed — skipping SearXNG / Open WebUI"
+else
+  if ! "$PODMAN" info >/dev/null 2>&1; then
+    log "starting podman machine"
+    "$PODMAN" machine start >/dev/null 2>&1 || true
+  fi
+  ready=0
+  for _ in $(seq 1 60); do
+    "$PODMAN" info >/dev/null 2>&1 && { ready=1; break; }
+    sleep 1
+  done
+  if [ "$ready" -ne 1 ]; then
+    log "podman API unreachable — skipping containers"
+    rc=1
   else
-    # Containers carry --restart unless-stopped, but that only takes effect once
-    # the VM is up, and a container stopped before shutdown stays stopped.
-    for kind in postgres searxng webui; do
+    for kind in searxng webui; do
       c="$(ai_container "$kind")"
-      if "$PODMAN" container exists "$c" 2>/dev/null; then
-        state=$("$PODMAN" inspect -f '{{.State.Status}}' "$c" 2>/dev/null)
-        if [ "$state" = "running" ]; then
-          log "${c}: running"
-        else
-          if "$PODMAN" start "$c" >/dev/null 2>&1; then
-            log "${c}: started"
-          else
-            # Improper/stopped-odd state after reboot: stop then start.
-            log "${c}: start failed — retrying after stop"
-            "$PODMAN" stop "$c" >/dev/null 2>&1 || true
-            sleep 1
-            "$PODMAN" start "$c" >/dev/null 2>&1 \
-              && log "${c}: started" \
-              || log "${c}: FAILED to start"
-          fi
-        fi
+      if ! "$PODMAN" container exists "$c" 2>/dev/null; then
+        log "${c}: not created (scripts/${kind}.sh up)"
+      elif [ "$("$PODMAN" inspect -f '{{.State.Running}}' "$c" 2>/dev/null)" = "true" ]; then
+        log "${c}: running"
+      elif "$PODMAN" start "$c" >/dev/null 2>&1; then
+        log "${c}: started"
       else
-        log "${c}: not created"
+        log "${c}: FAILED to start"
+        rc=1
       fi
     done
   fi
-else
-  log "podman not installed — skipping containers"
 fi
 
-# ---------------------------------------------------------------- ollama
-if curl -s -m 5 -o /dev/null http://127.0.0.1:11434/api/tags 2>/dev/null; then
-  log "ollama responding"
-else
-  OLLAMA_LABEL="$(ai_ollama_label)"
-  if [ -f "$HOME/Library/LaunchAgents/${OLLAMA_LABEL}.plist" ]; then
-    log "ollama not up — kicking the service (${OLLAMA_LABEL})"
-    launchctl kickstart -k "gui/$(id -u)/${OLLAMA_LABEL}" 2>/dev/null
-  else
-    log "ollama NOT responding and no service installed"
-    log "  fix properly: scripts/install-ollama-service.sh --apply"
-    open -a Ollama 2>/dev/null && log "  opened the app as a stopgap"
-  fi
-fi
-
-# ---------------------------------------------------------------- gateway
-# Wait until the HOST can reach Postgres. In-container pg_isready alone is not
-# enough — LiteLLM uses the published port on 127.0.0.1:5433.
-log "waiting for postgres on 127.0.0.1:5433"
-pg_ready=0
-for _ in $(seq 1 90); do
-  if host_tcp_open 127.0.0.1 5433; then
-    pg_ready=1
-    break
-  fi
-  sleep 1
-done
-if [ "$pg_ready" = 1 ]; then
-  log "postgres reachable on host :5433"
-else
-  log "postgres NOT reachable on host :5433 — gateway will fail until it is"
-fi
-
-if gateway_db_connected; then
-  log "gateway ready (db:connected)"
-else
-  if ai_gateway_answering http://127.0.0.1:4000 3; then
-    log "gateway answering but db not connected — kicking launchd"
-  else
-    log "gateway not up yet — kicking launchd"
-  fi
-  launchctl kickstart -k "$(ai_litellm_agent)" 2>/dev/null
-  for _ in $(seq 1 45); do
-    gateway_db_connected && break
-    sleep 2
-  done
-  if gateway_db_connected; then
-    log "gateway ready (db:connected)"
-  else
-    body=$(curl -s -m 3 http://127.0.0.1:4000/health/readiness 2>/dev/null || true)
-    if [ -n "$body" ]; then
-      log "gateway STILL NOT READY — readiness: ${body}"
-    else
-      log "gateway STILL DOWN — see ~/Library/Logs/litellm.error.log"
-    fi
-  fi
-fi
-
-log "done"
+[ "$rc" -eq 0 ] && log "up" || log "finished with failures"
+exit "$rc"

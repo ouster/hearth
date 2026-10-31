@@ -1,152 +1,74 @@
 #!/bin/bash
-# Repoint a role at a different model, safely.
+# Repoint an LM Studio role at a different model, safely.
 #
-#   scripts/swap-role.sh local-code qwen3-coder:30b
-#   scripts/swap-role.sh local-code qwen3-coder:30b --delete-old
+#   scripts/swap-role.sh <role> <lms model key> <weights path> [ctx] [slots]
 #
-# Order matters and this enforces it: pull the new model, edit the config,
-# audit, deploy, verify the role actually answers, and only then offer to
-# delete the old weights. Deleting first is how you end up with a role
-# pointing at nothing.
+#   e.g. scripts/swap-role.sh local-big <key from `lms ls`> <dir under ~/.lmstudio/models>
 #
-# Comments in config.yaml are preserved — they carry the reasoning, and a
-# yaml load/dump round-trip would strip them.
+# Bench first (scripts/bench.sh, scripts/concurrency-bench.sh) — rule 5. This
+# script does the mechanical part and reverts on failure:
+#
+#   1. the key is downloaded and the weights path exists
+#   2. config/roles.tsv row rewritten (ctx/slots kept unless given)
+#   3. scripts/lms-load.sh reloads, then re-reads lms ps
+#   4. tool-smoke passes against the role (chat roles only)
+#
+# Any failure restores the previous roles.tsv and reloads it. What it does
+# NOT do, and prints for you: docs/MODELS.md, pin-digests, ADR, HISTORY row.
+#
+# Exit 0 swapped, 1 failed and reverted, 2 could not run.
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
-ai_python_or_die || exit 2
-ai_load_env "$ROOT"
+ai_load_env
+ROLES="${ROOT}/config/roles.tsv"
 
-CFG="${ROOT}/litellm/config.yaml"
-ROLE="${1:?usage: swap-role.sh <role> <new-model> [--delete-old]}"
-NEW="${2:?usage: swap-role.sh <role> <new-model> [--delete-old]}"
-DELETE_OLD=false
-[ "${3:-}" = "--delete-old" ] && DELETE_OLD=true
+ROLE="${1:-}"; KEY="${2:-}"; W="${3:-}"; CTX="${4:-}"; SLOTS="${5:-}"
+[ -n "$ROLE" ] && [ -n "$KEY" ] && [ -n "$W" ] || { sed -n '2,4p' "$0"; exit 2; }
+hearth_lms_ok || { echo "could not run: LM Studio not running"; exit 2; }
 
-say() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
+row=$(hearth_roles lmstudio | awk -F'\t' -v r="$ROLE" '$1 == r')
+[ -n "$row" ] || { echo "could not run: ${ROLE} is not an lmstudio role in roles.tsv"; exit 2; }
+old_key=$(printf '%s' "$row" | cut -f3)
+[ -n "$CTX" ]   || CTX=$(printf '%s' "$row" | cut -f4)
+[ -n "$SLOTS" ] || SLOTS=$(printf '%s' "$row" | cut -f5)
 
-# ---------------------------------------------------------------- current
-OLD=$("$AI_PY" - "$CFG" "$ROLE" <<'PY'
-import sys, yaml
-cfg = yaml.safe_load(open(sys.argv[1])) or {}
-for m in cfg.get('model_list', []):
-    if m['model_name'] == sys.argv[2]:
-        print(m['litellm_params']['model']); break
-PY
-)
-[ -n "$OLD" ] || { echo "role '${ROLE}' not found in ${CFG}"; exit 1; }
+"$HEARTH_LMS" ls --json 2>/dev/null | grep -qF "\"${KEY}\"" || { echo "could not run: ${KEY} not downloaded (lms get <url> -y)"; exit 2; }
+[ -e "$HOME/.lmstudio/models/${W}" ] || { echo "could not run: weights ${W} not under ~/.lmstudio/models"; exit 2; }
+[ "$KEY" = "$old_key" ] && [ "$CTX" = "$(printf '%s' "$row" | cut -f4)" ] && [ "$SLOTS" = "$(printf '%s' "$row" | cut -f5)" ] \
+  && { echo "nothing to do: ${ROLE} is already ${KEY} ctx ${CTX} slots ${SLOTS}"; exit 0; }
 
-OLD_BARE="${OLD#*/}"
-echo "role      : ${ROLE}"
-echo "currently : ${OLD}"
-echo "new       : ollama_chat/${NEW}"
-
-[ "$OLD_BARE" = "$NEW" ] && { echo "already pointing there — nothing to do"; exit 0; }
-
-# ---------------------------------------------------------------- pull
-say "1/5 Ensure the new model is present"
-if ollama list 2>/dev/null | awk 'NR>1{print $1}' | grep -qx -e "$NEW" -e "${NEW}:latest"; then
-  echo "    already pulled"
-else
-  echo "    pulling ${NEW} — this may take a while"
-  ollama pull "$NEW" || { echo "    pull failed, config untouched"; exit 1; }
-fi
-
-# ---------------------------------------------------------------- edit
-say "2/5 Update config"
-cp "$CFG" "${CFG}.bak"
-"$AI_PY" - "$CFG" "$ROLE" "$NEW" <<'PY'
-import sys, re
-path, role, new = sys.argv[1], sys.argv[2], sys.argv[3]
-lines = open(path).read().split('\n')
-out, inrole, done = [], False, False
-for ln in lines:
-    if re.match(rf'\s*-\s*model_name:\s*{re.escape(role)}\s*$', ln):
-        inrole = True
-    elif re.match(r'\s*-\s*model_name:', ln):
-        inrole = False
-    if inrole and not done and re.match(r'\s*model:\s*ollama', ln):
-        indent = ln[:len(ln) - len(ln.lstrip())]
-        ln = f'{indent}model: ollama_chat/{new}'
-        done = True
-    out.append(ln)
-open(path, 'w').write('\n'.join(out))
-print('    rewrote model line' if done else '    WARNING: no ollama model line found')
-PY
-
-# ---------------------------------------------------------------- audit
-say "3/5 Audit"
-if ! bash "${ROOT}/scripts/audit-fallbacks.sh" >/dev/null 2>&1; then
-  echo "    fallback audit FAILED — reverting"
-  mv "${CFG}.bak" "$CFG"; exit 1
-fi
-echo "    fallbacks clean"
-
-if ! bash "${ROOT}/scripts/preflight.sh" >/dev/null 2>&1; then
-  echo "    preflight failed — reverting"
-  mv "${CFG}.bak" "$CFG"
-  bash "${ROOT}/scripts/preflight.sh" | tail -20
+BACKUP=$(mktemp)
+cp "$ROLES" "$BACKUP"
+revert() {
+  echo "REVERTING: restoring roles.tsv and reloading ${old_key}"
+  cp "$BACKUP" "$ROLES"
+  "${ROOT}/scripts/lms-load.sh" >/dev/null 2>&1 || echo "  lms-load.sh failed after revert — run it by hand"
+  rm -f "$BACKUP"
   exit 1
-fi
-echo "    preflight clean"
+}
 
-# ---------------------------------------------------------------- deploy
-say "4/5 Restart gateway"
-launchctl kickstart -k "$(ai_litellm_agent)" 2>/dev/null
-gw_up=false
-for _ in $(seq 1 30); do
-  if ai_gateway_ready http://127.0.0.1:4000 3; then gw_up=true; break; fi
-  sleep 1
-done
-if $gw_up; then
-  echo "    gateway responding (db:connected)"
-else
-  echo "    gateway did not come back — reverting config"
-  echo "    state: $(ai_gateway_state http://127.0.0.1:4000 3)"
-  mv "${CFG}.bak" "$CFG"
-  launchctl kickstart -k "$(ai_litellm_agent)" 2>/dev/null
-  exit 1
-fi
+awk -F'\t' -v OFS='\t' -v r="$ROLE" -v k="$KEY" -v c="$CTX" -v s="$SLOTS" -v w="$W" \
+  '/^[[:space:]]*#/ || $1 != r {print; next} {$3=k; $4=c; $5=s; $6=w; print}' "$BACKUP" > "$ROLES"
+echo "roles.tsv: ${ROLE} ${old_key} → ${KEY} (ctx ${CTX}, ${SLOTS} slot(s))"
 
-# ---------------------------------------------------------------- verify
-say "5/5 Verify the role answers"
-start=$(date +%s)
-code=$(curl -s -m 900 -o /dev/null -w '%{http_code}' \
-  -H "Authorization: Bearer ${LITELLM_MASTER_KEY}" -H "Content-Type: application/json" \
-  -d "{\"model\":\"${ROLE}\",\"messages\":[{\"role\":\"user\",\"content\":\"say ok\"}],\"max_tokens\":10}" \
-  "http://127.0.0.1:4000/v1/chat/completions")
-elapsed=$(( $(date +%s) - start ))
+echo "loading…"
+"${ROOT}/scripts/lms-load.sh" || revert
 
-if [ "$code" != "200" ]; then
-  echo "    ${ROLE} FAILED (HTTP ${code}) after ${elapsed}s"
-  echo "    Config kept at ${CFG}.bak — restore with:"
-  echo "      mv ${CFG}.bak ${CFG} && scripts/deploy.sh"
-  exit 1
-fi
-echo "    ${ROLE} answered in ${elapsed}s"
-rm -f "${CFG}.bak"
+case "$KEY" in
+  *embed*) : ;;
+  *)
+    echo "tool smoke…"
+    OPENAI_API_KEY="${LMSTUDIO_HOST_TOKEN:-}" "${ROOT}/scripts/tool-smoke.sh" "$HEARTH_URL" "$ROLE" || revert ;;
+esac
 
-# ---------------------------------------------------------------- cleanup
-say "Old weights"
-echo "    ${OLD_BARE} is no longer referenced by any role."
-if $DELETE_OLD; then
-  # grep -c prints "0" AND exits 1 on no match, so `|| echo 0` yields "0\n0"
-  # and the -gt test errors out — which here would fall through to the delete
-  # branch. wc -l has no such opinion. Same trap documented in status.sh.
-  still=$(grep -F "ollama_chat/${OLD_BARE}" "$CFG" 2>/dev/null | wc -l | tr -d ' ')
-  if [ "${still:-0}" -gt 0 ]; then
-    echo "    NOT deleting — still used by another role"
-  else
-    ollama rm "$OLD_BARE" && echo "    deleted ${OLD_BARE}"
-  fi
-else
-  echo "    Keep it a few days, then: ollama rm ${OLD_BARE}"
-  echo "    Or re-run with --delete-old to remove it now."
-fi
-
+rm -f "$BACKUP"
 cat <<EOF
 
-Remember to update docs/MODELS.md and write an ADR — the registry is only
-useful if it matches reality.
+Swapped ${ROLE} → ${KEY}. Still yours to do:
+  1. docs/MODELS.md — same change, with source repo + revision (rule 1)
+  2. scripts/pin-digests.sh — record the new weights (D4)
+  3. ADR in docs/decisions/ and a row in docs/HISTORY.md
+  4. Delete the old weights only after the new model has proven itself
 EOF

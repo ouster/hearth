@@ -1,36 +1,24 @@
 #!/bin/bash
 # Zed-like agent tool smoke — read then write with '<' in file content.
 #
-#   scripts/tool-smoke.sh ollama gpt-oss:20b
-#   scripts/tool-smoke.sh ollama qwen3-coder:30b
-#   scripts/tool-smoke.sh openai http://127.0.0.1:8000/v1 default
+#   scripts/tool-smoke.sh                          local-big on LM Studio :1234
+#   scripts/tool-smoke.sh <base_url> <model>       any OpenAI-compatible server
+#
+# Token: OPENAI_API_KEY if set, else LMSTUDIO_HOST_TOKEN from
+# ~/.config/hearth/env. Passed by environment, never on the command line.
 #
 # Exit 0 = turn-2 write/edit succeeded. See bench/tool-smoke.py.
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# stdlib only — no PyYAML needed (the LiteLLM venv that had it is gone).
+. "${ROOT}/scripts/lib.sh"
+ai_load_env
+
+# stdlib only — no PyYAML needed.
 AI_PY=/usr/bin/python3
 [ -x "$AI_PY" ] || AI_PY="$(command -v python3)" || { echo "could not run: no python3" >&2; exit 2; }
 
-BACKEND="${1:-ollama}"
-shift || true
-
-case "$BACKEND" in
-  ollama)
-    MODEL="${1:?model name, e.g. gpt-oss:20b}"
-    URL="${OLLAMA_API_BASE:-http://127.0.0.1:11434}"
-    exec "$AI_PY" "${ROOT}/bench/tool-smoke.py" --backend ollama --url "$URL" --model "$MODEL"
-    ;;
-  openai)
-    BASE="${1:?base URL, e.g. http://127.0.0.1:8000/v1}"
-    MODEL="${2:?model id}"
-    KEY="${OPENAI_API_KEY:-mlx}"
-    exec "$AI_PY" "${ROOT}/bench/tool-smoke.py" --backend openai --url "$BASE" --model "$MODEL" --api-key "$KEY"
-    ;;
-  *)
-    echo "usage: $0 ollama <model>"
-    echo "       $0 openai <base_url> <model>"
-    exit 2
-    ;;
-esac
+BASE="${1:-$HEARTH_URL}"
+MODEL="${2:-local-big}"
+OPENAI_API_KEY="${OPENAI_API_KEY:-${LMSTUDIO_HOST_TOKEN:-}}" \
+  exec "$AI_PY" -I "${ROOT}/bench/tool-smoke.py" --backend openai --url "$BASE" --model "$MODEL"
