@@ -17,7 +17,7 @@ The LM Studio app 0.4.28 owns the server (D6). Machine-read copy:
 
 | Role | Model key | Source | Size | Load | Set | Why |
 |---|---|---|---|---|---|---|
-| `local-big` | `qwen/qwen3.6-35b-a3b` | `lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a` | 20.4 GB | 128K × 3 parallel | 2026-10-31 | Same base model as the Ollama-era agent; MLX 4-bit from lmstudio-community (quantisation may differ from the Ollama build). The only local chat/agent role (D1). Context raised from 64K the same day (ADR 0017): the model card asks for at least 128K so thinking holds. Native window is 262,144 |
+| `local-big` | `qwen/qwen3.6-35b-a3b` | `lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a` | 20.4 GB | 128K × 3 parallel, draft MTP | 2026-10-31 | Same base model as the Ollama-era agent; MLX 4-bit from lmstudio-community (quantisation may differ from the Ollama build). The only local chat/agent role (D1). Context raised from 64K the same day (ADR 0017): the model card asks for at least 128K so thinking holds. Native window is 262,144 |
 | `local-embed` | `text-embedding-nomic-embed-text-v1.5@f16` | `nomic-ai/nomic-embed-text-v1.5-GGUF` f16 @ `0188c9b`, sha256 `f7af6f66…` | 0.3 GB | 2K | 2026-10-31 | f16 to match the Ollama-era embeddings |
 | `cloud-cheap` | `gemini-3.6-flash` | Google, `ask-cloud` only | — | — | 2026-10-22 | 1M ctx, 65K output. ADR 0014 |
 

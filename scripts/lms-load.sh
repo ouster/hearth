@@ -8,8 +8,10 @@
 # the role name, never a model. model_key is the modelKey from `lms ls
 # --json`, with @variant (e.g. @f16) when several quantisations are on disk;
 # `lms load` does not accept a file path.
-# slots > 1 becomes --parallel (concurrent predictions is a load flag in
-# llmster 0.0.27). No --ttl: a resident role never auto-unloads.
+# slots > 1 becomes --parallel. draft=mtp becomes --speculative-draft-mtp
+# (same weights; faster decode, not faster prefill). No --ttl: a resident
+# role never auto-unloads. `lms ps` does not report the draft flag, so
+# --check cannot see it. A load without the flag looks in sync.
 #
 # Exit 0 in sync, 1 drift (--check) or a load failed, 2 could not run.
 
@@ -24,8 +26,8 @@ CHECK=0
 [ -f "$ROLES" ] || { echo "could not run: $ROLES missing" >&2; exit 2; }
 "$LMS" daemon status >/dev/null 2>&1 || { echo "could not run: LM Studio is not running (open the app; do not start headless llmster)" >&2; exit 2; }
 
-# role<TAB>key<TAB>ctx<TAB>slots for lmstudio rows.
-want=$(awk -F'\t' '!/^[[:space:]]*(#|$)/ && $2 == "lmstudio" {print $1 "\t" $3 "\t" $4 "\t" $5}' "$ROLES")
+# role<TAB>key<TAB>ctx<TAB>slots<TAB>draft for lmstudio rows.
+want=$(awk -F'\t' '!/^[[:space:]]*(#|$)/ && $2 == "lmstudio" {print $1 "\t" $3 "\t" $4 "\t" $5 "\t" $7}' "$ROLES")
 [ -n "$want" ] || { echo "could not run: no lmstudio rows in $ROLES" >&2; exit 2; }
 
 # identifier<TAB>path<TAB>modelKey<TAB>ctx<TAB>parallel for loaded models.
@@ -60,7 +62,7 @@ done <<EOF
 $have
 EOF
 
-while IFS="$(printf '\t')" read -r role key ctx slots; do
+while IFS="$(printf '\t')" read -r role key ctx slots draft; do
   [ -n "$role" ] || continue
   cur=$(printf '%s\n' "$have" | awk -F'\t' -v r="$role" '$1 == r')
   if [ -n "$cur" ]; then
@@ -84,10 +86,18 @@ while IFS="$(printf '\t')" read -r role key ctx slots; do
   fi
   par=()
   [ "$slots" -gt 1 ] 2>/dev/null && par=(--parallel "$slots")
-  echo "load   ${role}: ctx ${ctx}, ${slots} slot(s)"
-  if ! "$LMS" load "$key" --identifier "$role" -c "$ctx" --gpu max ${par[@]+"${par[@]}"} -y </dev/null >/dev/null 2>&1; then
-    echo "FAIL   load ${role}"; rc=1
+  spec=()
+  [ "$draft" = "mtp" ] && spec=(--speculative-draft-mtp)
+  extra=""
+  [ "$draft" = "mtp" ] && extra=", draft mtp"
+  echo "load   ${role}: ctx ${ctx}, ${slots} slot(s)${extra}"
+  err=$(mktemp)
+  if ! "$LMS" load "$key" --identifier "$role" -c "$ctx" --gpu max ${par[@]+"${par[@]}"} ${spec[@]+"${spec[@]}"} -y </dev/null >"$err" 2>&1; then
+    echo "FAIL   load ${role}"
+    cat "$err" >&2
+    rc=1
   fi
+  rm -f "$err"
 done <<EOF
 $want
 EOF

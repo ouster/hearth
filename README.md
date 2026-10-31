@@ -93,15 +93,46 @@ Ops detail: [`docs/RUNBOOK.md`](docs/RUNBOOK.md). Architecture:
 
 ## Usage
 
+### On the host
+
 ```bash
+# Local models — all mean local-big (D1)
+ask                # aider with openai/local-big
+ask-big            # same
+ask-arch           # aider architect mode (two local-big sides)
+ask-cloud          # Gemini via GOOGLE_API_KEY — the only alias that leaves the host
+
+# Server management
+ai-load            # scripts/lms-load.sh — load roles.tsv, report drift
+ai-loaded          # lms ps — list loaded models
+ai-restart         # stop and start the server on 127.0.0.1:1234
+ai-log             # lms log stream
+ai-status          # scripts/status.sh
+ai-health          # scripts/healthcheck.sh
+ai-boot            # scripts/boot.sh
+```
+
+### On a laptop
+
+Source `~/.hearth-client.sh` (set by `scripts/client-setup.sh`): run
+`ai-tunnel` first to open the SSH tunnel, then any of these — they all go
+through the tunnel to the host's LM Studio on `:1234`.
+
+```bash
+# Tunnel management
+ai-tunnel          # open the SSH tunnel (needed once)
+ai-tunnel-stop     # close the tunnel
+ai-ping            # check tunnel + server health (up / DOWN / BAD TOKEN)
+ai-models          # list models available through the tunnel
+
+# Asking
+ai-ask "question"  # one-shot question without aider
 ask                # local-big. ask-big / ask-local / ask-chat / ask-fast are the same
 ask-arch           # aider architect mode, local-big on both sides
-ask-cloud          # Gemini, with GOOGLE_API_KEY — the only alias that leaves the host
+ask-cloud          # Gemini via THIS machine's own key — the only cloud alias
 
-ai-load            # scripts/lms-load.sh — load roles.tsv, report drift
-ai-loaded          # lms ps
-ai-restart         # restart the server on 127.0.0.1:1234
-ai-log             # lms log stream
+# Open WebUI through the tunnel
+ai-webui           # open host's Open WebUI (http://127.0.0.1:3000)
 ```
 
 Editors (aider + Zed): [`docs/IDES.md`](docs/IDES.md).
