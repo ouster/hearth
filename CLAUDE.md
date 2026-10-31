@@ -3,6 +3,19 @@
 Local-first AI serving. The LM Studio app on `127.0.0.1:1234` serves local
 roles (never also run headless `llmster`); cloud (Gemini) is reached by each tool with its own key.
 
+## Which machine are you on?
+
+- **The host** (runs LM Studio; `~/.lmstudio/bin/lms` exists): everything
+  below applies.
+- **A laptop** (no LM Studio; someone cloned this repo to set up access):
+  follow `docs/LAPTOP.md` → *AI-assisted setup* and nothing else. Do not run
+  anything in `scripts/` — those are host scripts and touch the host's LM
+  Studio, launchd and `authorized_keys`. Host-side steps are ones you tell the
+  person to do on the host. You are likely a cloud model, so **never read,
+  print, grep, copy or edit** `~/.hearth-key`, `~/.hearth-gemini-key` or
+  `~/.ssh/hearth_tunnel`; the person types secrets in themselves, and you may
+  only check their permissions with `ls -l`.
+
 Read `docs/ROUTING.md` before suggesting any routing change.
 
 **In flight:** migration to LM Studio direct — `docs/MIGRATION-LMSTUDIO.md`
@@ -72,6 +85,8 @@ removed gateway — never suggest commands against it.
 
 11. **Never commit keys.** LM Studio tokens, provider keys, and `.env` files stay
     out of git. Tokens live in `~/.config/hearth/env` (mode 600) and Zed's keychain.
+    Never read or print that file's contents yourself — scripts source it;
+    check it with `ls -l` only.
 
 ## Workflow
 

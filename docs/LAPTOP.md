@@ -57,6 +57,92 @@ this host's name and user filled in (`--windows` for PowerShell). In short:
 (tunnel up but host asleep or LM Studio down — on the host, `scripts/boot.sh`),
 or `DOWN` (no tunnel — `ai-tunnel`).
 
+## AI-assisted setup
+
+For an AI assistant (Claude Code, Cursor, …) running **on the laptop** in a
+clone of this repo. The assistant is probably a cloud model: anything it reads
+or prints goes to its vendor. That decides every rule below.
+
+**Never:** read, print, grep, copy or edit `~/.hearth-key`,
+`~/.hearth-gemini-key` or `~/.ssh/hearth_tunnel` (the private key); ask the
+person to paste a token or key into the chat; run anything in `scripts/`
+(host-only); add a router port-forward; suggest turning on Serve on Local
+Network; configure hearth as a Cursor model provider (see below). Checking a
+secret file's permissions with `ls -l` is fine.
+
+**1. Ask the person for:**
+
+- the host as `user@host.local` (on the host: `id -un` and
+  `scutil --get LocalHostName`);
+- the laptop's name for its token and key comment (letters, digits, `-`, `_`);
+- shell: macOS / Linux (zsh or bash) or Windows PowerShell.
+
+Read the Gemini model id yourself: the `cloud-cheap` row of
+`config/roles.tsv`, column 3. Do not copy it anywhere except the
+`HEARTH_CLOUD_MODEL` line.
+
+**2. You may run** (macOS / Linux; Windows equivalents are in
+`client/hearth-client.ps1`'s header):
+
+```bash
+# Interactive (passphrase prompt) — ask the person to run it, or run it if your
+# terminal is interactive:
+ssh-keygen -t ed25519 -f ~/.ssh/hearth_tunnel -C hearth-tunnel-<name>
+
+# ~/.ssh/config — append only if there is no "Host hearth" entry already
+printf 'Host hearth\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/hearth_tunnel\n  IdentitiesOnly yes\n' <host.local> <user> >> ~/.ssh/config
+
+cp client/hearth-client.sh ~/.hearth-client.sh
+printf 'export HEARTH_SSH=hearth\nexport HEARTH_CLOUD_MODEL=%s\nsource ~/.hearth-client.sh\n' <cloud-cheap id> >> ~/.zshrc   # or ~/.bashrc
+```
+
+Showing the person `~/.ssh/hearth_tunnel.pub` is fine — it is public.
+
+**3. Stop and hand over to the person** for each of these, then wait:
+
+1. *On the host*, LM Studio app → Developer → Server Settings → Manage Tokens →
+   create `laptop-<name>`.
+2. *On the host*, with the `.pub` file copied over:
+   `scripts/client-setup.sh <name> --authorize hearth_tunnel.pub`.
+3. *On the laptop, in their own terminal* (not through you), store the secrets:
+
+   ```bash
+   umask 077
+   read -rs t && printf '%s' "$t" > ~/.hearth-key && unset t          # laptop-<name> token
+   read -rs t && printf '%s' "$t" > ~/.hearth-gemini-key && unset t   # optional: this laptop's OWN Google key
+   ```
+
+Then confirm with `ls -l ~/.hearth-key ~/.hearth-gemini-key`: mode
+`-rw-------`, non-zero size. Nothing more.
+
+**4. Prove it** in a new shell. Both halves are required: the first shows the
+key works, the second that it can do nothing else.
+
+| Command | Expect |
+|---|---|
+| `ai-tunnel` | `tunnel: up` (the first run asks the person to confirm the host fingerprint) |
+| `ai-ping` | `up` |
+| `ai-models` | `local-big`, `local-embed` |
+| `ai-ask "say ok"` | a short reply from local-big |
+| `ssh hearth true; echo $?` | **non-zero**, no shell: the key is tunnel-only |
+| `ask-cloud` (optional) | aider on Gemini with the laptop's own key |
+
+If `ai-ping` says `BAD TOKEN`, the person re-runs the `read -rs` step with
+the right token; `NO ANSWER` means the host is asleep or LM Studio is down
+(fix on the host); `DOWN` means no tunnel. If `ssh hearth true` **succeeds**,
+stop: the key was authorized without restrictions — tell the person, and do
+not continue.
+
+**5. Editors.** Zed: the block in [Zed on the laptop](#zed-on-the-laptop),
+with the laptop's token entered through Zed's UI by the person.
+
+**Cursor cannot use hearth as its model provider.** Cursor's backend makes
+the model call, not the laptop, so a `localhost` base URL never reaches the
+tunnel; the only workaround is a public endpoint, which the *Never* list
+forbids, and prompts would still pass through Cursor's servers (checked
+2026-10-31). Use Zed, aider or `ask` for local-big on the laptop; Cursor
+with its own models only, and not on sensitive repos.
+
 ## Zed on the laptop
 
 Same provider as the host, through the tunnel:
