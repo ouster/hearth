@@ -1,0 +1,13 @@
+
+
+Based strictly on the provided document:
+
+1. **Fallback chain for `cloud-frontier`:** There is none. The architecture explicitly states `"No fallbacks."` and `cloud-frontier` (along with its variants) is currently listed as `"dormant, no keys"`.
+
+2. **Dormant roles and what they are blocked on:**
+   * `cloud-code`: Blocked on an Anthropic API key (deliberately unset).
+   * `cloud-frontier`: Blocked on an OpenRouter key.
+   * `cloud-frontier-direct`: Blocked on a Moonshot key.
+   * `cloud-frontier-fast`: Blocked on a Fireworks key.
+
+3. **Postgres port and reason:** The legacy stack bound Postgres to port **5433**. The document does not specify a reason for choosing that port specifically, and notes that Postgres was fully retired and removed on 2026-10-31 as part of the migration to LM Studio direct.
