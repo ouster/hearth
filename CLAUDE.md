@@ -1,7 +1,7 @@
 # Hearth
 
-Local-first AI serving. LM Studio headless (`llmster`) on `127.0.0.1:1234`
-serves local roles; cloud (Gemini) is reached by each tool with its own key.
+Local-first AI serving. The LM Studio app on `127.0.0.1:1234` serves local
+roles (never also run headless `llmster`); cloud (Gemini) is reached by each tool with its own key.
 
 Read `docs/ROUTING.md` before suggesting any routing change.
 

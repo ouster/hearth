@@ -43,7 +43,7 @@
 | D3 | Does Zed **on the host** get a Gemini provider? | No on the host (keeps sensitive work local by default); yes on the laptop | **No on host** (2026-10-31) |
 | D4 | Digest drift detection | Keep: hash the model directory in `config/roles.tsv` and check it in preflight | |
 | D5 | Keep Open WebUI? | Yes, pointed at `:1234`. It no longer needs the gateway's Postgres | **Keep** (2026-10-31) |
-| D6 | Headless runner: LM Studio app with "run server on login", or `llmster`? | `llmster` if it installs cleanly; the app otherwise | **`llmster`** (2026-10-31). llmster cannot enable auth or create tokens (no CLI, lmstudio-ai/lms#489 open 2026-10-29), so: install the app once, set auth + token in the GUI, then verify llmster honours it; app with "run server on login" if not. Removing Ollama.app: ask the operator first |
+| D6 | Headless runner: LM Studio app with "run server on login", or `llmster`? | `llmster` if it installs cleanly; the app otherwise | **The app** (changed 2026-10-31). Was `llmster`; it worked and honoured the app-set auth, but the app and llmster cannot share `~/.lmstudio` and the operator wants the GUI. The app runs the server with "Enable Local LLM Service (headless)" on; ~1.1 GB extra for its GUI processes. Removing Ollama.app: done (operator) |
 | D7 | Soak length before phase 6 cleanup | Operator: one week is excessive. Proposal pending | |
 
 ## Target

@@ -3,8 +3,8 @@
 Local-first LLM serving for a single developer (or a small LAN).
 Inference that still works when vendors get expensive, overloaded, or unavailable.
 
-LM Studio's headless server (`llmster`) serves local models on `:1234` with a
-token required. Cloud (Gemini) is reached by each tool directly with its own
+LM Studio serves local models on `127.0.0.1:1234` with a token required. The
+LM Studio app owns the server (D6, changed 2026-10-31 from headless `llmster`). Cloud (Gemini) is reached by each tool directly with its own
 key, never through the local server — so nothing sent to `:1234` can leave the
 machine. ADR 0016 replaced the earlier LiteLLM + Ollama gateway; what was tried
 before is in [`docs/HISTORY.md`](docs/HISTORY.md).
@@ -30,7 +30,7 @@ flowchart LR
         aider["aider / ask-*"]
         webui["Open WebUI :3000"]
         sbx["sandboxed.sh agents<br/>egress: 127.0.0.1:1234 only"]
-        lms["llmster 127.0.0.1:1234<br/>local-big x3 slots, local-embed<br/>token required"]
+        lms["LM Studio 127.0.0.1:1234<br/>local-big x3 slots, local-embed<br/>token required"]
     end
     laptop["LAN laptop<br/>own token (phase 4)"]
     cloud["Gemini<br/>tool's own key"]
@@ -64,10 +64,10 @@ flowchart LR
 ## Requirements
 
 - macOS on Apple Silicon (the reference host is 64 GB)
-- LM Studio headless (`llmster`) — `curl -fsSL https://lmstudio.ai/install.sh`,
-  read it first, run with `--no-modify-path`
-- The LM Studio app **once**, to turn on Require Authentication and create
-  tokens; llmster has no CLI for either (lmstudio-ai/lms#489)
+- The LM Studio app (0.4.28 here) — it owns the server and is where auth and
+  tokens are set; there is no CLI for either (lmstudio-ai/lms#489)
+- The `lms` CLI at `~/.lmstudio/bin/lms` (installed by the app, or by the
+  llmster installer with `--no-modify-path`)
 - [Podman](https://podman.io) for Open WebUI / SearXNG
 
 ## Quick start
@@ -76,7 +76,7 @@ flowchart LR
 git clone <this-repo> hearth && cd hearth
 
 # 1. Server and models (see docs/RUNBOOK.md for the settings to set in the app)
-~/.lmstudio/bin/lms daemon up
+#    LM Studio app open, "Enable Local LLM Service (headless)" on
 ~/.lmstudio/bin/lms server start --bind 127.0.0.1 -p 1234
 scripts/lms-load.sh                 # loads exactly what config/roles.tsv lists
 

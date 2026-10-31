@@ -84,8 +84,7 @@ had `local → gemini` fallbacks; see `docs/HISTORY.md`.
 
 ## Break-glass
 
-There is no second local server. If llmster is wedged:
-`lms server stop; lms daemon down; lms daemon up;
-lms server start --bind 127.0.0.1 -p 1234; scripts/lms-load.sh`.
+There is no second local server. If LM Studio is wedged: quit the app,
+reopen it, then `lms server start --bind 127.0.0.1 -p 1234; scripts/lms-load.sh`.
 Before changing anything, capture `lms log stream`, the footprint, and the
 concurrency bench at the failing settings (plan, phase 6).

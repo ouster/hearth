@@ -1,7 +1,9 @@
 # Architecture
 
 Reference host: Apple Silicon Mac, 64 GB unified memory, macOS. One local
-inference server, LM Studio headless (`llmster`), on `127.0.0.1:1234`. ADR
+inference server, the LM Studio app (0.4.28), on `127.0.0.1:1234`. D6 changed
+from headless `llmster` to the app on 2026-10-31: the two cannot share
+`~/.lmstudio`, and the app keeps settings and tokens in one place. ADR
 0016; the gateway era (LiteLLM + Ollama + Postgres) is in `docs/HISTORY.md`.
 
 ## Shape
@@ -14,7 +16,7 @@ flowchart TB
         scripts["scripts / benches"]
         webui["Open WebUI :3000<br/>(Podman)"]
         sbx["sandboxed.sh agents"]
-        lms["llmster 127.0.0.1:1234<br/>local-big: 64K x 3 parallel<br/>local-embed<br/>token required, JIT off"]
+        lms["LM Studio 127.0.0.1:1234<br/>local-big: 64K x 3 parallel<br/>local-embed<br/>token required, JIT off"]
     end
 
     laptop["LAN laptop<br/>pending phase 4"]
@@ -94,10 +96,13 @@ are not in that file).
 
 ## Process supervision
 
-`llmster` runs as the LM Studio daemon (`lms daemon up`); the server is
-started with `lms server start --bind 127.0.0.1 -p 1234`. Start-at-login
-supervision is a phase 5 item (`boot.sh` / `install-autostart.sh` rewrite).
-Until then, after a reboot: `lms daemon up`, `lms server start …`,
+The LM Studio app owns the daemon, with "Enable Local LLM Service
+(headless)" on. `lms` drives whichever daemon is running, so the server is
+still started with `lms server start --bind 127.0.0.1 -p 1234` and roles are
+loaded with `scripts/lms-load.sh`. The app's GUI costs ~1.1 GB of footprint
+over headless llmster. **Do not also run llmster**: whichever starts first owns
+`~/.lmstudio`. Start-at-login is a phase 5 item (`install-autostart.sh`).
+Until then, after a reboot: open the app, `lms server start …`,
 `scripts/lms-load.sh`.
 
 ### Environment files

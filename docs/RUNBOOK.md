@@ -1,14 +1,14 @@
 # Runbook
 
-Start, stop, diagnose. LM Studio headless (`llmster`) on `127.0.0.1:1234`,
-ADR 0016. `lms` lives at `~/.lmstudio/bin/lms` (installed with
+Start, stop, diagnose. The LM Studio app serving `127.0.0.1:1234`, ADR 0016
+(D6: the app, not headless `llmster`, since 2026-10-31). `lms` lives at `~/.lmstudio/bin/lms` (installed with
 `--no-modify-path`; the aliases call it by full path as `$HEARTH_LMS`).
 
 ## Layout of the running system
 
 | Piece | Where | Notes |
 |---|---|---|
-| llmster daemon | `lms daemon up` | owns `~/.lmstudio`; the LM Studio app must be quit, or it takes the daemon over |
+| LM Studio app | `/Applications/LM Studio.app` | owns the daemon and `~/.lmstudio`. "Enable Local LLM Service (headless)" on. Never run llmster as well |
 | Server | `127.0.0.1:1234` | `lms server start --bind 127.0.0.1 -p 1234` |
 | Roles | `config/roles.tsv` → `scripts/lms-load.sh` | `local-big` 64K × 3 parallel, `local-embed` |
 | Token | `~/.config/hearth/env`, mode 600 | `LMSTUDIO_HOST_TOKEN`, created in the app |
@@ -53,11 +53,11 @@ local backend.
      printf 'LMSTUDIO_HOST_TOKEN=%s\n' "$(pbpaste)" >> ~/.config/hearth/env && \
      chmod 600 ~/.config/hearth/env && pbcopy </dev/null
    ```
-   Leave "Enable Local LLM Service (headless)" off — that is the app's own
-   headless mode. **Quit the app (⌘Q)** before starting llmster.
-5. Start and load:
+   In Settings → Developer turn **"Enable Local LLM Service (headless)" on**.
+   If llmster was installed, stop it first (`lms daemon down` while the app is
+   closed) — the two cannot share `~/.lmstudio`.
+5. Start and load (app open):
    ```bash
-   lms daemon up
    lms server start --bind 127.0.0.1 -p 1234
    scripts/lms-load.sh
    ```
@@ -74,7 +74,7 @@ local backend.
 Start-at-login supervision is a phase 5 item. Until then, after a reboot:
 
 ```bash
-lms daemon up
+open -a "LM Studio"
 lms server start --bind 127.0.0.1 -p 1234
 scripts/lms-load.sh          # exits 0 only after re-reading lms ps
 ```
@@ -108,7 +108,7 @@ Footprint of the model worker (the number that matters against the ~48 GB
 GPU ceiling — RSS understates it):
 
 ```bash
-for p in $(pgrep -f '\.lmstudio/'); do footprint -p $p | awk '/Footprint:/'; done
+for p in $(pgrep -f '\.lmstudio/|LM Studio'); do footprint -p $p | awk '/Footprint:/'; done
 ```
 
 ## Chat UI and visibility
@@ -194,7 +194,7 @@ repo it was invited into. Commit first; `git diff` before accepting.
 |---|---|---|
 | Every client 401s | `curl` with the host token | token wrong or missing in `~/.config/hearth/env`; Zed keeps its own copy in the keychain |
 | `model not found` | `lms ps`, `scripts/lms-load.sh --check` | `scripts/lms-load.sh`. JIT is off, so an unlisted model never loads by itself |
-| `lms` says "LM Studio vX is running" | the app took the daemon over | quit the app; `lms daemon up` |
+| `lms daemon status` says "llmster … is running" | llmster took the daemon | `lms daemon down`, then open the app |
 | Stuck "Local inference is changing ownership" | app and llmster both installed (lmstudio-bug-tracker#2485) | quit both; `lms daemon down; lms daemon up` |
 | Slow under load | `concurrency-bench.sh` at the failing settings | prefill is serialised at any `--parallel`; see `docs/ARCHITECTURE.md` |
 | Zed agent stalls | `ai-log`, footprint, bench | capture all three **before** changing anything |
@@ -205,7 +205,7 @@ Bench any change the same way as the baseline:
 ```bash
 scripts/concurrency-bench.sh --base-url http://127.0.0.1:1234/v1 \
   --token-env LMSTUDIO_HOST_TOKEN --model local-big --concurrency 3 \
-  --proc-match '(\.lmstudio/|^llmster)'
+  --proc-match '(\.lmstudio/|LM Studio)'
 ```
 
 ## Rollback (until phase 6)
