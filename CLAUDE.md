@@ -4,6 +4,10 @@ Local-first AI gateway. Ollama + LiteLLM local, optional cloud tiers.
 
 Read `docs/ROUTING.md` before suggesting any routing change.
 
+**In flight:** migration to LM Studio direct, retiring LiteLLM and Ollama —
+`docs/MIGRATION-LMSTUDIO.md` (ADR 0016, **accepted** 2026-10-31). Work one phase at a time,
+only when the operator says to start it, and stop at every DECISION.
+
 ## Hard rules
 
 1. **Concrete model names appear in exactly two files:** `litellm/config.yaml` and
@@ -77,6 +81,7 @@ docs/
   ARCHITECTURE.md    how the gateway is wired
   ROUTING.md         local vs cloud decision table
   MODELS.md          role → model registry
+  HISTORY.md         what we tried, and why it stayed or went
   MCP.md             MCP server → tools → which keys
   RUNBOOK.md         start, stop, diagnose
   CLAUDE-PROJECT.md  the claude.ai Project spec
