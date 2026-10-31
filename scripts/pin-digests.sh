@@ -29,6 +29,12 @@ for a in "$@"; do
     *) echo "usage: $0 [--check [--deep]]"; exit 2 ;;
   esac
 done
+# --deep alone used to fall through to record and bless whatever is on disk.
+if [ "$DEEP" -eq 1 ] && [ "$MODE" != "check" ]; then
+  echo "usage: $0 --check --deep" >&2
+  echo "--deep re-hashes. It does not record. Recording is the default, with no flags, after a bench you trust." >&2
+  exit 2
+fi
 
 # Prints: files<TAB>bytes<TAB>newest_mtime for a file or directory.
 quick() {
@@ -95,7 +101,7 @@ while IFS="$(printf '\t')" read -r role _ key _ _ w; do
     [ "$want_h" = "$got_h" ] || { echo "DRIFT  ${role}: sha256 ${got_h:0:12} ≠ recorded ${want_h:0:12}"; rc=1; continue; }
     echo "ok     ${role}: sha256 ${got_h:0:12} matches"
   else
-    echo "ok     ${role}: files, bytes and mtime match (--deep to re-hash)"
+    echo "ok     ${role}: files, bytes and mtime match (scripts/pin-digests.sh --check --deep re-hashes)"
   fi
 done <<EOF
 $rows

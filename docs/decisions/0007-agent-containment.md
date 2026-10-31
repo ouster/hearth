@@ -1,7 +1,7 @@
 # 0007 — Contain agents by cutting egress, not by detecting injection
 
 Date: 2026-08-02
-Status: accepted
+Status: accepted. Egress target updated 2026-10-31 from `127.0.0.1:4000` to `127.0.0.1:1234` (ADR 0016). Container sockets are denied as well; see `scripts/sandboxed.sh`.
 
 ## Context
 
@@ -30,9 +30,10 @@ Research on the current state of the field (2026):
 `scripts/sandboxed.sh` runs an agent under an SBPL profile with two controls,
 in order of importance:
 
-1. **Egress is denied except to `127.0.0.1:4000`.** This is the load-bearing
+1. **Egress is denied except to `127.0.0.1:1234`.** This is the load-bearing
    control. It composes with the existing architecture rather than fighting it:
-   the gateway is already the only thing an agent legitimately needs to reach.
+   LM Studio is the only thing an agent legitimately needs to reach. (The
+   original decision named the gateway on `:4000`.)
 2. **Writes are confined to the working directory** (plus temp, plus announced
    per-agent state directories).
 

@@ -94,7 +94,7 @@ bash -n scripts/*.sh client/hearth-client.sh
 anything with `lms load/unload/server`, `podman`, `launchctl` or `sudo`.
 On a laptop, run none of `scripts/`.
 
-If you're Zed on `local-big` (64K context), review one area from the table
+If you're Zed on `local-big` (128K context, ADR 0017), review one area from the table
 per thread rather than the whole diff at once.
 
 ## How to report

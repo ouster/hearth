@@ -42,7 +42,7 @@ cold on Ollama MLX (ADR 0012, 0013).
    at login. Ollama, LiteLLM, Postgres-for-LiteLLM and the MLX watchdog are
    retired after a soak period.
 2. **One agent model, always resident**, loaded with a fixed identifier equal
-   to its role name (`local-big`), 64K context per slot, 3 concurrent
+   to its role name (`local-big`), 64K context per slot (raised to 128K by ADR 0017), 3 concurrent
    predictions, JIT loading off. `local-embed` stays resident beside it. Whether
    `local-code` and `local-chat` survive as separate models is decision D1 in
    the plan; the recommendation is to collapse them into `local-big` so

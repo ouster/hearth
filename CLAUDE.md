@@ -30,9 +30,10 @@ removed gateway — never suggest commands against it.
 1. **Concrete model names appear in exactly two files:** `config/roles.tsv` and
    `docs/MODELS.md`. Everywhere else — aliases, scripts, IDE config, code — uses roles.
    If you are about to write a model tag into a shell alias, stop.
-   One exception: the `display_name` labels in Zed's settings, which
-   `scripts/zed-sync.sh` generates from `roles.tsv` + `lms ls` so they cannot
-   drift. Clients always *call* the role.
+   Two generated copies, both written from `roles.tsv` so they cannot drift:
+   the `display_name` labels in Zed's settings (`scripts/zed-sync.sh`, from
+   `roles.tsv` + `lms ls`), and the model key plus weights path in
+   `pins/digests.tsv` (`scripts/pin-digests.sh`). Clients always *call* the role.
    Same discipline for MCP servers: client config docs (`docs/IDES.md`) and
    `docs/MCP.md`.
 
@@ -66,7 +67,7 @@ removed gateway — never suggest commands against it.
    immutable. Re-record only after re-benching.
 
 7. **Check the RAM envelope.** 64 GB total, but macOS caps GPU-accessible memory at ~48 GB
-   (75% above 36 GB) — that is the real ceiling. Current resident set is ~29.7 GB peak (local-big 64K × 3 slots + local-embed, measured 2026-10-31). Say when a suggestion will not fit, or
+   (75% above 36 GB) — that is the real ceiling. Current idle footprint is 20.7 GB at 128K × 3 plus `local-embed` (measured 2026-10-31, ADR 0017). The last concurrency-3 peak was 29.7 GB, on the 64K load. Say when a suggestion will not fit, or
    will evict something that needs to stay loaded — on this machine the resident
    set matters more than any one model's quality.
 

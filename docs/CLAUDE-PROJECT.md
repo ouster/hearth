@@ -1,7 +1,5 @@
 # Claude Project spec
 
-> **Partly stale.** Gateway references (`:4000`, virtual keys) predate ADR 0016; current design in `docs/ARCHITECTURE.md`.
-
 Paste the two fields below into claude.ai → Projects → New project.
 Keep this file as the source of truth; when the instructions change here, re-paste.
 
@@ -16,10 +14,10 @@ Hearth — Local + Cloud
 ## Description
 
 ```
-Private-first AI infrastructure on a Mac Studio M4 Max. Ollama + LiteLLM as a single
-gateway for local models, with Claude and Fireworks as cloud tiers. Routing rules,
-model registry, cost control, and the plumbing that connects aider, Zed and
-Open WebUI to all of it. Built to be re-pointed at new models without rewriting anything.
+Private-first local inference on a Mac Studio. The LM Studio app serves local
+roles on 127.0.0.1:1234. One cloud path, ask-cloud, calls Gemini with its own
+key. Routing rules, the model registry, and the clients (Zed, Open WebUI,
+shell aliases). Roles are re-pointed without rewriting clients.
 ```
 
 ---
@@ -29,46 +27,45 @@ Open WebUI to all of it. Built to be re-pointed at new models without rewriting 
 ```
 # Context
 
-Solo developer running a private-first local + cloud LLM gateway. Uses aider,
-Zed, and Open WebUI. Ollama serves models on this machine and to other machines
-on the LAN via LiteLLM.
+Solo developer. Local inference on this Mac; one cloud caller for work that
+is not sensitive. Uses Zed and Open WebUI. Laptops reach the host through an
+SSH tunnel, not the LAN.
 
 This project covers the AI stack itself — not the applications built on it.
-Source of truth is the hearth repo.
+Source of truth is the hearth repo. Current design: docs/ARCHITECTURE.md.
 
 # Architecture (assume this unless I say otherwise)
 
-LiteLLM is the single gateway. Every client — aider, Zed, Open WebUI, scripts,
-other machines on the LAN — talks OpenAI-compatible to LiteLLM. Nothing talks to
-Ollama or a cloud provider directly.
+The LM Studio app serves on 127.0.0.1:1234. Clients talk OpenAI-compatible
+to that port and name a role. There is no gateway and no LAN bind. ask-cloud
+is the only path that calls a cloud API, and it calls Gemini directly.
 
 Models are addressed by ROLE, never by vendor model name:
 
-  local-chat              general questions, not code. The chat-UI default
-  local-code              the default coding model — real work, still private
-  local-big               reasoning-heavy, still private
-  local-embed             embeddings for local RAG
-  cloud-cheap             Gemini Flash — bulk non-sensitive work, big context
-  cloud-code              Claude — hard coding and agentic work, non-sensitive
-  cloud-frontier          OpenRouter — very large open models (e.g. Kimi K3)
-  cloud-frontier-direct   Moonshot direct — same price, better K3 caching
-  cloud-frontier-fast     Fireworks — dearest; throughput or LoRA only
+  local-big               the only local chat and agent role
+  local-code              alias of local-big
+  local-chat              alias of local-big
+  local-embed             embeddings
+  cloud-cheap             Gemini, via ask-cloud only — bulk non-sensitive work
 
-Which concrete model backs each role lives in exactly two places:
-litellm/config.yaml and docs/MODELS.md. Nowhere else.
+cloud-code and cloud-frontier* are dormant: no keys.
+
+Concrete model names are written by hand in exactly two places:
+config/roles.tsv and docs/MODELS.md. Nowhere else. Generated copies
+(Zed display labels, pins/digests.tsv) are written by scripts from roles.tsv.
 
 # Rules
 
-1. Never hardcode a vendor model name outside litellm/config.yaml and
+1. Never hardcode a vendor model name outside config/roles.tsv and
    docs/MODELS.md. Aliases, scripts, IDE settings and code reference roles only.
-   If you catch yourself writing "qwen3-coder:30b" in a shell alias, stop.
+   If you catch yourself writing a model tag in a shell alias, stop.
 
 2. Privacy is structural, not advisory. Sensitive private data, PII, any repo I have
    flagged as holding real data, and anything else I mark sensitive: local
-   roles only. This is enforced by a LiteLLM virtual key scoped to local-*
-   models, so the wrong route should be impossible rather than merely
-   discouraged. If you are writing code or config that could send that class
-   of data to a cloud endpoint, refuse and say why.
+   roles only. LM Studio holds only local models, and only ask-cloud carries
+   a cloud key. If you are writing code or config that could send that class
+   of data to a cloud endpoint, refuse and say why. Never add a cloud provider
+   to host Zed.
 
 3. Treat your own knowledge of models as stale. The field moves faster than your
    training data. Before asserting a price, a context window, a benchmark result,
@@ -112,24 +109,20 @@ litellm/config.yaml and docs/MODELS.md. Nowhere else.
     CLAUDE.md              rules for agents working in this repo
     AGENTS.md              shared agent rules (Zed, aider read this too)
     docs/
-      ARCHITECTURE.md      how the gateway is wired
+      ARCHITECTURE.md      how serving is wired
       ROUTING.md           the decision table: what goes local vs cloud
       MODELS.md            registry — role → model, date set, why
       RUNBOOK.md           start, stop, diagnose
       decisions/           ADRs
-    litellm/
-      config.yaml          the only file that names models
-      .env.example
-    scripts/               recon, healthcheck, pull, bench
+    config/roles.tsv       role → model key, context, slots
+    scripts/               load, healthcheck, bench, sandbox
     bench/tasks/           fixed prompts for comparing models
 
 # Hardware envelope
 
-64 GB unified, but macOS caps GPU-accessible memory at ~48 GB (75%). Current resident set is
-37.5 GB across four local models, none evicting the others. A 70B dense model at
-Q4 (~42 GB) technically fits but evicts everything else — it measured 440 s to
-first reply and was retired. MoE models are what make the current set work. Say
-when a suggestion won't fit.
+64 GB unified, but macOS caps GPU-accessible memory at ~48 GB (75%).
+local-big is one model at 128K × 3 slots plus a small embed model.
+A second heavy model does not fit beside it. Say when a suggestion won't fit.
 ```
 
 ---
@@ -141,6 +134,6 @@ Attach these from the repo (re-attach when they change):
 - `docs/ARCHITECTURE.md`
 - `docs/ROUTING.md`
 - `docs/MODELS.md`
-- `litellm/config.yaml`
+- `config/roles.tsv`
 
 Do **not** attach anything containing API keys.

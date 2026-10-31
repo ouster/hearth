@@ -32,6 +32,7 @@ redacted (billing/invoice substituted); figures are unchanged.
 | 2026-10-31 | Phase 5 scripts against LM Studio; weight hashing (D4); login agent | healthcheck 10 pass / 1 warn, preflight 29 pass; negative controls fail as designed; found saved settings drifted to 0.0.0.0 + CORS, and unknown model names served by local-big | Kept | ADR 0016 |
 | 2026-10-31 | Old stack deleted without a soak | Ports 4000/5433/11434 free; tool-smoke and sandbox-probe still pass | No rollback; backups in `~/hearth-backups/` | ADR 0016 |
 | 2026-10-31 | Phase 1: llmster direct, `local-big` 3 parallel × 64K | c3 TTFT p95 59.9 s (was 65.8); prefill still serialised, all three finish at ~61 s; peak 29.7 GB; 3/40 wrong-tool picks | Accepted by operator; no further bench | ADR 0016, `2026-10-31-phase1` |
+| 2026-10-31 | `local-big` context raised to 128K, still 3 slots | Model card asks for ≥128K so thinking holds. Reload honored 131072 (not 262144). Idle footprint 20.7 GB; c3 bench not re-run | Kept | ADR 0017 |
 
 ## Roles
 

@@ -30,7 +30,9 @@ info()  { printf "         %s\n" "$1"; }
 head_() { printf "\n\033[1m%s\033[0m\n" "$1"; }
 
 TMPD=$(mktemp -d -t aistack-probe) || { echo "mktemp failed" >&2; exit 2; }
-trap 'rm -rf "$TMPD"' EXIT INT TERM
+LISTENER_PID=""
+cleanup() { [ -n "$LISTENER_PID" ] && kill "$LISTENER_PID" 2>/dev/null; rm -rf "$TMPD"; }
+trap cleanup EXIT INT TERM
 
 # ---------------------------------------------------------------------------
 head_ "1. Does the primitive exist"
@@ -206,6 +208,81 @@ fi
 if $SB /bin/sh -c "head -c 1 '$HOME/.zshrc' >/dev/null 2>&1"; then
     info "note: reads are unconfined by design -- a sandboxed agent CAN still"
     info "      read your keys and dotfiles. Egress is what stops them leaving."
+fi
+
+# 4f. Another localhost port. The old :4000 check is skipped once nothing
+#     listens there, which would hide a profile that allowed all of localhost.
+/usr/bin/python3 -I -c '
+import socket
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("127.0.0.1", 0))
+s.listen(8)
+print(s.getsockname()[1], flush=True)
+while True:
+    try:
+        c, _ = s.accept()
+        c.close()
+    except Exception:
+        break
+' > "$TMPD/port" &
+LISTENER_PID=$!
+i=0
+while [ ! -s "$TMPD/port" ] && [ "$i" -lt 50 ]; do i=$((i+1)); sleep 0.1; done
+OPORT=$(tr -d '[:space:]' < "$TMPD/port" 2>/dev/null || true)
+if [ -n "$OPORT" ] && /usr/bin/python3 -I -c 'import socket,sys; s=socket.create_connection(("127.0.0.1", int(sys.argv[1])), 2); s.close()' "$OPORT"; then
+    pass "unsandboxed can reach a spare localhost port (positive control)"
+    if $SB /usr/bin/python3 -I -c 'import socket,sys; s=socket.create_connection(("127.0.0.1", int(sys.argv[1])), 2); s.close()' "$OPORT" 2>/dev/null; then
+        fail "sandboxed process reached 127.0.0.1:${OPORT} — allow-list is wider than :${GATEWAY_PORT}"
+    else
+        pass "sandboxed process cannot reach other localhost ports"
+    fi
+else
+    err "could not start a spare localhost listener — other-port deny proves nothing"
+fi
+kill "$LISTENER_PID" 2>/dev/null || true
+LISTENER_PID=""
+
+# 4g. Container sockets. Nothing may be accepting, so "connected" is not the
+#     control: an unsandboxed connect that the kernel attempts (success or
+#     ECONNREFUSED) proves the path is a socket. The sandbox must turn that
+#     into EPERM. The same errno both ways means the deny did not match.
+sock_errno() {
+    /usr/bin/python3 -I -c 'import socket,sys
+s=socket.socket(socket.AF_UNIX); s.settimeout(2)
+try:
+    s.connect(sys.argv[1]); print("ok")
+except OSError as e:
+    print(e.errno)' "$1" 2>/dev/null || echo fail
+}
+SOCK=""
+for s in \
+    "$HOME/.local/share/containers/podman/machine/applehv/podman-machine-default-ignition.sock" \
+    /var/run/docker.sock /private/var/run/docker.sock
+do
+    [ -S "$s" ] && SOCK="$s" && break
+done
+if [ -n "$SOCK" ]; then
+    bare=$(sock_errno "$SOCK")
+    case "$bare" in
+      ok|61)
+        pass "unsandboxed connect is attempted on a container socket (errno ${bare})"
+        boxed=$($SB /usr/bin/python3 -I -c 'import socket,sys
+s=socket.socket(socket.AF_UNIX); s.settimeout(2)
+try:
+    s.connect(sys.argv[1]); print("ok")
+except OSError as e:
+    print(e.errno)' "$SOCK" 2>/dev/null || echo fail)
+        if [ "$boxed" = "1" ]; then
+          pass "sandboxed connect to the container socket is EPERM"
+        else
+          fail "sandboxed container-socket errno is ${boxed}, want 1 (EPERM)"
+        fi
+        ;;
+      *) err "container socket present but unsandboxed errno is ${bare} — deny not proven" ;;
+    esac
+else
+    info "no podman/docker socket — container-socket deny not exercised"
 fi
 
 # ---------------------------------------------------------------------------

@@ -11,9 +11,10 @@
 # Each laptop gets:
 #   - its own LM Studio token, laptop-<name>, created in the app — revoke one
 #     machine without touching the others;
-#   - its own SSH key, authorized here with `restrict` + permitopen, so that key
-#     can forward to 127.0.0.1:1234 and :3000 and do nothing else — no shell,
-#     no other ports;
+#   - its own SSH key, authorized here with `restrict` + permitopen + a
+#     permitlisten that matches nothing, so that key can forward to
+#     127.0.0.1:1234 and :3000 and do nothing else — no shell, no -R, no
+#     other ports;
 #   - its own Google API key for ask-cloud. The host's key never leaves.
 #
 # Exit 0 ok, 1 failed, 2 could not run.
@@ -39,7 +40,12 @@ HOSTNAME_LOCAL="$(scutil --get LocalHostName 2>/dev/null || hostname -s).local"
 USER_NAME="$(id -un)"
 CLOUD_MODEL=$(hearth_roles gemini | awk -F'\t' '$1 == "cloud-cheap" {print $3; exit}')
 AK="$HOME/.ssh/authorized_keys"
-RESTRICT='command="/usr/bin/false",restrict,port-forwarding,permitopen="127.0.0.1:1234",permitopen="127.0.0.1:3000"'
+# permitlisten="none:1" is an allowlist entry that no real -R request matches
+# (sshd compares the listen host literally; clients send localhost or
+# 127.0.0.1). Port 0 is rejected as "invalid permission port" on OpenSSH 10.5,
+# so the dummy port is 1. permitopen limits -L only. Without permitlisten,
+# port-forwarding re-enables remote forwards.
+RESTRICT='command="/usr/bin/false",restrict,port-forwarding,permitopen="127.0.0.1:1234",permitopen="127.0.0.1:3000",permitlisten="none:1"'
 
 # ---------------------------------------------------------------- --authorize
 if [ -n "$AUTH" ]; then
@@ -48,8 +54,22 @@ if [ -n "$AUTH" ]; then
   keybody=$(printf '%s' "$pub" | awk '{print $1" "$2}')
   mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"; touch "$AK"; chmod 600 "$AK"
   if grep -qF "$keybody" "$AK"; then
-    if grep -F "$keybody" "$AK" | grep -q 'restrict,port-forwarding,permitopen'; then
+    if grep -F "$keybody" "$AK" | grep -q 'permitlisten="none:1"'; then
       echo "already authorized (tunnel-only) for ${NAME}"; exit 0
+    fi
+    if grep -F "$keybody" "$AK" | grep -q 'restrict,port-forwarding,permitopen'; then
+      cp -p "$AK" "${AK}.bak-$(date +%Y%m%d%H%M%S)"
+      # Rewrite options on the matching line. Do not print the key.
+      awk -v body="$keybody" -v restrict="$RESTRICT" -v name="$NAME" '
+        index($0, body) && $0 !~ /permitlisten="none:1"/ {
+          print restrict " " body " hearth-tunnel-" name
+          next
+        }
+        { print }
+      ' "$AK" > "${AK}.tmp" && mv "${AK}.tmp" "$AK"
+      chmod 600 "$AK"
+      echo "updated ${NAME} to tunnel-only (remote forwards denied; backup kept)"
+      exit 0
     fi
     echo "REFUSING: that key is already in ${AK} WITHOUT restrictions (full shell)."
     echo "Generate a separate tunnel key on the laptop (step 2 below) and authorize that."
@@ -65,7 +85,7 @@ fi
 # ---------------------------------------------------------------- --install
 if [ -n "$INSTALL" ]; then
   src="${ROOT}/client/hearth-client.sh"; dst='~/.hearth-client.sh'
-  [ "$WINDOWS" -eq 1 ] && { src="${ROOT}/client/hearth-client.ps1"; dst='hearth-client.ps1'; }
+  [ "$WINDOWS" -eq 1 ] && { src="${ROOT}/client/hearth-client.ps1"; dst='.hearth-client.ps1'; }
   scp -q "$src" "${INSTALL}:${dst}" && echo "copied $(basename "$src") → ${INSTALL}:${dst}" || { echo "scp failed"; exit 1; }
   exit 0
 fi

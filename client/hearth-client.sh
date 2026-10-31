@@ -111,11 +111,14 @@ ai-ask() {
   # One-shot question without aider:  ai-ask "question"
   [ $# -gt 0 ] || { echo "usage: ai-ask \"question\"" >&2; return 2; }
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
+  # umask inside the substitution so the file is created mode 600. A later
+  # redirect truncates it and keeps that mode.
+  _body=$(umask 077 && mktemp "${TMPDIR:-/tmp}/hearth-ask.XXXXXX") || { unset _k; return 1; }
   python3 -c 'import json, sys; print(json.dumps({"model": "local-big", "messages": [{"role": "user", "content": " ".join(sys.argv[1:])}]}))' "$@" \
-    > "${TMPDIR:-/tmp}/hearth-ask.$$"
+    > "$_body"
   printf 'header = "Authorization: Bearer %s"\n' "$_k" \
     | curl -s -m 300 -K - -H 'Content-Type: application/json' \
-        --data-binary @"${TMPDIR:-/tmp}/hearth-ask.$$" "${HEARTH_URL}/chat/completions" \
+        --data-binary @"$_body" "${HEARTH_URL}/chat/completions" \
     | python3 -c 'import sys, json
 try:
     d = json.load(sys.stdin)
@@ -123,7 +126,9 @@ except Exception:
     print("no response — ai-ping"); raise SystemExit(1)
 if "error" in d: print("error:", d["error"]); raise SystemExit(1)
 print((d["choices"][0]["message"].get("content") or "").strip())'
-  rm -f "${TMPDIR:-/tmp}/hearth-ask.$$"; unset _k
+  _rc=$?
+  rm -f "$_body"; unset _k _body
+  return $_rc
 }
 
 ai-webui() {

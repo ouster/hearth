@@ -3,7 +3,7 @@
 #
 #   scripts/webui.sh up | down | status | logs | destroy
 #
-# Points at llmster on the host (:1234) with the host token. LM Studio holds
+# Points at LM Studio on the host (:1234) with the host token. LM Studio holds
 # only local models, so nothing the browser sends can leave the machine. There
 # is no cloud mode: the gateway that made `--general` possible is gone.
 #
@@ -36,13 +36,12 @@ done
 
 case "$CMD" in
   up)
-    [ -f "$HOME/.config/hearth/env" ] && { set -a; . "$HOME/.config/hearth/env"; set +a; }
     KEY="${LMSTUDIO_HOST_TOKEN:?LMSTUDIO_HOST_TOKEN not set in ~/.config/hearth/env}"
 
     podman info >/dev/null 2>&1 || { echo "podman VM not running: podman machine start"; exit 1; }
     # 200 with the token, not just "answering": a 401 here means the UI would
     # come up with an empty model list.
-    code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${KEY}" http://127.0.0.1:1234/v1/models)
+    code=$(hearth_http /models "$KEY")
     case "$code" in
       200) : ;;
       401) echo "LM Studio refused the host token (401) — check LMSTUDIO_HOST_TOKEN"; exit 1 ;;
@@ -75,12 +74,16 @@ case "$CMD" in
       echo "search: none (start it with scripts/searxng.sh up)"
     fi
 
+    # Secret on stdin, then into the container as an env var. Not -e, so the
+    # token is not on podman's command line or in the container's Config.Env.
+    # (printf's argv is the short-lived pipe; same pattern as hearth_http.)
+    printf '%s' "$KEY" | podman secret create --replace hearth-lmstudio-token - >/dev/null
     podman run -d \
       --name "$NAME" \
       --restart unless-stopped \
       -p "${BIND}:${PORT}:8080" \
+      --secret hearth-lmstudio-token,type=env,target=OPENAI_API_KEY \
       -e OPENAI_API_BASE_URL="http://host.containers.internal:1234/v1" \
-      -e OPENAI_API_KEY="$KEY" \
       -e ENABLE_OLLAMA_API=False \
       -e WEBUI_NAME="hearth" \
       -e ENABLE_SIGNUP=False \

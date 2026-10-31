@@ -10,23 +10,33 @@
 #               until it is running.
 #   server      autoStartOnLaunch is off, and the app's saved settings can
 #               differ from what we want (bind 0.0.0.0 + CORS on was observed
-#               2026-10-31). So the server is always (re)started with an
-#               explicit --bind, which also rewrites the saved settings.
+#               2026-10-31). hearth_server_start writes loopback and CORS off,
+#               then starts with --bind. --cors only turns CORS on.
 #   models      not loaded at launch. scripts/lms-load.sh loads roles.tsv.
 #   Podman      the VM does not start itself; container restart policies only
 #               apply once it is up. SearXNG and Open WebUI live there.
 #
-# HEARTH_BIND overrides the bind address (phase 4: the LAN IP or 0.0.0.0).
+# Always 127.0.0.1. D8 is an SSH tunnel; there is no LAN bind switch.
+# CORS is forced off in the saved settings before start (`--cors` can only
+# turn it on). If the app is slow, boot opens it a second time and waits
+# again. launchd does not retry a failed boot: a Podman failure must not
+# restart the server in a loop.
 #
 # Exit 0 serving with roles loaded, 1 something failed, 2 could not run.
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
-ai_load_env
 
-BIND="${HEARTH_BIND:-127.0.0.1}"
 log() { printf '%s [hearth boot] %s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$1"; }
+wait_for_app() {
+  local _
+  for _ in $(seq 1 90); do
+    [ "$(hearth_daemon_owner)" = "app" ] && return 0
+    sleep 2
+  done
+  return 1
+}
 rc=0
 
 [ -x "$HEARTH_LMS" ] || { log "could not run: lms not found at $HEARTH_LMS"; exit 2; }
@@ -41,20 +51,19 @@ case "$(hearth_daemon_owner)" in
   *)       log "opening LM Studio (hidden)"
            open -g -j -a "$HEARTH_APP" ;;
 esac
-up=0
-for _ in $(seq 1 90); do
-  [ "$(hearth_daemon_owner)" = "app" ] && { up=1; break; }
-  sleep 2
-done
-if [ "$up" -ne 1 ]; then
-  log "FAILED: LM Studio daemon not up after 180 s"
-  exit 1
+if ! wait_for_app; then
+  log "still down after 180 s — opening LM Studio again"
+  open -g -j -a "$HEARTH_APP" || true
+  if ! wait_for_app; then
+    log "FAILED: LM Studio daemon not up after a second 180 s wait"
+    exit 1
+  fi
 fi
 
 # ---------------------------------------------------------------- server
 "$HEARTH_LMS" server stop >/dev/null 2>&1 || true
-if "$HEARTH_LMS" server start --bind "$BIND" -p "$HEARTH_PORT" >/dev/null 2>&1; then
-  log "server started on ${BIND}:${HEARTH_PORT}"
+if hearth_server_start >/dev/null 2>&1; then
+  log "server started on 127.0.0.1:${HEARTH_PORT} (CORS off)"
 else
   log "FAILED: lms server start"
   exit 1

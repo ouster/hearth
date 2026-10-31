@@ -11,8 +11,7 @@
 #   2. no token → 401, wrong token → 401
 #   3. each lmstudio role in config/roles.tsv answers a real request
 #   4. what is actually listening on :1234, and only LM Studio
-#   5. LAN: no answer — laptops use the SSH tunnel (D8). A LAN answer fails
-#      unless HEARTH_BIND explicitly opts in to LAN serving.
+#   5. LAN: no answer — laptops use the SSH tunnel (D8). Any LAN answer fails.
 #   6. CORS: no Access-Control-Allow-Origin for a foreign Origin
 #   7. JIT off: a model on disk but not in roles.tsv is never loaded. (LM Studio
 #      answers an unknown model name with the loaded LLM rather than refusing —
@@ -102,14 +101,34 @@ fi
 
 # ---------------------------------------------------------------- 4. listener
 hdr "4. Listener on :${HEARTH_PORT}"
-listen=$(lsof -nP -iTCP:"$HEARTH_PORT" -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $1 " " $9}' | sort -u)
+# The command may contain spaces (\x20 in lsof). The address is the field
+# that looks like host:port; "(LISTEN)" is a separate trailing field.
+listen=$(lsof -nP -iTCP:"$HEARTH_PORT" -sTCP:LISTEN 2>/dev/null | awk '
+  NR>1 {
+    addr=""
+    for (i=1; i<=NF; i++) if ($i ~ /:[0-9]+$/) addr=$i
+    if (addr != "") print $1 "\t" addr
+  }' | sort -u)
 if [ -z "$listen" ]; then
   er "nothing listening, or lsof could not see it"
 else
-  others=$(printf '%s\n' "$listen" | grep -viE '^(LM|node|llmster)' || true)
+  others=$(printf '%s\n' "$listen" | cut -f1 | grep -viE '^(LM|lms|llmster)' || true)
   [ -z "$others" ] && ok "only LM Studio listens on :${HEARTH_PORT}" || bad "something else listens on :${HEARTH_PORT}: ${others}"
-  addrs=$(printf '%s\n' "$listen" | awk '{print $2}' | tr '\n' ' ')
-  echo "        bound: ${addrs}"
+  bad_bind=""
+  while IFS="$(printf '\t')" read -r _ addr; do
+    [ -n "$addr" ] || continue
+    case "$addr" in
+      127.0.0.1:${HEARTH_PORT}|"[::1]:${HEARTH_PORT}") ;;
+      *) bad_bind="${bad_bind} ${addr}" ;;
+    esac
+  done <<EOF
+$listen
+EOF
+  if [ -z "$bad_bind" ]; then
+    ok "loopback only ($(printf '%s\n' "$listen" | cut -f2 | paste -sd ' ' -))"
+  else
+    bad "not loopback-only:${bad_bind} — D8 is the SSH tunnel; scripts/boot.sh rebinds"
+  fi
 fi
 
 # ---------------------------------------------------------------- 5. LAN
@@ -121,24 +140,31 @@ else
   c=$(hearth_http /models "" "http://${LAN}:${HEARTH_PORT}/v1")
   case "$c" in
     000) ok "LAN ${LAN}: no answer (localhost-only; laptops use the SSH tunnel, D8)" ;;
-    401) if [ -n "${HEARTH_BIND:-}" ]; then
-           c2=$(hearth_http /models "$TOK" "http://${LAN}:${HEARTH_PORT}/v1")
-           [ "$c2" = "200" ] && ok "LAN ${LAN}: 401 without token, 200 with (HEARTH_BIND=${HEARTH_BIND} opt-in)" \
-                             || bad "LAN ${LAN}: 401 without token but ${c2} with it"
-         else
-           bad "LAN ${LAN}: server answers on the LAN (401) — D8 is tunnel only; Serve on Local Network got turned on (scripts/boot.sh rebinds)"
-         fi ;;
-    *)   bad "LAN ${LAN}: no token → ${c} — the LAN can use the server without a token" ;;
+    *)   bad "LAN ${LAN}: answered ${c} — D8 is tunnel only; scripts/boot.sh rebinds to 127.0.0.1" ;;
   esac
 fi
 
 # ---------------------------------------------------------------- 6. CORS
 hdr "6. CORS"
 if [ "$SERVER_OK" -eq 1 ]; then
-  acao=$(curl -s -m 5 -D - -o /dev/null -H 'Origin: https://hearth-healthcheck.invalid' "${HEARTH_URL}/models" 2>/dev/null \
-         | tr -d '\r' | awk -F': ' 'tolower($1)=="access-control-allow-origin" {print $2}')
-  [ -z "$acao" ] && ok "no Access-Control-Allow-Origin for a foreign origin" \
-                 || bad "CORS on (Access-Control-Allow-Origin: ${acao}) — any website you visit can call the server (scripts/boot.sh restarts without it)"
+  # GET and OPTIONS. A missing status line is "could not run", not a pass:
+  # silence used to look like CORS off.
+  cors_bad=""
+  cors_err=""
+  for method in GET OPTIONS; do
+    hdr=$(curl -s -m 5 -D - -o /dev/null -X "$method" \
+      -H 'Origin: https://hearth-healthcheck.invalid' "${HEARTH_URL}/models" 2>/dev/null | tr -d '\r')
+    printf '%s\n' "$hdr" | grep -q '^HTTP/' || cors_err="${cors_err} ${method}"
+    acao=$(printf '%s\n' "$hdr" | awk -F': ' 'tolower($1)=="access-control-allow-origin" {print $2; exit}')
+    [ -z "$acao" ] || cors_bad="${cors_bad} ${method}=${acao}"
+  done
+  if [ -n "$cors_err" ]; then
+    er "CORS check got no HTTP status for:${cors_err}"
+  elif [ -n "$cors_bad" ]; then
+    bad "CORS on (${cors_bad}) — any website you visit can call the server (scripts/boot.sh locks it off)"
+  else
+    ok "no Access-Control-Allow-Origin on GET or OPTIONS (both returned HTTP status lines)"
+  fi
 else
   er "skipped: server not answering"
 fi

@@ -70,23 +70,54 @@ ai_volume() {
   printf 'hearth-%s' "$kind"
 }
 
-# Export ~/.config/hearth/env into THIS script's environment. Scripts are
-# subprocesses, so this does not leak into the interactive shell. Untouched
-# placeholders are dropped: an unset var gives a clear "not set", a
-# placeholder gives a 401 against a healthy server.
+# Read the two secrets into THIS shell without exporting them. `set -a` would
+# hand both to every child — including the Podman VM boot.sh starts, which
+# outlives the script. Callers that need a child to see the LM Studio token
+# export that one variable themselves. Placeholders are dropped.
 ai_load_env() {
-  local v val
+  local line name val
   [ -f "$HEARTH_ENV" ] || return 0
-  set -a
-  . "$HEARTH_ENV"
-  set +a
-  for v in LMSTUDIO_HOST_TOKEN GOOGLE_API_KEY; do
-    eval "val=\${${v}:-}"
+  for name in LMSTUDIO_HOST_TOKEN GOOGLE_API_KEY; do
+    line=$(grep -E "^[[:space:]]*(export[[:space:]]+)?${name}=" "$HEARTH_ENV" | tail -1 || true)
+    if [ -z "$line" ]; then
+      unset "$name"
+      continue
+    fi
+    val="${line#*=}"
+    val="${val%\"}"; val="${val#\"}"; val="${val%\'}"; val="${val#\'}"
     case "$val" in
-      ''|*...|CHANGEME|*CHANGEME*) unset "$v" ;;
+      ''|*...|CHANGEME|*CHANGEME*) unset "$name" ;;
+      *) printf -v "$name" '%s' "$val"; export -n "$name" ;;
     esac
   done
   return 0
+}
+
+# `lms server start --cors` only turns CORS on; there is no flag to turn it
+# off. Write loopback + CORS off into the saved settings, then start without
+# --cors so a restart cannot come up on the LAN or with CORS.
+hearth_lock_loopback() {
+  [ -f "$LMS_SERVER_CFG" ] || return 0
+  /usr/bin/python3 -I -c '
+import json, sys
+path, bind, port = sys.argv[1], sys.argv[2], int(sys.argv[3])
+try:
+    with open(path) as fh:
+        cfg = json.load(fh)
+except Exception:
+    sys.exit(0)
+cfg["networkInterface"] = bind
+cfg["port"] = port
+cfg["cors"] = False
+with open(path, "w") as fh:
+    json.dump(cfg, fh, indent=2)
+    fh.write("\n")
+' "$LMS_SERVER_CFG" "127.0.0.1" "$HEARTH_PORT"
+}
+
+hearth_server_start() {
+  hearth_lock_loopback || return 1
+  "$HEARTH_LMS" server start --bind 127.0.0.1 -p "$HEARTH_PORT"
 }
 
 # `lms` exists and a daemon (the app's, D6) answers.

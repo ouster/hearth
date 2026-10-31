@@ -30,7 +30,7 @@ bound=$(lsof -nP -iTCP:"$HEARTH_PORT" -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {prin
 case "$bound" in
   "127.0.0.1:${HEARTH_PORT} ") g "bound to 127.0.0.1 only" ;;
   "")                          : ;;
-  *)                           y "bound to: ${bound}(LAN-visible — phase 4, or run scripts/boot.sh)" ;;
+  *)                           y "bound to: ${bound}(not loopback-only — run scripts/boot.sh)" ;;
 esac
 
 echo

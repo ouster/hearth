@@ -22,7 +22,7 @@ CHECK=0
 
 [ -x "$LMS" ] || { echo "could not run: lms not found at $LMS" >&2; exit 2; }
 [ -f "$ROLES" ] || { echo "could not run: $ROLES missing" >&2; exit 2; }
-"$LMS" daemon status >/dev/null 2>&1 || { echo "could not run: llmster daemon not running (lms daemon up)" >&2; exit 2; }
+"$LMS" daemon status >/dev/null 2>&1 || { echo "could not run: LM Studio is not running (open the app; do not start headless llmster)" >&2; exit 2; }
 
 # role<TAB>key<TAB>ctx<TAB>slots for lmstudio rows.
 want=$(awk -F'\t' '!/^[[:space:]]*(#|$)/ && $2 == "lmstudio" {print $1 "\t" $3 "\t" $4 "\t" $5}' "$ROLES")

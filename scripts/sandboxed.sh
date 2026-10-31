@@ -73,6 +73,8 @@ WORKDIR=$(cd "$WORKDIR" 2>/dev/null && pwd -P) || {
 # handled, so the profile can be read and reviewed on any machine. A security
 # control you cannot audit without being on the target host is a bad control.
 
+HOME_REAL=$(cd "$HOME" && pwd -P)
+
 emit_profile() {
     cat <<SBPL
 (version 1)
@@ -132,10 +134,15 @@ SBPL
 (deny network*)
 (allow network-outbound (remote ip "localhost:$GATEWAY_PORT"))
 
-;; Local unix sockets. Some libc facilities need these. If the profile
-;; fails to compile on your macOS version, this is the first line to try
-;; removing -- sandbox-exec will name the line number.
+;; Local unix sockets. Some libc facilities need these. Container sockets
+;; are denied again below: last matching rule wins, and a Podman socket
+;; would be a network escape. If the profile fails to compile, this is the
+;; first block to try removing -- sandbox-exec will name the line number.
 (allow network-outbound (remote unix-socket))
+(deny network-outbound (remote unix-socket (subpath "$HOME_REAL/.local/share/containers")))
+(deny network-outbound (remote unix-socket (subpath "$HOME_REAL/.docker")))
+(deny network-outbound (remote unix-socket (literal "/var/run/docker.sock")))
+(deny network-outbound (remote unix-socket (literal "/private/var/run/docker.sock")))
 (allow network-bind (local ip "localhost:*"))
 SBPL
 }

@@ -56,7 +56,7 @@ print(sum(s.get("size", 0) for s in d.get("siblings", []) if not f or s["rfilena
   total=$(( total + gb ))
 done
 echo
-echo "Candidates total: ${total} GB on disk (weights only; KV cache at 64K adds several GB per slot)."
+echo "Candidates total: ${total} GB on disk (weights only; the KV cache is sized by config/roles.tsv)."
 [ -n "$free_gb" ] && [ "$total" -gt "$free_gb" ] && { echo "NOT ENOUGH DISK"; rc=1; }
 
 if [ "$PULL" -ne 1 ]; then

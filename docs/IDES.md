@@ -91,7 +91,7 @@ subagent — is `hearth/local-big`, so nothing ever asks for a second model.
       "hearth": {
         "api_url": "http://127.0.0.1:1234/v1",
         "available_models": [
-          { "name": "local-big", "display_name": "<written by scripts/zed-sync.sh>", "max_tokens": 65536 }
+          { "name": "local-big", "display_name": "<written by scripts/zed-sync.sh>", "max_tokens": 131072 }
         ]
       }
     }

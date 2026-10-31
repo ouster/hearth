@@ -29,8 +29,22 @@ $script:HearthUrl = "http://127.0.0.1:$($script:HearthLocalPort)/v1"
 
 function Get-HearthSecret([string]$Name) {
     $f = Join-Path $HOME $Name
-    if (-not (Test-Path $f)) { Write-Host "hearth: $f missing" -ForegroundColor Yellow; return $null }
-    (Get-Content $f -Raw).Trim()
+    if (-not (Test-Path -LiteralPath $f)) { Write-Host "hearth: $f missing" -ForegroundColor Yellow; return $null }
+    $acl = Get-Acl -LiteralPath $f
+    $me = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    foreach ($ace in $acl.Access) {
+        if ($ace.AccessControlType -ne 'Allow') { continue }
+        $who = [string]$ace.IdentityReference
+        if ($who -eq $me -or $who.EndsWith('\' + $env:USERNAME)) { continue }
+        if ($who -match '(^|\\)(SYSTEM|Administrators)$') { continue }
+        $rights = [int]$ace.FileSystemRights
+        # FILE_READ_DATA (1) or GENERIC_READ (0x80000000).
+        if ((($rights -band 1) -ne 0) -or (($rights -band 0x80000000) -ne 0)) {
+            Write-Host "hearth: $f is readable by $who — remove that ACL entry" -ForegroundColor Yellow
+            return $null
+        }
+    }
+    (Get-Content -LiteralPath $f -Raw).Trim()
 }
 
 function Test-HearthTunnel {

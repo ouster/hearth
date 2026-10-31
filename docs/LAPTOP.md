@@ -29,7 +29,7 @@ flowchart LR
 | Thing | Where | Why |
 |---|---|---|
 | LM Studio token `laptop-<name>` | laptop `~/.hearth-key` (mode 600) | revoke one machine without touching the others |
-| SSH key `hearth_tunnel` | laptop `~/.ssh/hearth_tunnel`; host `authorized_keys` with `command="/usr/bin/false",restrict,port-forwarding,permitopen=…` | the key can forward to `127.0.0.1:1234` and `:3000` and nothing else — no shell, no commands, no other ports |
+| SSH key `hearth_tunnel` | laptop `~/.ssh/hearth_tunnel`; host `authorized_keys` with `command="/usr/bin/false",restrict,port-forwarding,permitopen=…,permitlisten="none:1"` | the key can `-L` to `127.0.0.1:1234` and `:3000` only — no shell, no commands, no `-R`, no other ports |
 | Google API key (optional) | laptop `~/.hearth-gemini-key` (mode 600) | `ask-cloud` with the laptop's own key; the host's key never leaves |
 | `client/hearth-client.sh` / `.ps1` | laptop `~/.hearth-client.sh` | `ai-tunnel`, `ai-ping`, `ai-models`, `ai-ask`, `ai-webui`, `ask*`, `ask-cloud` |
 
@@ -154,7 +154,7 @@ Same provider as the host, through the tunnel:
       "hearth": {
         "api_url": "http://127.0.0.1:1234/v1",
         "available_models": [
-          { "name": "local-big", "display_name": "local-big", "max_tokens": 65536 }
+          { "name": "local-big", "display_name": "local-big", "max_tokens": 131072 }
         ]
       }
     }

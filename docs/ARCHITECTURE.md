@@ -16,7 +16,7 @@ flowchart TB
         scripts["scripts / benches"]
         webui["Open WebUI :3000<br/>(Podman)"]
         sbx["sandboxed.sh agents"]
-        lms["LM Studio 127.0.0.1:1234<br/>local-big: 64K x 3 parallel<br/>local-embed<br/>token required, JIT off"]
+        lms["LM Studio 127.0.0.1:1234<br/>local-big: 128K x 3 parallel<br/>local-embed<br/>token required, JIT off"]
     end
 
     laptop["Laptop<br/>SSH tunnel, own token"]
@@ -45,12 +45,12 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 
 | Role | Backend | What |
 |---|---|---|
-| `local-big` | LM Studio | the only local chat/agent model. 64K context, 3 concurrent predictions |
+| `local-big` | LM Studio | the only local chat/agent model. 128K context, 3 concurrent predictions (ADR 0017) |
 | `local-embed` | LM Studio | embeddings, resident beside `local-big` |
 | `cloud-cheap` | Gemini | reached directly by `ask-cloud`; never loaded into LM Studio |
 
 `local-code` and `local-chat` were collapsed into `local-big` (D1): two heavy
-models cannot both stay resident with 3 × 64K slots, and evicting the agent
+models cannot both stay resident with 3 × 128K slots, and evicting the agent
 model was failure F2. The old alias names still work and mean `local-big`.
 
 `scripts/lms-load.sh` makes the loaded set match `config/roles.tsv`: it
@@ -140,17 +140,19 @@ nothing is evicted), but a typo'd model id silently gets `local-big`.
 
 ## Measured (2026-10-31)
 
-| | Ollama via LiteLLM | llmster |
+| | Ollama via LiteLLM (phase 0) | llmster, 64K × 3 (phase 1) |
 |---|---|---|
 | c1 TTFT p95, 28K prompt | 21.0 s | 19.9 s |
 | c3 TTFT p95 | 65.8 s | 59.9 s |
 | c3 total p50 | 40.3 s | 61.0 s |
 | Peak footprint | 37.0 GB (1 slot) | 29.7 GB (3 slots) |
 
-Prefill is still serialised on llmster's MLX engine; `--parallel` batches
+Prefill was still serialised on that MLX engine; `--parallel` batches
 decode, so all three requests in a round finish together. The wins are
 memory, no evictions and no gateway hop, not concurrency.
-`bench/results/2026-10-31-phase0`, `…-phase1`.
+`bench/results/2026-10-31-phase0`, `…-phase1`. The live server is the LM
+Studio app (D6), loaded at 128K × 3 (ADR 0017). Those rows are the 64K
+measurement, not a claim that llmster is still running.
 
 ## The second boundary: containment
 

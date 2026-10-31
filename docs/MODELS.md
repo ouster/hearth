@@ -1,8 +1,10 @@
 # Model registry
 
 Role → model. This file and `config/roles.tsv` are the only places a concrete
-model name may appear. Update both together, plus an ADR. (Before ADR 0016 the
-second file was `litellm/config.yaml`.)
+model name is written by hand. Update both together, plus an ADR. Generated
+copies: Zed `display_name` labels (`scripts/zed-sync.sh`) and the key plus
+weights path in `pins/digests.tsv` (`scripts/pin-digests.sh`). (Before ADR 0016
+the second file was `litellm/config.yaml`.)
 
 **Hardware envelope:** 64 GB unified. macOS caps GPU-accessible memory at ~75% above 36 GB,
 so the real ceiling is **~48 GB**, not the full 64. The resident set matters more than any single
@@ -10,21 +12,23 @@ model's size — see the measurement below.
 
 ## Live — LM Studio (ADR 0016)
 
-llmster 0.0.27-1, MLX runtime 1.13.1, llama.cpp runtime 2.67.0; server
-settings set once in the LM Studio app 0.4.28. Machine-read copy:
+The LM Studio app 0.4.28 owns the server (D6). Machine-read copy:
 `config/roles.tsv`.
 
 | Role | Model key | Source | Size | Load | Set | Why |
 |---|---|---|---|---|---|---|
-| `local-big` | `qwen/qwen3.6-35b-a3b` | `lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a` | 20.4 GB | 64K × 3 parallel | 2026-10-31 | Same base model as the Ollama-era agent; MLX 4-bit from lmstudio-community (quantisation may differ from the Ollama build). The only local chat/agent role (D1) |
+| `local-big` | `qwen/qwen3.6-35b-a3b` | `lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a` | 20.4 GB | 128K × 3 parallel | 2026-10-31 | Same base model as the Ollama-era agent; MLX 4-bit from lmstudio-community (quantisation may differ from the Ollama build). The only local chat/agent role (D1). Context raised from 64K the same day (ADR 0017): the model card asks for at least 128K so thinking holds. Native window is 262,144 |
 | `local-embed` | `text-embedding-nomic-embed-text-v1.5@f16` | `nomic-ai/nomic-embed-text-v1.5-GGUF` f16 @ `0188c9b`, sha256 `f7af6f66…` | 0.3 GB | 2K | 2026-10-31 | f16 to match the Ollama-era embeddings |
 | `cloud-cheap` | `gemini-3.6-flash` | Google, `ask-cloud` only | — | — | 2026-10-22 | 1M ctx, 65K output. ADR 0014 |
 
-**Resident set:** 29.7 GB peak footprint at 3 concurrent 28K-token turns
-(`bench/results/2026-10-31-phase1`) — ~18 GB under the GPU ceiling.
+**Resident set:** 20.7 GB idle at 128K × 3 plus `local-embed`, measured
+2026-10-31 right after reload (ADR 0017). The 64K concurrency-3 peak was
+29.7 GB (`bench/results/2026-10-31-phase1`); that bench was not re-run at
+128K. Both sit well under the ~48 GB ceiling, so the slot count stays 3.
 
 `local-code` and `local-chat` were collapsed into `local-big` on 2026-10-31
-(D1). Their Ollama weights stay on disk until phase 6. Known quality gap
+(D1). The Ollama weights were deleted the same day with the rest of the old
+stack. Known quality gap
 against the Ollama build: 3 of 40 concurrency-bench turns picked `grep`
 instead of the requested `read_file` (0 of 40 on Ollama); tracked, not
 blocking.
@@ -102,8 +106,9 @@ Through the gateway, one short prompt each, from cold:
 **440 s to 5 s — not a faster model, a resident one.**
 
 The old set needed 65.7 GB against a ~48 GB GPU ceiling, so something was always
-evicted and reaching for `local-big` meant reloading 42 GB from disk. The current
-set totals 37.5 GB and stays put.
+evicted and reaching for `local-big` meant reloading 42 GB from disk. That
+Ollama-era set totalled 37.5 GB. The live resident set is the figure at the
+top of this file.
 
 The lesson worth keeping: on a fixed-memory machine the **resident set** matters
 more than any individual model's quality. A 70B that evicts your coding model is

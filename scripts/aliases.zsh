@@ -83,5 +83,5 @@ alias ai-status='"${HEARTH_ROOT}/scripts/status.sh"'
 alias ai-boot='"${HEARTH_ROOT}/scripts/boot.sh"'
 alias ai-load='"${HEARTH_ROOT}/scripts/lms-load.sh"'
 alias ai-loaded='"$HEARTH_LMS" ps'
-ai-restart() { "$HEARTH_LMS" server stop; "$HEARTH_LMS" server start --bind 127.0.0.1 -p 1234; }
+ai-restart() { "$HEARTH_LMS" server stop; hearth_server_start; }
 alias ai-log='"$HEARTH_LMS" log stream'

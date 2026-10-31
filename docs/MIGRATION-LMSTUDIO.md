@@ -39,7 +39,7 @@
 | ID | Question | Recommendation | Answer |
 |---|---|---|---|
 | D1 | Roles after migration: keep `local-code` and `local-chat` as separate models, or collapse to `local-big` + `local-embed`? | **Collapse.** Two heavy models cannot both stay resident with 3 × 64K slots inside the GPU limit, and evictions are failure F2. Keep the names as client-side aliases that resolve to `local-big` | **Collapse** (2026-10-31) |
-| D2 | Slots and context for `local-big` | 3 slots × 64K. Lower to 2 if the phase 1 footprint exceeds the limit | **3 × 64K** (2026-10-31) |
+| D2 | Slots and context for `local-big` | 3 slots × 64K. Lower to 2 if the phase 1 footprint exceeds the limit | **3 × 64K** (2026-10-31); context raised to 128K by ADR 0017. Idle footprint after that reload was 20.7 GB, so slots stay 3 |
 | D3 | Does Zed **on the host** get a Gemini provider? | No on the host (keeps sensitive work local by default); yes on the laptop | **No on host** (2026-10-31) |
 | D4 | Digest drift detection | Keep: hash the model directory in `config/roles.tsv` and check it in preflight | **Hash the weights** (2026-10-31): `weights` column in roles.tsv, fast check in preflight, `--deep` re-hash |
 | D5 | Keep Open WebUI? | Yes, pointed at `:1234`. It no longer needs the gateway's Postgres | **Keep** (2026-10-31) |
@@ -120,7 +120,7 @@ Localhost only. Nothing else changes yet.
 3. Create `config/roles.tsv` (tab-separated, `#` comments allowed):
    ```
    # role        backend    model_key                 ctx    slots
-   local-big     lmstudio   <mlx model key>           65536  3
+   local-big     lmstudio   <mlx model key>           131072 3
    local-embed   lmstudio   <embedding model key>     2048   1
    cloud-cheap   gemini     <gemini model id>         -      -
    ```
@@ -169,7 +169,7 @@ the system stays responsive with Zed, a browser and the bench running.
        "hearth": {
          "api_url": "http://127.0.0.1:1234/v1",
          "available_models": [
-           { "name": "local-big", "display_name": "local-big", "max_tokens": 65536 }
+           { "name": "local-big", "display_name": "local-big", "max_tokens": 131072 }
          ]
        }
      }
@@ -212,10 +212,10 @@ serving and are kept for the record; what was built instead:
 - Host stays bound to `127.0.0.1` (Serve on Local Network off).
 - `scripts/client-setup.sh <name>` prints laptop steps; `--authorize` adds the
   laptop's key to `authorized_keys` as
-  `command="/usr/bin/false",restrict,port-forwarding,permitopen="127.0.0.1:1234",permitopen="127.0.0.1:3000"`.
-  Tested against a throwaway sshd: commands and shells refused, forwarding
-  to :8888 refused, :1234 and :3000 work. (`restrict` alone still allowed a
-  remote command — the forced command closed that.)
+  `command="/usr/bin/false",restrict,port-forwarding,permitopen="127.0.0.1:1234",permitopen="127.0.0.1:3000",permitlisten="none:1"`.
+  `permitlisten` was added the same day after review: `permitopen` limits `-L` only, and `port-forwarding` had re-enabled `-R`.
+  OpenSSH 10.5 rejects a port of 0 in that option (`invalid permission port`), so the dummy listen is `none:1`, a host the client never sends.
+  The earlier throwaway-sshd test still holds for the forced command (shell refused, `-L` to :8888 refused, :1234 and :3000 work). `permitlisten="none:1"` was retested the same way: `-R` is refused and `-L` to :1234 still works.
 - `client/hearth-client.sh` / `.ps1`: `ai-tunnel`, `ai-ping`, `ai-models`,
   `ai-ask`, `ai-webui`, `ask*` → `local-big`, `ask-cloud` with the laptop's
   own key. Secrets read from mode-600 files per command, never exported.

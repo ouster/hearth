@@ -17,7 +17,7 @@ actual prompt tokens, unique prefix per request, 180 s client timeout.
 | Timeouts / HTTP errors | 0/0 | 0/0 | 0/0 | 0/0 |
 | TTFT p50 / p95 | 20.5 / 21.0 s | 19.5 / 19.9 s | 39.9 / 65.8 s | 43.8 / **59.9 s** |
 | Total p50 / p95 | 21.0 / 21.6 s | 20.6 / 24.2 s | 40.3 / 66.3 s | **61.0 / 62.2 s** |
-| Wall, 10 rounds | 210 s | — | 625 s | 610 s |
+| Wall, 10 rounds | 210 s | — | 625 s | 616 s |
 | Peak footprint | 36.0 GB | 26.7 GB | 37.0 GB | 29.7 GB |
 
 ## Gate

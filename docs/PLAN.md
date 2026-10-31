@@ -4,9 +4,9 @@
 
 Last updated: 2026-08-02
 
-**Not the source of truth.** For current reality read, in this order:
-`litellm/config.yaml` → `docs/MODELS.md` → `docs/ARCHITECTURE.md` → `docs/RUNBOOK.md`.
-This file tracks progress only. The original plan is preserved in
+**Not the source of truth.** Current design: `docs/ARCHITECTURE.md`, then
+`docs/MIGRATION-LMSTUDIO.md` and `docs/MODELS.md`. This file is the
+gateway-era plan. The original plan is preserved in
 `docs/decisions/0001-inherited-state.md`.
 
 ## Where things stand

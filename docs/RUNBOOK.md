@@ -10,10 +10,10 @@ Start, stop, diagnose. The LM Studio app serving `127.0.0.1:1234`, ADR 0016
 |---|---|---|
 | LM Studio app | `/Applications/LM Studio.app` | owns the daemon and `~/.lmstudio`. "Enable Local LLM Service (headless)" on. Never run llmster as well |
 | Server | `127.0.0.1:1234` | `lms server start --bind 127.0.0.1 -p 1234` |
-| Roles | `config/roles.tsv` → `scripts/lms-load.sh` | `local-big` 64K × 3 parallel, `local-embed` |
+| Roles | `config/roles.tsv` → `scripts/lms-load.sh` | `local-big` 128K × 3 parallel, `local-embed` |
 | Token | `~/.config/hearth/env`, mode 600 | `LMSTUDIO_HOST_TOKEN`, created in the app |
 | Server settings | `~/.lmstudio/.internal/http-server-config.json` | edited through the app; auth/tokens are stored elsewhere |
-| Remote Login (sshd) | `:22` | laptops' tunnel; their keys are `restrict`ed to forwarding `:1234`/`:3000` |
+| Remote Login (sshd) | `:22` | laptops' tunnel; their keys are `restrict`ed to `-L` `:1234`/`:3000`, with `-R` denied |
 | Open WebUI | Podman, `127.0.0.1:3000` | `scripts/webui.sh` |
 | SearXNG | Podman, `:8888` | `scripts/searxng.sh` |
 

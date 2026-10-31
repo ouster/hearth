@@ -68,8 +68,16 @@ else
     $2 != "lmstudio" && $1 ~ /^local-/ { print $1 ": a local-* role on a cloud backend — rule 2/3" }
     $3 ~ /:\/\// || $6 ~ /:\/\// { print $1 ": URL in roles.tsv — LM Studio must never front a remote model" }
     END { if (n == 0) print "no rows" }' "$ROLES")
-  [ -z "$probs" ] && ok "well-formed; backends lmstudio/gemini only; local-* only on lmstudio" \
-                  || printf '%s\n' "$probs" | while IFS= read -r l; do bad "$l"; done
+  if [ -z "$probs" ]; then
+    ok "well-formed; backends lmstudio/gemini only; local-* only on lmstudio"
+  else
+    while IFS= read -r l; do
+      [ -n "$l" ] || continue
+      bad "$l"
+    done <<EOF
+$probs
+EOF
+  fi
 
   on_disk=""
   [ -x "$HEARTH_LMS" ] && on_disk=$("$HEARTH_LMS" ls --json 2>/dev/null | /usr/bin/python3 -I -c '
@@ -96,8 +104,10 @@ EOF
   while IFS="$(printf '\t')" read -r role _ key _ _ w; do
     [ -n "$role" ] || continue
     grep -qF "$key" "$MODELS_MD" && ok "${role}: ${key} documented in MODELS.md" || bad "${role}: ${key} not in docs/MODELS.md (update both together)"
-    leaks=$(grep -rlF "$key" "$ROOT/scripts" "$ROOT/client" "$ROOT/bench/tasks" "$ROOT/CLAUDE.md" "$ROOT/README.md" 2>/dev/null | sed "s|^$ROOT/||" | tr '\n' ' ')
-    [ -z "$leaks" ] && ok "${role}: model name appears only in roles.tsv + MODELS.md" || bad "rule 1: ${key} also named in ${leaks}"
+    leaks=$(grep -rlF "$key" "$ROOT/scripts" "$ROOT/client" "$ROOT/bench/tasks" "$ROOT/CLAUDE.md" "$ROOT/README.md" "$ROOT/pins/digests.tsv" 2>/dev/null \
+      | grep -v '/pins/digests.tsv$' | sed "s|^$ROOT/||" | tr '\n' ' ')
+    [ -z "$leaks" ] && ok "${role}: model key is not hardcoded in scripts, client, or bench tasks (pins/digests.tsv may record it)" \
+                     || bad "rule 1: ${key} also named in ${leaks}"
   done <<EOF
 $(hearth_roles)
 EOF
@@ -108,9 +118,8 @@ hdr "LM Studio saved server settings"
 if [ ! -f "$LMS_SERVER_CFG" ]; then
   er "${LMS_SERVER_CFG} missing — has the server ever been configured?"
 else
-  want_bind="${HEARTH_BIND:-127.0.0.1}"
   v=$(hearth_server_setting networkInterface)
-  [ "$v" = "$want_bind" ] && ok "bind ${v}" || bad "bind ${v:-?}, want ${want_bind} — scripts/boot.sh restarts with --bind (set HEARTH_BIND for phase 4)"
+  [ "$v" = "127.0.0.1" ] && ok "bind ${v}" || bad "bind ${v:-?}, want 127.0.0.1 — scripts/boot.sh locks loopback (D8)"
   [ "$(hearth_server_setting port)" = "$HEARTH_PORT" ] && ok "port ${HEARTH_PORT}" || bad "port $(hearth_server_setting port), want ${HEARTH_PORT}"
   [ "$(hearth_server_setting cors)" = "false" ] && ok "CORS off" || bad "CORS on — any website you visit could call the server"
   [ "$(hearth_server_setting justInTimeModelLoading)" = "false" ] && ok "JIT loading off" || bad "JIT loading on — an unlisted model could load and evict local-big"
@@ -147,8 +156,18 @@ tracked=$(git -C "$ROOT" ls-files 2>/dev/null | grep -E '(^|/)\.env$|\.key$|\.pe
 hdr "Weight drift (D4)"
 out=$("${ROOT}/scripts/pin-digests.sh" --check 2>&1); rc=$?
 case "$rc" in
-  0) ok "weights match pins/digests.tsv (fast check; --deep re-hashes)" ;;
-  1) printf '%s\n' "$out" | grep DRIFT | while IFS= read -r l; do bad "$l"; done ;;
+  0) ok "weights match pins/digests.tsv (fast check; --check --deep re-hashes)" ;;
+  1)
+    n=0
+    while IFS= read -r l; do
+      [ -n "$l" ] || continue
+      bad "$l"
+      n=$((n+1))
+    done <<EOF
+$(printf '%s\n' "$out" | grep DRIFT || true)
+EOF
+    [ "$n" -gt 0 ] || bad "weight drift (pin-digests exited 1)"
+    ;;
   *) er "pin-digests could not run: $(printf '%s' "$out" | tail -1)" ;;
 esac
 
