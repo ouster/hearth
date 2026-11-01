@@ -137,7 +137,10 @@ hdr "Secrets"
 if [ -f "$HEARTH_ENV" ]; then
   mode=$(stat -f '%Lp' "$HEARTH_ENV")
   [ "$mode" = "600" ] && ok "${HEARTH_ENV} is mode 600" || bad "${HEARTH_ENV} is mode ${mode}, want 600"
-  tokline=$(grep -E '^LMSTUDIO_HOST_TOKEN=' "$HEARTH_ENV" | tail -1); tok="${tokline#*=}"
+  # Same parse as ai_load_env: optional whitespace and export, one layer of quotes.
+  tokline=$(grep -E '^[[:space:]]*(export[[:space:]]+)?LMSTUDIO_HOST_TOKEN=' "$HEARTH_ENV" | tail -1 || true)
+  tok="${tokline#*=}"
+  tok="${tok%\"}"; tok="${tok#\"}"; tok="${tok%\'}"; tok="${tok#\'}"
   case "$tok" in
     '') bad "LMSTUDIO_HOST_TOKEN not set" ;;
     *...|*CHANGEME*) bad "LMSTUDIO_HOST_TOKEN is a placeholder" ;;

@@ -61,10 +61,14 @@ _hearth_port_open() {
   fi
 }
 
-_hearth_tunnel_up() {
-  # A listener on the local port is not proof the tunnel works, but no
-  # listener is proof it does not.
-  _hearth_port_open "$HEARTH_LOCAL_PORT"
+# Our ssh -L, not merely something listening. Two fixed-string greps so this
+# function's own pipeline cannot match itself. ExitOnForwardFailure means that
+# ssh is not still running if it failed to bind the local port.
+_hearth_our_ssh() {
+  ps axww -o command= 2>/dev/null \
+    | grep -F "ssh " \
+    | grep -F -- "-L 127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" \
+    >/dev/null 2>&1
 }
 
 # Every forward this client asked for, not just LM Studio. An old ssh that
@@ -78,7 +82,39 @@ _hearth_forwards_open() {
   return 0
 }
 
+# 0 when it is safe to send the token. Prints the reason on failure.
+# Does not start a tunnel. Callers that may start one use _hearth_connect.
+_hearth_require_tunnel() {
+  if _hearth_port_open "$HEARTH_LOCAL_PORT" && ! _hearth_our_ssh; then
+    echo "127.0.0.1:${HEARTH_LOCAL_PORT} is open, but not the hearth ssh tunnel. Not sending the token." >&2
+    return 1
+  fi
+  if ! _hearth_our_ssh || ! _hearth_port_open "$HEARTH_LOCAL_PORT"; then
+    echo "DOWN — no tunnel on 127.0.0.1:${HEARTH_LOCAL_PORT}. Run: ai-tunnel"
+    return 1
+  fi
+}
+
+# Stranger on the local port: refuse. Otherwise bring the forwards up, then
+# refuse again if the result is still not our ssh. A foreign listener must
+# not be followed by an attempt to send the token.
+_hearth_connect() {
+  if _hearth_port_open "$HEARTH_LOCAL_PORT" && ! _hearth_our_ssh; then
+    echo "127.0.0.1:${HEARTH_LOCAL_PORT} is open, but not the hearth ssh tunnel. Not sending the token." >&2
+    return 1
+  fi
+  _hearth_forwards_open || ai-tunnel || return 1
+  if ! _hearth_our_ssh || ! _hearth_port_open "$HEARTH_LOCAL_PORT"; then
+    echo "DOWN — no tunnel on 127.0.0.1:${HEARTH_LOCAL_PORT}. Run: ai-tunnel"
+    return 1
+  fi
+}
+
 ai-tunnel() {
+  if _hearth_port_open "$HEARTH_LOCAL_PORT" && ! _hearth_our_ssh; then
+    echo "tunnel: 127.0.0.1:${HEARTH_LOCAL_PORT} is open, but not the hearth ssh tunnel. Refusing." >&2
+    return 1
+  fi
   if _hearth_port_open "$HEARTH_LOCAL_PORT"; then
     if _hearth_forwards_open; then
       echo "tunnel: already listening on 127.0.0.1:${HEARTH_LOCAL_PORT}"
@@ -121,11 +157,8 @@ ai-tunnel-stop() {
 }
 
 ai-ping() {
+  _hearth_require_tunnel || return 1
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
-  if ! _hearth_tunnel_up; then
-    echo "DOWN — no tunnel on 127.0.0.1:${HEARTH_LOCAL_PORT}. Run: ai-tunnel"
-    unset _k; return 1
-  fi
   _c=$(printf 'header = "Authorization: Bearer %s"\n' "$_k" \
        | curl -s -m 8 -o /dev/null -w '%{http_code}' -K - "${HEARTH_URL}/models")
   unset _k
@@ -139,6 +172,7 @@ ai-ping() {
 }
 
 ai-models() {
+  _hearth_require_tunnel || return 1
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
   printf 'header = "Authorization: Bearer %s"\n' "$_k" \
     | curl -s -m 8 -K - "${HEARTH_URL}/models" \
@@ -154,6 +188,7 @@ for m in d.get("data", []): print("  " + m["id"])'
 ai-ask() {
   # One-shot question without aider:  ai-ask "question"
   [ $# -gt 0 ] || { echo "usage: ai-ask \"question\"" >&2; return 2; }
+  _hearth_require_tunnel || return 1
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
   # umask inside the substitution so the file is created mode 600. A later
   # redirect truncates it and keeps that mode.
@@ -176,6 +211,10 @@ print((d["choices"][0]["message"].get("content") or "").strip())'
 }
 
 ai-webui() {
+  if _hearth_port_open "$HEARTH_LOCAL_PORT" && ! _hearth_our_ssh; then
+    echo "127.0.0.1:${HEARTH_LOCAL_PORT} is open, but not the hearth ssh tunnel." >&2
+    return 1
+  fi
   _hearth_forwards_open || ai-tunnel || return 1
   _u="http://127.0.0.1:${HEARTH_WEBUI_PORT}"
   echo "Open WebUI: ${_u}  (the host's instance — same login and history)"
@@ -187,8 +226,8 @@ ai-webui() {
 # The token is injected per invocation, never exported. Every local alias is
 # local-main (D1); clients call roles, never models.
 _hearth_aider() {
+  _hearth_connect || return 1
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
-  _hearth_forwards_open || ai-tunnel || { unset _k; return 1; }
   OPENAI_API_BASE="$HEARTH_URL" OPENAI_API_KEY="$_k" \
     aider --model openai/local-main --weak-model openai/local-main "$@"
   _rc=$?; unset _k; return $_rc
@@ -204,8 +243,8 @@ ask-arch() { _hearth_aider --architect --editor-model openai/local-main "$@"; }
 # it; it must already be loaded on the host. An unloaded role would be
 # answered by local-main without saying so, so refuse unless it is listed.
 ask-deep() {
+  _hearth_connect || return 1
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
-  _hearth_forwards_open || ai-tunnel || { unset _k; return 1; }
   if ! printf 'header = "Authorization: Bearer %s"\n' "$_k" \
        | curl -s -m 8 -K - "${HEARTH_URL}/models" \
        | python3 -c 'import sys, json

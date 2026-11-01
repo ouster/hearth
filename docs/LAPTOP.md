@@ -56,6 +56,7 @@ this host's name and user filled in (`--windows` for PowerShell). In short:
 `ai-ping` answers: `up`, `BAD TOKEN` (revoked or wrong token), `NO ANSWER`
 (tunnel up but host asleep or LM Studio down — on the host, `scripts/boot.sh`),
 or `DOWN` (no tunnel — `ai-tunnel`).
+If something else is already listening on `127.0.0.1:1234`, the client refuses and does not send the token.
 
 ## AI-assisted setup
 
@@ -205,7 +206,8 @@ engines.
 `scripts/client-setup.sh --update-keys` (2026-11-01). On the laptop, copy the
 new client (`scripts/client-setup.sh <name> --install user@laptop` from the
 host), then `ai-tunnel-stop && ai-tunnel`. `ai-tunnel` refuses to report the
-tunnel up when `:1234` is open and `:3000` or `:8888` is not.
+tunnel up when `:1234` is open and `:3000` or `:8888` is not, and when `:1234`
+is open but the listener is not this client's ssh.
 
 ## Revoking a laptop
 
