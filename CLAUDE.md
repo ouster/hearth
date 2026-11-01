@@ -69,7 +69,7 @@ removed gateway — never suggest commands against it.
    immutable. Re-record only after re-benching.
 
 7. **Check the RAM envelope.** 64 GB total, but macOS caps GPU-accessible memory at ~48 GB
-   (75% above 36 GB) — that is the real ceiling. `local-main` (ADR 0019) peaks at 25.2 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-01, footprint includes the app). Say when a suggestion will not fit, or
+   (75% above 36 GB) — that is the real ceiling. `local-main` (ADR 0023) peaks at 29.7 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-01, footprint includes the app). Say when a suggestion will not fit, or
    will evict something that needs to stay loaded — on this machine the resident
    set matters more than any one model's quality.
 

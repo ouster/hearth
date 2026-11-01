@@ -17,31 +17,25 @@ The LM Studio app 0.4.28 owns the server (D6). Machine-read copy:
 
 | Role | Model key | Source | Size | Load | Set | Why |
 |---|---|---|---|---|---|---|
-| `local-main` | `gemma-4-26b-a4b-it-qat-mlx` | `lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit` @ `aa5e2e5` | 15.6 GB | 128K × 3 parallel, no draft, **thinking on (app setting, below)** | 2026-11-01 | MoE, ~4B active, Google QAT 4-bit. Beat the Qwen3.6 build on `bench/tasks` 03 and matched it on 01/02/04 in fewer tokens; 40/40 valid tool calls under concurrency; ~15% slower prefill, 3–4.5 GB less memory. ADR 0019. Native window 262,144 |
-| `local-deep` | `qwen3.8-27b-mlx` | `lmstudio-community/Qwen3.8-27B-MLX-4bit` @ `6067b15` | 16.1 GB | 64K × 1, **on demand**: `ask-deep` swaps it in for `local-big` and back | 2026-11-01 | Dense 27B. Best `bench/tasks` 03 answer of the three benched; ~26 tok/s and 2.5–5.5× the tokens, so 10–24× slower than `local-big`. For hard one-off questions, never agent loops. Thinks by default (its template), no app setting needed. Beside a busy `local-big` both peaked at 49.9 GB, over the ceiling, and `local-big`'s requests timed out while it read a long prompt: so it is only ever loaded instead of `local-big` (`demand-load.sh … up --evict`). ADR 0020 (proposed) |
+| `local-main` | `qwen/qwen3.6-35b-a3b` | `lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a` | 20.4 GB | 128K × 3 parallel, draft MTP, **thinks by default (template, below)** | 2026-11-01 | MoE. Restored after the 26B-A4B kept looping in Zed (ADR 0023). Weak on `bench/tasks` 03; 3 of 40 wrong-tool picks in phase 1, 0 of 40 at 128K. c3 peak 29.7 GB. Native window 262,144 (ADR 0017) |
+| `local-deep` | `qwen3.8-27b-mlx` | `lmstudio-community/Qwen3.8-27B-MLX-4bit` @ `6067b15` | 16.1 GB | 64K × 1, **on demand**: `ask-deep` swaps it in for `local-main` and back | 2026-11-01 | Dense 27B. Best `bench/tasks` 03 answer of the three benched; ~26 tok/s and 2.5–5.5× the tokens of the 26B-A4B, so 10–24× slower. For hard one-off questions, never agent loops. Thinks by default (its template), no app setting needed. Beside that resident both peaked at 49.9 GB, over the ceiling, and the resident's requests timed out while it read a long prompt: so it is only ever loaded instead of `local-main` (`demand-load.sh … up --evict`). ADR 0020 |
 | `cloud-cheap` | `gemini-3.6-flash` | Google, `ask-cloud` only | — | — | 2026-10-22 | 1M ctx, 65K output. ADR 0014 |
 
-**Resident set:** concurrency-3 peak 25.2 GB at 128K × 3, ~30K-token prompts
-(`bench/results/2026-11-01-gemma-concurrency`, footprint includes the app).
-The previous model in this role peaked at 29.7 GB on the same bench.
+**Resident set:** concurrency-3 peak 29.7 GB at 128K × 3, ~30K-token prompts
+(`bench/results/2026-11-01-128k`, footprint includes the app). The 26B-A4B
+that held this role earlier the same day peaked at 25.2 GB
+(`bench/results/2026-11-01-gemma-concurrency`).
 
-**Thinking is an LM Studio app setting, not repo state.** This build's chat
-template thinks only when `enable_thinking` is true, and nothing sets it: it
-was downloaded by URL, so it has no catalogue `model.yaml` and no in-app
-toggle, and the API ignores `chat_template_kwargs` (tested 2026-11-01). Set
-in the app, My Models → this model → settings → Inference:
+**Thinking is the chat template, not an app setting.** On a generation prompt
+the template opens `<think>` unless `enable_thinking` is false.
+`generation_config.json` asks for temperature 1.0, top K 20, top P 0.95.
+Zed pins `temperature: 1.0` for `local-main` in `agent.model_parameters` and
+cannot set Top K or Top P. The previous model's app settings (a forced
+`enable_thinking` line, `<|channel>thought` parsing, top K 64) stay on that
+model and do not follow the role.
 
-- Prompt Template: first line `{%- set enable_thinking = true -%}`
-- Reasoning Section Parsing: on, start `<|channel>thought`, end `<channel|>`
-- Sampling, from the model's own `generation_config.json`: Temperature 1.0,
-  Top K 64, Top P 0.95, Min P 0, Repeat Penalty off (1.0). Lower temperature
-  or a repeat penalty makes its thinking loop and second-guess itself (seen in
-  Zed agent turns, 2026-11-01). Zed also pins `temperature: 1.0` for
-  `local-main` in `agent.model_parameters`; it cannot set Top K or Top P.
-
-A reinstall or settings reset loses all of these. `scripts/healthcheck.sh` fails if
-`local-main` returns no `reasoning_content` or leaks those markers into the
-answer. Without thinking it answered a simple change sum wrongly three times.
+`scripts/healthcheck.sh` fails if `local-main` returns no `reasoning_content`
+or leaks `<think>` or channel markers into the answer.
 
 `local-code` and `local-chat` were collapsed into `local-big` (now `local-main`, ADR 0021) on 2026-10-31
 (D1). The Ollama weights were deleted the same day with the rest of the old
@@ -75,7 +69,7 @@ Frontier is cloud-only by necessity, which is what these roles are for.
 
 | Model | Was | Removed | Why |
 |---|---|---|---|
-| `qwen/qwen3.6-35b-a3b` (`lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a`) | `local-big` | 2026-11-01 | Replaced by the 26B-A4B (ADR 0019). Weak on `bench/tasks` 03; 3 of 40 wrong-tool picks in phase 1 (0 of 40 at 128K). Weights kept on disk for rollback: `scripts/swap-role.sh local-main qwen/qwen3.6-35b-a3b lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit 131072 3 mtp` |
+| `gemma-4-26b-a4b-it-qat-mlx` (`lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit` @ `aa5e2e5`) | `local-main` | 2026-11-01 | Zed agent turns kept looping after sampling was set to its `generation_config.json` (temperature 1.0, top K 64, top P 0.95, min P 0, repeat penalty 1.0). Weights kept. ADR 0019, then 0023 |
 | `qwen3.6:35b-mlx` (Ollama) | `local-big` | 2026-10-31 | Same base model now served by LM Studio (lmstudio-community MLX 4-bit). ADR 0016 |
 | `qwen3-coder:30b` | `local-code` | 2026-10-31 | Role collapsed into `local-big` (D1). ADR 0016 |
 | `qwen3:8b` | `local-chat` | 2026-10-31 | Role collapsed into `local-big` (D1). ADR 0016 |

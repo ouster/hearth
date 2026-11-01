@@ -45,8 +45,8 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 
 | Role | Backend | What |
 |---|---|---|
-| `local-main` | LM Studio | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0019) |
-| `local-deep` | LM Studio | slower, more careful model for hard one-off questions. Swapped in **instead of** `local-main` for an `ask-deep` session, then swapped back; beside it, memory passed the ceiling and `local-main` timed out. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up --evict`) (ADR 0020, proposed) |
+| `local-main` | LM Studio | the resident local model. 128K context, 3 concurrent predictions, MTP draft (ADR 0017, 0023) |
+| `local-deep` | LM Studio | slower, more careful model for hard one-off questions. Swapped in **instead of** `local-main` for an `ask-deep` session, then swapped back; beside it, memory passed the ceiling and `local-main` timed out. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up --evict`) (ADR 0020) |
 | `cloud-cheap` | Gemini | reached directly by `ask-cloud`; never loaded into LM Studio |
 
 `local-code` and `local-chat` were collapsed into `local-main` (D1): two heavy
@@ -153,7 +153,9 @@ memory, no evictions and no gateway hop, not concurrency.
 `bench/results/2026-10-31-phase0`, `…-phase1`. The live server is the LM
 Studio app (D6), loaded at 128K × 3 (ADR 0017). Those rows are the 64K
 measurement, not a claim that llmster is still running. The current
-`local-main` (ADR 0019) at 128K × 3: c1 TTFT p95 25.0 s, c3 total p95 75.2 s,
+`local-main` (ADR 0023) at 128K × 3: c1 TTFT p95 21.8 s, c3 total p95 65.5 s,
+peak 29.7 GB (`bench/results/2026-11-01-128k`). The 26B-A4B that held the
+role earlier that day (ADR 0019) was c1 TTFT p95 25.0 s, c3 total p95 75.2 s,
 peak 25.2 GB (`bench/results/2026-11-01-gemma-concurrency`).
 
 ## The second boundary: containment

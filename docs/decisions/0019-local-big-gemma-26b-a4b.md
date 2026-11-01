@@ -1,7 +1,7 @@
 # ADR 0019 — local-big moves to the Gemma 4 26B-A4B QAT build
 
 **Date:** 2026-11-01
-**Status:** accepted 2026-11-01 by the operator.
+**Status:** superseded by ADR 0023 (2026-11-01); was: accepted 2026-11-01 by the operator.
 
 ## Context
 
