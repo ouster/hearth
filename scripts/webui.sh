@@ -164,6 +164,8 @@ case "$CMD" in
 
   To see what the server is doing:  lms log stream
 EOF
+    # Best effort, in the background: snapshot the running image for Snyk.
+    "${ROOT}/scripts/snyk-monitor.sh" webui >>"$HOME/Library/Logs/hearth-snyk.log" 2>&1 &
     ;;
 
   down)    podman stop "$NAME" >/dev/null && echo "stopped" ;;

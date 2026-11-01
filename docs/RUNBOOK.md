@@ -179,6 +179,22 @@ Admin Panel -> Settings -> Web Search -> Enable Web Search
 
 The toggle then appears per message. If it vanishes, sign out and back in.
 
+### Vulnerability monitoring (Snyk)
+
+Hearth has no dependency manifests, so what Snyk watches is the two container
+images: `scripts/snyk-monitor.sh` exports the image each container is running
+(by ID — the tags move) and records it as Snyk projects `hearth/webui` and
+`hearth/searxng`. Snyk re-tests those snapshots daily and emails new issues.
+Only the image's package list leaves the machine, not this repo's code.
+
+- One-time: `brew tap snyk/tap && brew install snyk-cli`, then `snyk auth`
+  (browser sign-in; free plan).
+- `scripts/webui.sh up` and `scripts/searxng.sh up` re-run it in the
+  background; output in `~/Library/Logs/hearth-snyk.log`. After pulling a new
+  image, run `scripts/snyk-monitor.sh` by hand if you did not `up`.
+- Exit 2 means it could not run (no CLI, not signed in, Podman down), not that
+  the images are clean.
+
 ## Running agents contained
 
 ```bash

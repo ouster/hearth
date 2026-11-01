@@ -99,6 +99,8 @@ EOF
     echo " — up on 127.0.0.1:${PORT}"
     echo
     echo "Now: scripts/searxng.sh test"
+    # Best effort, in the background: snapshot the running image for Snyk.
+    "${ROOT}/scripts/snyk-monitor.sh" searxng >>"$HOME/Library/Logs/hearth-snyk.log" 2>&1 &
     ;;
 
   test)

@@ -211,6 +211,9 @@ In order of value per effort:
 3. Confirm Open WebUI still has tools disabled after any upgrade — its settings
    live in a database that overrides the environment, a trap already documented
    in `RUNBOOK.md`.
+4. Known vulnerabilities in the Open WebUI and SearXNG images are monitored by
+   Snyk (`scripts/snyk-monitor.sh`, RUNBOOK). That covers published CVEs in
+   their packages, not their configuration or LM Studio itself.
 
 ## Sources
 
