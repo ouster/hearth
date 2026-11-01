@@ -1,7 +1,7 @@
 # ADR 0023 — local-main rolls back to the Qwen3.6 35B-A3B
 
 **Date:** 2026-11-01
-**Status:** accepted 2026-11-01 by the operator.
+**Status:** superseded by ADR 0024 (2026-11-01); was: accepted 2026-11-01 by the operator.
 **Supersedes:** ADR 0019
 
 ## Context
