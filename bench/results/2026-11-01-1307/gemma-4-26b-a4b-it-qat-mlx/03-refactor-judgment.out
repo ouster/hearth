@@ -1,0 +1,78 @@
+### Identified Bugs
+
+1.  **Floating-Point Binary Representation Error (Critical):**
+    The function uses standard Python `float` types for currency. Floats are represented in binary (base-2), meaning many decimal fractions (like `0.1` or `0.7`) cannot be represented exactly. As you sum multiple items, these tiny errors accumulate.
+    *   **What breaks:** In a billing system, this leads to "phantom cents." For example, `0.1 + 0.2` in floating-point math results in `0.30000000000000004`. Over thousands of transactions, your totals will fail to match actual accounting ledgers.
+
+2.  **Banker's Rounding (Logical/Accounting):**
+    The function uses Python’s built-in `round()` function. Python implements "Round Half to Even" (also known as Banker's Rounding).
+    *   **What breaks:** If a calculation results in exactly `.5`, Python rounds to the nearest **even** number. 
+    *   **Example:** `round(2.5)` returns `2`, but `round(3.5)` returns `4`. In most commercial billing systems, the standard is "Round Half Up" (where `.5` always rounds up). Using Banker's Rounding can cause systematic discrepancies in tax and discount calculations.
+
+3.  **Silent Logic Failure on Negative Discounts:**
+    The check `if discount_pct > 0:` silently ignores any negative values.
+    *   **What breaks:** If a user or an upstream system passes a negative discount (perhaps intended as a surcharge/fee), the function simply returns the original total without warning. In financial software, unexpected inputs should either be handled explicitly or raise an error to prevent silent data corruption.
+
+---
+
+### Corrected Version
+
+To fix these issues, we must use the `decimal` module. The `Decimal` type is designed for financial applications because it provides exact decimal representation and allows for explicit control over rounding modes.
+
+```python
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+
+def apply_discount(items, discount_pct):
+    """
+    Calculates total with discount using fixed-point arithmetic.
+    All inputs are converted to Decimal via string to prevent float contamination.
+    """
+    total = Decimal('0.00')
+    
+    try:
+        # Convert discount to Decimal immediately
+        # We use str() because converting a float directly to Decimal 
+        # carries the existing floating-point inaccuracy into the Decimal object.
+        discount_factor = Decimal(str(discount_pct)) / Decimal('100')
+    except (ValueError, InvalidOperation):
+        raise ValueError("Invalid discount percentage format.")
+
+    for item in items:
+        try:
+            # Convert price and qty to Decimal via string for precision
+            price = Decimal(str(item['price']))
+            qty = Decimal(str(item['qty']))
+            total += price * qty
+        except (KeyError, InvalidOperation):
+            raise ValueError("Items must contain valid numeric 'price' and 'qty'.")
+
+    # Apply discount if it is not zero
+    # We allow negative discounts only if the business logic explicitly permits surcharges;
+    # otherwise, we treat it as a standard mathematical operation.
+    if discount_factor != 0:
+        total -= total * discount_factor
+
+    # Quantize to two decimal places using ROUND_HALF_UP (Commercial Rounding)
+    return total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+# --- Test Case for Verification ---
+if __name__ == "__main__":
+    # Example of the floating point error: 0.1 + 0.2 != 0.3
+    # In the old version, this might cause issues with rounding/totals.
+    test_items = [
+        {'price': 0.1, 'qty': 1},
+        {'price': 0.2, 'qty': 1}
+    ]
+    # Test Banker's Rounding vs Commercial Rounding
+    # 0.125 should round to 0.13 (Half Up) or 0.12 (Banker's)
+    test_items_round = [{'price': 0.125, 'qty': 1}]
+    
+    print(f"Total (Standard): {apply_discount(test_items, 0)}")
+    print(f"Total (Rounding Test): {apply_discount(test_items_round, 0)}")
+```
+
+### Key Improvements:
+1.  **`Decimal(str(val))`**: By converting inputs to strings before passing them to `Decimal`, we ensure that the exact decimal representation is captured, bypassing the inherent inaccuracy of binary floats.
+2.  **`ROUND_HALF_UP`**: We explicitly use the commercial rounding standard via `.quantize()`.
+3.  **Error Handling**: Added basic error handling for invalid inputs to ensure the billing system fails loudly rather than producing incorrect totals.
+4.  **Precision Preservation**: The arithmetic is performed entirely within the `Decimal` context, ensuring no precision is lost during the summation or multiplication steps.

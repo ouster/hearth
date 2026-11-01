@@ -1,0 +1,24 @@
+```python
+import sqlite3
+
+def search_cases(query: str, limit: int = 10) -> list[dict]:
+    conn = sqlite3.connect("cases.db")
+    try:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        sql = """
+            SELECT id, citation, court, year, summary 
+            FROM cases 
+            WHERE citation LIKE ? OR summary LIKE ? 
+            ORDER BY year DESC 
+            LIMIT ?
+        """
+        
+        search_pattern = f"%{query}%"
+        cursor.execute(sql, (search_pattern, search_pattern, limit))
+        
+        return [dict(row) for row in cursor.fetchall()]
+    finally:
+        conn.close()
+```

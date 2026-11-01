@@ -1,0 +1,3 @@
+1. Not in the file (the architecture states "There is no router, so nothing can quietly reroute a request").
+2. `cloud-code` (Anthropic API key) and `cloud-frontier*` (`cloud-frontier`: OpenRouter key; `cloud-frontier-direct`: Moonshot key; `cloud-frontier-fast`: Fireworks key).
+3. `:5433`; the reason why is not in the file.

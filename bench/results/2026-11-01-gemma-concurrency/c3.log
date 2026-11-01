@@ -1,0 +1,56 @@
+round 1 slot 0: status=200 ttft=73.863 total=74.203 tool_ok=1 finish=tool_calls 
+round 1 slot 1: status=200 ttft=30.814 total=61.407 tool_ok=1 finish=tool_calls 
+round 1 slot 2: status=200 ttft=55.082 total=73.993 tool_ok=1 finish=tool_calls 
+round 2 slot 0: status=200 ttft=29.728 total=60.512 tool_ok=1 finish=tool_calls 
+round 2 slot 1: status=200 ttft=54.095 total=73.236 tool_ok=1 finish=tool_calls 
+round 2 slot 2: status=200 ttft=73.101 total=73.449 tool_ok=1 finish=tool_calls 
+round 3 slot 0: status=200 ttft=72.851 total=73.19 tool_ok=1 finish=tool_calls 
+round 3 slot 1: status=200 ttft=54.261 total=72.982 tool_ok=1 finish=tool_calls 
+round 3 slot 2: status=200 ttft=30.04 total=60.515 tool_ok=1 finish=tool_calls 
+round 4 slot 0: status=200 ttft=74.375 total=74.717 tool_ok=1 finish=tool_calls 
+round 4 slot 1: status=200 ttft=30.242 total=61.998 tool_ok=1 finish=tool_calls 
+round 4 slot 2: status=200 ttft=55.649 total=74.508 tool_ok=1 finish=tool_calls 
+round 5 slot 0: status=200 ttft=53.184 total=72.02 tool_ok=1 finish=tool_calls 
+round 5 slot 1: status=200 ttft=29.226 total=59.483 tool_ok=1 finish=tool_calls 
+round 5 slot 2: status=200 ttft=71.885 total=72.229 tool_ok=1 finish=tool_calls 
+round 6 slot 0: status=200 ttft=54.214 total=73.523 tool_ok=1 finish=tool_calls 
+round 6 slot 1: status=200 ttft=29.546 total=60.847 tool_ok=1 finish=tool_calls 
+round 6 slot 2: status=200 ttft=73.39 total=73.73 tool_ok=1 finish=tool_calls 
+round 7 slot 0: status=200 ttft=72.309 total=72.649 tool_ok=1 finish=tool_calls 
+round 7 slot 1: status=200 ttft=29.126 total=59.985 tool_ok=1 finish=tool_calls 
+round 7 slot 2: status=200 ttft=53.647 total=72.438 tool_ok=1 finish=tool_calls 
+round 8 slot 0: status=200 ttft=30.022 total=61.897 tool_ok=1 finish=tool_calls 
+round 8 slot 1: status=200 ttft=75.004 total=75.374 tool_ok=1 finish=tool_calls 
+round 8 slot 2: status=200 ttft=55.253 total=75.152 tool_ok=1 finish=tool_calls 
+round 9 slot 0: status=200 ttft=55.359 total=74.965 tool_ok=1 finish=tool_calls 
+round 9 slot 1: status=200 ttft=30.433 total=61.921 tool_ok=1 finish=tool_calls 
+round 9 slot 2: status=200 ttft=74.822 total=75.182 tool_ok=1 finish=tool_calls 
+round 10 slot 0: status=200 ttft=30.275 total=61.621 tool_ok=1 finish=tool_calls 
+round 10 slot 1: status=200 ttft=74.469 total=74.832 tool_ok=1 finish=tool_calls 
+round 10 slot 2: status=200 ttft=55.115 total=74.611 tool_ok=1 finish=tool_calls 
+# Concurrency bench — Gemma 4 26B-A4B QAT, thinking on, 3 slots x 128K, c3
+
+| | |
+|---|---|
+| Base URL | `http://127.0.0.1:1234/v1` |
+| Role | `bench-candidate` |
+| Concurrency × rounds | 3 × 10 = 30 requests |
+| Target prompt tokens | 30000 (actual median 30173) |
+| Client timeout | 180 s |
+| Run | 2026-11-01T13:16:06 → 2026-11-01T13:28:26 (740 s wall) |
+| Footprint process match | `(\.lmstudio/|LM Studio)` |
+
+## Result
+
+| Metric | Value |
+|---|---|
+| Valid `read_file` tool calls | 30 / 30 |
+| Timeouts (client, 180 s) | 0 |
+| HTTP errors | 0 |
+| Other failures (bad/no tool call, stream error) | 0 |
+| TTFB p50 / p95 | 54.3 s / 74.8 s |
+| TTFT p50 / p95 (requests that produced a token) | 54.3 s / 74.8 s |
+| Total time p50 / p95 (successful) | 73.0 s / 75.2 s |
+| Peak footprint (sum of matched processes) | 25.2 GB |
+
+Raw: `raw.tsv`, `footprint.tsv`.
