@@ -9,7 +9,7 @@
 #
 #   1. server answers; the host token works (positive control)
 #   2. no token → 401, wrong token → 401
-#   3. each lmstudio role in config/roles.tsv answers a real request, and each
+#   3. each resident lmstudio role in config/roles.tsv answers a real request, and each
 #      chat role thinks with its reasoning parsed out of the answer
 #   4. what is actually listening on :1234, and only LM Studio
 #   5. LAN: no answer — laptops use the SSH tunnel (D8). Any LAN answer fails.
@@ -111,8 +111,12 @@ elif any(t in c for t in ("<think>", "</think>", "<|channel>", "<channel|>")): p
         fi ;;
     esac
   done <<EOF
-$(hearth_roles lmstudio)
+$(hearth_resident_roles)
 EOF
+  # Calling an unloaded demand role would be answered by local-big (JIT off).
+  for r in $(hearth_demand_roles); do
+    echo "        ${r}: loaded on demand by ask-deep — not called here"
+  done
 else
   er "skipped: server not answering"
 fi

@@ -119,6 +119,21 @@ function ask-local { Invoke-HearthAider @args }
 function ask-chat  { Invoke-HearthAider @args }
 function ask-arch  { Invoke-HearthAider --architect --editor-model openai/local-big @args }
 
+# local-deep (ADR 0020): must already be loaded on the host. An unloaded role
+# would be answered by local-big without saying so, so refuse unless listed.
+function ask-deep {
+    $k = Get-HearthSecret ".hearth-key"; if (-not $k) { return }
+    if (-not (Test-HearthTunnel)) { ai-tunnel }
+    $ids = (Invoke-RestMethod -TimeoutSec 8 -Uri "$($script:HearthUrl)/models" -Headers @{ Authorization = "Bearer $k" }).data.id
+    if ($ids -notcontains "local-deep") {
+        Write-Host "local-deep is not loaded on the host. On the host: scripts/demand-load.sh local-deep up --evict (swaps out local-big; ... down brings it back)" -ForegroundColor Yellow
+        return
+    }
+    $env:OPENAI_API_BASE = $script:HearthUrl; $env:OPENAI_API_KEY = $k
+    try { aider --model openai/local-deep --weak-model openai/local-big @args }
+    finally { Remove-Item Env:OPENAI_API_KEY, Env:OPENAI_API_BASE -ErrorAction SilentlyContinue }
+}
+
 # The only command that leaves for the cloud, with THIS machine's own key.
 function ask-cloud {
     if (-not $env:HEARTH_CLOUD_MODEL) { Write-Host "hearth: set `$env:HEARTH_CLOUD_MODEL" -ForegroundColor Yellow; return }

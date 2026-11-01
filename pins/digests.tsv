@@ -2,3 +2,4 @@
 # Written by scripts/pin-digests.sh (D4). Hash of the weights on disk
 # under ~/.lmstudio/models. Detects drift; does not enforce.
 local-big	gemma-4-26b-a4b-it-qat-mlx	lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit	10	15641259740	1793497374	709524c5d10355225b489d50399def6b7ba96222e3ecf5f44dd4026d63eceeb9	2026-11-01
+local-deep	qwen3.8-27b-mlx	lmstudio-community/Qwen3.8-27B-MLX-4bit	13	16081498220	1793492942	307e598371c31fab173957bf25a7d90ef3faf2dfc98c1bc932bcb19eae0dd2f7	2026-11-01

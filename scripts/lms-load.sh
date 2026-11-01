@@ -13,6 +13,8 @@
 # (same weights; faster decode, not faster prefill). No --ttl: a resident
 # role never auto-unloads. `lms ps` does not report the draft flag, so
 # --check cannot see it. A load without the flag looks in sync.
+# Rows with load=demand (column 8) are never loaded here; if ask-deep has one
+# loaded, it is left alone rather than unloaded mid-session.
 #
 # Exit 0 in sync, 1 drift (--check) or a load failed, 2 could not run.
 
@@ -27,9 +29,10 @@ CHECK=0
 [ -f "$ROLES" ] || { echo "could not run: $ROLES missing" >&2; exit 2; }
 "$LMS" daemon status >/dev/null 2>&1 || { echo "could not run: LM Studio is not running (open the app; do not start headless llmster)" >&2; exit 2; }
 
-# role<TAB>key<TAB>ctx<TAB>slots<TAB>draft for lmstudio rows.
-want=$(awk -F'\t' '!/^[[:space:]]*(#|$)/ && $2 == "lmstudio" {print $1 "\t" $3 "\t" $4 "\t" $5 "\t" $7}' "$ROLES")
-[ -n "$want" ] || { echo "could not run: no lmstudio rows in $ROLES" >&2; exit 2; }
+# role<TAB>key<TAB>ctx<TAB>slots<TAB>draft for resident lmstudio rows.
+want=$(awk -F'\t' '!/^[[:space:]]*(#|$)/ && $2 == "lmstudio" && $8 != "demand" {print $1 "\t" $3 "\t" $4 "\t" $5 "\t" $7}' "$ROLES")
+[ -n "$want" ] || { echo "could not run: no resident lmstudio rows in $ROLES" >&2; exit 2; }
+demand=$(awk -F'\t' '!/^[[:space:]]*(#|$)/ && $2 == "lmstudio" && $8 == "demand" {print $1}' "$ROLES")
 
 # identifier<TAB>path<TAB>modelKey<TAB>ctx<TAB>parallel for loaded models.
 loaded() {
@@ -51,6 +54,9 @@ rc=0
 # Unload anything not listed.
 while IFS="$(printf '\t')" read -r id _ _ _ _; do
   [ -n "$id" ] || continue
+  if printf '%s\n' "$demand" | grep -qxF "$id"; then
+    echo "ok     ${id}: loaded on demand (ask-deep), left alone"; continue
+  fi
   if ! printf '%s\n' "$want" | awk -F'\t' -v r="$id" '$1 == r {f=1} END {exit !f}'; then
     if [ "$CHECK" = 1 ]; then
       echo "DRIFT  ${id}: loaded but not in roles.tsv"; rc=1

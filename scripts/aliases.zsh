@@ -65,6 +65,21 @@ alias ask-architect='_aider_local'
 # visible, and nothing is evicted because there is only one model.
 ask-arch() { _aider_local --architect --editor-model openai/local-big "$@"; }
 
+# Slow, careful local model for hard one-off questions (ADR 0020). Still
+# local: safe for sensitive work. It swaps local-big out for the session —
+# Zed, aider and laptops have no local-big until you quit — because beside a
+# busy local-big it passed the memory ceiling and stalled local-big's agents.
+ask-deep() {
+  local tok state rc
+  tok="$(_hearth_var LMSTUDIO_HOST_TOKEN)" || return 1
+  state=$("${HEARTH_ROOT}/scripts/demand-load.sh" local-deep up --evict) || return 1
+  OPENAI_API_BASE="$HEARTH_LOCAL" OPENAI_API_KEY="$tok" \
+    aider --model openai/local-deep --weak-model openai/local-deep "$@"
+  rc=$?
+  [ "$state" = "loaded" ] && "${HEARTH_ROOT}/scripts/demand-load.sh" local-deep down
+  return $rc
+}
+
 # --- cloud: the only alias that can leave the host. Non-sensitive repos only.
 # Model id comes from config/roles.tsv so this file never names a model.
 ask-cloud() {

@@ -18,6 +18,7 @@ The LM Studio app 0.4.28 owns the server (D6). Machine-read copy:
 | Role | Model key | Source | Size | Load | Set | Why |
 |---|---|---|---|---|---|---|
 | `local-big` | `gemma-4-26b-a4b-it-qat-mlx` | `lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit` @ `aa5e2e5` | 15.6 GB | 128K × 3 parallel, no draft, **thinking on (app setting, below)** | 2026-11-01 | MoE, ~4B active, Google QAT 4-bit. Beat the Qwen3.6 build on `bench/tasks` 03 and matched it on 01/02/04 in fewer tokens; 40/40 valid tool calls under concurrency; ~15% slower prefill, 3–4.5 GB less memory. ADR 0019. Native window 262,144 |
+| `local-deep` | `qwen3.8-27b-mlx` | `lmstudio-community/Qwen3.8-27B-MLX-4bit` @ `6067b15` | 16.1 GB | 64K × 1, **on demand**: `ask-deep` swaps it in for `local-big` and back | 2026-11-01 | Dense 27B. Best `bench/tasks` 03 answer of the three benched; ~26 tok/s and 2.5–5.5× the tokens, so 10–24× slower than `local-big`. For hard one-off questions, never agent loops. Thinks by default (its template), no app setting needed. Beside a busy `local-big` both peaked at 49.9 GB, over the ceiling, and `local-big`'s requests timed out while it read a long prompt: so it is only ever loaded instead of `local-big` (`demand-load.sh … up --evict`). ADR 0020 (proposed) |
 | `cloud-cheap` | `gemini-3.6-flash` | Google, `ask-cloud` only | — | — | 2026-10-22 | 1M ctx, 65K output. ADR 0014 |
 
 **Resident set:** concurrency-3 peak 25.2 GB at 128K × 3, ~30K-token prompts

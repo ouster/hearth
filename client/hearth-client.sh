@@ -21,7 +21,8 @@
 #   ~/.hearth-gemini-key  this machine's own Google API key, for ask-cloud only
 #
 # Commands: ai-tunnel, ai-tunnel-stop, ai-ping, ai-models, ai-ask, ai-webui,
-#           ask (and ask-big/-local/-chat/-fast, all local-big), ask-arch, ask-cloud
+#           ask (and ask-big/-local/-chat/-fast, all local-big), ask-arch,
+#           ask-deep (local-deep, only while the host has it loaded), ask-cloud
 
 # Old gateway installs set HEARTH_GATEWAY to :4000, which no longer exists.
 if [ -n "${HEARTH_GATEWAY:-}${AI_STACK_GATEWAY:-}" ]; then
@@ -155,6 +156,25 @@ alias ask-local='_hearth_aider'
 alias ask-chat='_hearth_aider'
 alias ask-fast='_hearth_aider'
 ask-arch() { _hearth_aider --architect --editor-model openai/local-big "$@"; }
+
+# local-deep: slower, more careful model (ADR 0020). This laptop cannot load
+# it; it must already be loaded on the host. An unloaded role would be
+# answered by local-big without saying so, so refuse unless it is listed.
+ask-deep() {
+  _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
+  _hearth_tunnel_up || ai-tunnel || { unset _k; return 1; }
+  if ! printf 'header = "Authorization: Bearer %s"\n' "$_k" \
+       | curl -s -m 8 -K - "${HEARTH_URL}/models" \
+       | python3 -c 'import sys, json
+sys.exit(0 if any(m.get("id") == "local-deep" for m in json.load(sys.stdin).get("data", [])) else 1)' 2>/dev/null; then
+    echo "local-deep is not loaded on the host. On the host: scripts/demand-load.sh local-deep up --evict" >&2
+    echo "(that swaps out local-big; scripts/demand-load.sh local-deep down brings it back)" >&2
+    unset _k; return 1
+  fi
+  OPENAI_API_BASE="$HEARTH_URL" OPENAI_API_KEY="$_k" \
+    aider --model openai/local-deep --weak-model openai/local-big "$@"
+  _rc=$?; unset _k; return $_rc
+}
 
 # The only command that leaves for the cloud, with THIS machine's own key.
 ask-cloud() {

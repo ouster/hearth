@@ -32,6 +32,9 @@ hearth_lms_ok || { echo "could not run: LM Studio not running"; exit 2; }
 
 row=$(hearth_roles lmstudio | awk -F'\t' -v r="$ROLE" '$1 == r')
 [ -n "$row" ] || { echo "could not run: ${ROLE} is not an lmstudio role in roles.tsv"; exit 2; }
+# The reload and tool smoke below would hit local-big, not an unloaded demand role.
+hearth_demand_roles | grep -qxF "$ROLE" \
+  && { echo "could not run: ${ROLE} is loaded on demand — edit roles.tsv, docs/MODELS.md and pins by hand, then test with ask-deep"; exit 2; }
 old_key=$(printf '%s' "$row" | cut -f3)
 [ -n "$CTX" ]   || CTX=$(printf '%s' "$row" | cut -f4)
 [ -n "$SLOTS" ] || SLOTS=$(printf '%s' "$row" | cut -f5)

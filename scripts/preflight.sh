@@ -60,8 +60,12 @@ else
   probs=$(awk -F'\t' '
     /^[[:space:]]*(#|$)/ {next}
     { n++ }
-    NF != 7 { print "line " NR ": " NF " columns, want 7 (role backend model_key ctx slots weights draft)"; next }
+    NF != 8 { print "line " NR ": " NF " columns, want 8 (role backend model_key ctx slots weights draft load)"; next }
     $7 != "mtp" && $7 != "-" { print $1 ": draft must be mtp or -" }
+    $2 == "lmstudio" && $8 != "resident" && $8 != "demand" { print $1 ": load must be resident or demand" }
+    $2 != "lmstudio" && $8 != "-" { print $1 ": load must be - on a cloud row" }
+    $2 == "lmstudio" && $8 == "resident" { res++ }
+    END { if (n > 0 && res == 0) print "no resident lmstudio role — nothing would serve local-big" }
     seen[$1]++ { print "duplicate role " $1 }
     $2 != "lmstudio" && $2 != "gemini" { print $1 ": backend \"" $2 "\" is not lmstudio or an explicit cloud backend (gemini)" }
     $2 == "lmstudio" && ($4 !~ /^[0-9]+$/ || $5 !~ /^[0-9]+$/) { print $1 ": ctx/slots must be integers" }

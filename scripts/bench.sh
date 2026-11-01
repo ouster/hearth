@@ -45,9 +45,16 @@ printf 'model\ttask\ttokens\tseconds\tverdict\n' > "$TSV"
 if [ $# -gt 0 ]; then
   MODELS="$*"
 else
-  MODELS=$(hearth_roles lmstudio | awk -F'\t' '$3 !~ /embed/ {print $1}' | tr '\n' ' ')
+  MODELS=$(hearth_resident_roles | awk -F'\t' '$3 !~ /embed/ {print $1}' | tr '\n' ' ')
 fi
-ROLE_NAMES=" $(hearth_roles lmstudio | cut -f1 | tr '\n' ' ') "
+ROLE_NAMES=" $(hearth_resident_roles | cut -f1 | tr '\n' ' ') "
+# A demand role is usually unloaded, and JIT-off LM Studio would answer it
+# with local-big. Bench its model key instead (loaded as bench-candidate).
+for m in $MODELS; do
+  if hearth_demand_roles | grep -qxF "$m"; then
+    echo "could not run: ${m} is loaded on demand — pass its model key from roles.tsv instead"; exit 2
+  fi
+done
 
 restore() {
   "$HEARTH_LMS" unload bench-candidate >/dev/null 2>&1 || true

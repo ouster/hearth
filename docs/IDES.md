@@ -42,6 +42,17 @@ aider can split planning from editing. With one local model both sides are
 ask-arch    # aider --architect --model openai/local-big --editor-model openai/local-big
 ```
 
+`ask-deep` runs aider on `local-deep`, a slower, more careful model, swapped
+in for that session only (ADR 0020). It unloads `local-big` while it runs:
+beside a busy `local-big` the two passed the memory ceiling and `local-big`'s
+requests timed out. It is also in Zed's model picker, labelled "load first":
+with JIT off, a request to an unloaded role is answered by whatever is loaded,
+without saying so. To use it from Zed, run
+`scripts/demand-load.sh local-deep up --evict` on the host, and
+`scripts/demand-load.sh local-deep down` when done (that brings `local-big`
+back). While it is swapped in, Zed's `local-big` slots are answered by
+`local-deep`.
+
 ### Switching mid-session
 
 ```

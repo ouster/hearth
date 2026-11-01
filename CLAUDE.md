@@ -37,7 +37,9 @@ removed gateway — never suggest commands against it.
    Same discipline for MCP servers: client config docs (`docs/IDES.md`) and
    `docs/MCP.md`.
 
-   Live: `local-big` (LM Studio identifier), `cloud-cheap`
+   Live: `local-big` (LM Studio identifier, resident), `local-deep` (swapped in
+   instead of `local-big` for an `ask-deep` session, ADR 0020 — never call it
+   unless loaded, never load it beside `local-big`), `cloud-cheap`
    (Gemini, `ask-cloud` only). `local-code` / `local-chat` are alias names that
    mean `local-big` (D1). Dormant: `cloud-code`, `cloud-frontier*` — no keys.
 

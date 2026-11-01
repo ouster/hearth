@@ -31,7 +31,7 @@ flowchart LR
 | LM Studio token `laptop-<name>` | laptop `~/.hearth-key` (mode 600) | revoke one machine without touching the others |
 | SSH key `hearth_tunnel` | laptop `~/.ssh/hearth_tunnel`; host `authorized_keys` with `command="/usr/bin/false",restrict,port-forwarding,permitopen=…,permitlisten="none:1"` | the key can `-L` to `127.0.0.1:1234` and `:3000` only — no shell, no commands, no `-R`, no other ports |
 | Google API key (optional) | laptop `~/.hearth-gemini-key` (mode 600) | `ask-cloud` with the laptop's own key; the host's key never leaves |
-| `client/hearth-client.sh` / `.ps1` | laptop `~/.hearth-client.sh` | `ai-tunnel`, `ai-ping`, `ai-models`, `ai-ask`, `ai-webui`, `ask*`, `ask-cloud` |
+| `client/hearth-client.sh` / `.ps1` | laptop `~/.hearth-client.sh` | `ai-tunnel`, `ai-ping`, `ai-models`, `ai-ask`, `ai-webui`, `ask*`, `ask-deep`, `ask-cloud` |
 
 Secrets are read from files per command and never exported into the
 laptop's shell. A world-readable key file is refused.
@@ -122,10 +122,11 @@ key works, the second that it can do nothing else.
 |---|---|
 | `ai-tunnel` | `tunnel: up` (the first run asks the person to confirm the host fingerprint) |
 | `ai-ping` | `up` |
-| `ai-models` | `local-big` |
+| `ai-models` | `local-big` (plus `local-deep` only while the host has it loaded) |
 | `ai-ask "say ok"` | a short reply from local-big |
 | `ssh hearth true; echo $?` | **non-zero**, no shell: the key is tunnel-only |
 | `ask-cloud` (optional) | aider on Gemini with the laptop's own key |
+| `ask-deep` (optional) | refuses with "not loaded on the host" unless the host ran `scripts/demand-load.sh local-deep up --evict`; the laptop cannot load it (tunnel-only key). While it is loaded the host has no `local-big`, and `local-big` requests are answered by `local-deep` |
 
 If `ai-ping` says `BAD TOKEN`, the person re-runs the `read -rs` step with
 the right token; `NO ANSWER` means the host is asleep or LM Studio is down

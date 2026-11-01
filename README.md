@@ -100,6 +100,7 @@ Ops detail: [`docs/RUNBOOK.md`](docs/RUNBOOK.md). Architecture:
 ask                # aider with openai/local-big
 ask-big            # same
 ask-arch           # aider architect mode (two local-big sides)
+ask-deep           # aider on local-deep: slow, careful, loaded for the session only (ADR 0020)
 ask-cloud          # Gemini via GOOGLE_API_KEY — the only alias that leaves the host
 
 # Server management
@@ -129,6 +130,7 @@ ai-models          # list models available through the tunnel
 ai-ask "question"  # one-shot question without aider
 ask                # local-big. ask-big / ask-local / ask-chat / ask-fast are the same
 ask-arch           # aider architect mode, local-big on both sides
+ask-deep           # aider on local-deep — only while the host has it loaded
 ask-cloud          # Gemini via THIS machine's own key — the only cloud alias
 
 # Open WebUI through the tunnel

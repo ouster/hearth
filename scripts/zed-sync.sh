@@ -27,9 +27,12 @@ CHECK=0; [ "${1:-}" = "--check" ] && CHECK=1
 ls_json=$("$HEARTH_LMS" ls --json 2>/dev/null) || { echo "could not run: lms ls failed"; exit 2; }
 
 # Program on stdin (heredoc), data in argv — never both on stdin.
-/usr/bin/python3 -I - "$ZED" "$CHECK" "$ls_json" "$(hearth_roles lmstudio)" <<'PY'
+# A demand role's label says to load it first: picking it in Zed while it is
+# unloaded is answered by local-big without saying so (JIT off).
+/usr/bin/python3 -I - "$ZED" "$CHECK" "$ls_json" "$(hearth_roles lmstudio)" "$(hearth_demand_roles)" <<'PY'
 import json, re, shutil, sys
 zed, check, ls_json, roles_tsv = sys.argv[1], sys.argv[2] == "1", sys.argv[3], sys.argv[4]
+demand = set(sys.argv[5].split())
 models = {}
 for m in json.loads(ls_json):
     models[m.get("modelKey", "")] = m
@@ -47,6 +50,8 @@ for role, _backend, key, ctx, _slots, *_ in rows:
         continue  # Zed's model picker lists chat models only
     quant = (m.get("quantization") or {}).get("name", "")
     label = f'{role} · {m.get("displayName", key)}' + (f" {quant}" if quant else "")
+    if role in demand:
+        label += " — load first: scripts/demand-load.sh " + role + " up --evict"
     # The entry: "name": "<role>", then its fields up to the closing brace.
     pat = re.compile(r'("name"\s*:\s*"' + re.escape(role) + r'"\s*,)(.*?)(\n\s*\})', re.S)
     hit = pat.search(new)

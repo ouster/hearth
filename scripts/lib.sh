@@ -159,6 +159,29 @@ hearth_roles() {
     "${root}/config/roles.tsv"
 }
 
+# Like `hearth_roles lmstudio`, minus roles loaded on demand (column 8).
+# With JIT off, a request for a role that is not loaded is answered by
+# whatever IS loaded, so a demand role must never be called unless loaded.
+hearth_resident_roles() {
+  local root="${ROOT:?ROOT not set}"
+  awk -F'\t' '!/^[[:space:]]*(#|$)/ && $2 == "lmstudio" && $8 != "demand" {print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6}' \
+    "${root}/config/roles.tsv"
+}
+
+# Names of lmstudio roles loaded on demand, one per line.
+hearth_demand_roles() {
+  local root="${ROOT:?ROOT not set}"
+  awk -F'\t' '!/^[[:space:]]*(#|$)/ && $2 == "lmstudio" && $8 == "demand" {print $1}' "${root}/config/roles.tsv"
+}
+
+# LM Studio's memory footprint in GB, summed over its processes, e.g. "25.2".
+hearth_footprint_gb() {
+  local p
+  for p in $(pgrep -f '\.lmstudio/|LM Studio'); do
+    footprint -p "$p" 2>/dev/null | grep -o 'Footprint: [0-9.]* [KMG]B' | head -1
+  done | awk '{v=$2; if ($3=="MB") v/=1024; if ($3=="KB") v/=1048576; s+=v} END {printf "%.1f", s}'
+}
+
 # One key from LM Studio's server settings file, or "" if unreadable.
 hearth_server_setting() {
   /usr/bin/python3 -I -c '

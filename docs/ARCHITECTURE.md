@@ -45,7 +45,8 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 
 | Role | Backend | What |
 |---|---|---|
-| `local-big` | LM Studio | the only local model. 128K context, 3 concurrent predictions (ADR 0017) |
+| `local-big` | LM Studio | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0019) |
+| `local-deep` | LM Studio | slower, more careful model for hard one-off questions. Swapped in **instead of** `local-big` for an `ask-deep` session, then swapped back; beside it, memory passed the ceiling and `local-big` timed out. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up --evict`) (ADR 0020, proposed) |
 | `cloud-cheap` | Gemini | reached directly by `ask-cloud`; never loaded into LM Studio |
 
 `local-code` and `local-chat` were collapsed into `local-big` (D1): two heavy
