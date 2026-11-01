@@ -33,8 +33,13 @@ in the app, My Models → this model → settings → Inference:
 
 - Prompt Template: first line `{%- set enable_thinking = true -%}`
 - Reasoning Section Parsing: on, start `<|channel>thought`, end `<channel|>`
+- Sampling, from the model's own `generation_config.json`: Temperature 1.0,
+  Top K 64, Top P 0.95, Min P 0, Repeat Penalty off (1.0). Lower temperature
+  or a repeat penalty makes its thinking loop and second-guess itself (seen in
+  Zed agent turns, 2026-11-01). Zed also pins `temperature: 1.0` for
+  `local-main` in `agent.model_parameters`; it cannot set Top K or Top P.
 
-A reinstall or settings reset loses both. `scripts/healthcheck.sh` fails if
+A reinstall or settings reset loses all of these. `scripts/healthcheck.sh` fails if
 `local-main` returns no `reasoning_content` or leaks those markers into the
 answer. Without thinking it answered a simple change sum wrongly three times.
 
