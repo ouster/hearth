@@ -184,7 +184,8 @@ The toggle then appears per message. If it vanishes, sign out and back in.
 Hearth has no dependency manifests, so what Snyk watches is the two container
 images: `scripts/snyk-monitor.sh` exports the image each container is running
 (by ID — the tags move) and records it as Snyk projects `hearth/webui` and
-`hearth/searxng`. Snyk re-tests those snapshots daily and emails new issues.
+`hearth/searxng`, plus the Zed SearXNG MCP server's npm lockfile as
+`hearth/mcp-searxng` (ADR 0022). Snyk re-tests those snapshots daily and emails new issues.
 Only the image's package list leaves the machine, not this repo's code.
 
 - One-time: `brew tap snyk/tap && brew install snyk-cli`, then `snyk auth`

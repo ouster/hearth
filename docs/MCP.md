@@ -16,6 +16,7 @@ for that egress.
 | Server | Transport | Egress | Tools | Clients |
 |---|---|---|---|---|
 | `auslaw` | stdio | `austlii.edu.au` | 7 of 10 | host Zed, `research` profile only (ADR 0016). Gateway `research` key until phase 5 |
+| `searxng` | stdio | local SearXNG `127.0.0.1:8888` → public search engines | 1 of 4 | host Zed, `web` profile only (ADR 0022) |
 
 ## auslaw
 
@@ -67,6 +68,42 @@ tools, and no cloud role.
 machine, and every useful auslaw tool sends a query to AustLII. Switching to
 `research` is the act of saying "this query is going to AustLII" rather than
 that being an ambient property of the everyday key.
+
+## searxng
+
+Web search for the Zed agent through the host's own SearXNG (ADR 0022).
+Package `mcp-searxng` 2.9.0 (`ihor-sokoliuk/mcp-searxng`, MIT, npm with SLSA
+provenance, no install scripts), installed pinned with `npm install
+--ignore-scripts --save-exact` into `~/.local/share/hearth/mcp-searxng`, run by
+`/opt/homebrew/bin/node` (needs Node ≥ 22). Never `npx`: that would fetch
+whatever is newest on every start. Its lockfile is monitored by Snyk
+(`scripts/snyk-monitor.sh`, project `hearth/mcp-searxng`).
+
+**stdio.** It only listens if `MCP_HTTP_PORT` is set, which Zed's entry does
+not. Env: `SEARXNG_URL=http://127.0.0.1:8888`, `SEARXNG_LITE_TOOLS=true`
+(short schemas for a local model), `SEARXNG_MAX_RESULTS=10`.
+
+### Tools, by where they go
+
+| Tool | Reaches | Exposed |
+|---|---|---|
+| `searxng_web_search` | local SearXNG → Google, Bing and others: **the query text leaves** | yes |
+| `searxng_search_suggestions` | local SearXNG → engines' autocomplete | **no** |
+| `searxng_instance_info` | local SearXNG `/config` only | **no** (not needed) |
+| `web_url_read` | **any public URL** | **no** |
+
+Unlike auslaw, the server has no allow-list: the exclusions are Zed profile
+settings, not server-side. `web_url_read` refuses localhost, RFC1918,
+link-local and private IPv6, including names that resolve to them — checked
+2026-11-01 against `127.0.0.1:1234` and `localhost:8888`, both refused. Kept
+off anyway: an agent that can fetch any page is both an exfiltration channel
+and a prompt-injection feed.
+
+### Who may reach it
+
+Host Zed, `web` profile only. That profile has read-only file tools (no edit,
+no terminal), so text from search results has nothing to act with. Not for
+client work: rule 3, and `docs/ROUTING.md` (web search punctures the boundary).
 
 ## Rules these enforce
 

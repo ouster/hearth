@@ -142,6 +142,18 @@ Note that Write and Ask still include Zed's built-in `fetch` and
 `search_web` tools, which reach the internet on their own. That predates
 this migration.
 
+### MCP: searxng, Web profile only
+
+`searxng` is a `context_servers` stdio entry for the pinned SearXNG MCP
+server (`docs/MCP.md`, ADR 0022). Its search tool sends the query text through
+the host's SearXNG to public engines, so it is enabled **only** in the `web`
+agent profile, and only `searxng_web_search` — `web_url_read` (any URL) and
+the other two tools stay off. The profile has read-only file tools and no
+edit or terminal, so search results cannot drive changes.
+
+Switching to Web is the act of saying "this query goes to the search engines".
+Never on client work.
+
 ### On a laptop
 
 Through an SSH tunnel to the host — `docs/LAPTOP.md`. Zed points at

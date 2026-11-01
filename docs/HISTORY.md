@@ -54,3 +54,5 @@ redacted (billing/invoice substituted); figures are unchanged.
 | 2026-11-01 | Same, thinking on | All four tasks correct, 12–64 s each; 40/40 tool calls; ~15% slower prefill, 25.2 GB c3 peak | Became `local-big` | ADR 0019, `2026-11-01-1307`, `2026-11-01-gemma-concurrency` |
 | 2026-11-01 | The 27B dense model as on-demand `local-deep` beside `local-big` | Loads in ~12 s; 33.3 GB with both idle; **49.9 GB** peak with both busy (over the ceiling, swap ~5 GB), and the 3 `local-big` requests overlapping its 193 s prefill timed out | Swapped in instead of `local-big`, never beside it; proposed | ADR 0020 |
 | 2026-11-01 | Rename `local-big` to `local-main` | Size no longer described it (26B resident, 27B on demand); `local-code` rejected as a retired name | Renamed | ADR 0021 |
+| 2026-11-01 | Snyk monitoring of the WebUI and SearXNG images | No manifests in the repo; the containers are the third-party code | Kept, re-run on `up` | `scripts/snyk-monitor.sh` |
+| 2026-11-01 | SearXNG MCP server for the Zed agent, `web` profile | ~12 candidates vetted; one passed. Search only; URL reader off and refuses private addresses | Kept | ADR 0022 |

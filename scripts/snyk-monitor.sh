@@ -1,8 +1,8 @@
 #!/bin/bash
 # Send the images that are actually running to Snyk for ongoing monitoring.
 #
-#   scripts/snyk-monitor.sh            # Open WebUI and SearXNG
-#   scripts/snyk-monitor.sh webui      # one of them
+#   scripts/snyk-monitor.sh            # Open WebUI, SearXNG and the SearXNG MCP server
+#   scripts/snyk-monitor.sh webui      # one of them (webui, searxng, mcp-searxng)
 #
 # Hearth has no dependency manifests, so the third-party code worth watching
 # is these containers. Both use moving tags (:main, :latest), so the image the
@@ -19,7 +19,10 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
 
-KINDS="${1:-webui searxng}"
+KINDS="${1:-webui searxng mcp-searxng}"
+# The Zed SearXNG MCP server (ADR 0022): a pinned npm install whose lockfile is
+# monitored like any npm project.
+MCP_SEARXNG_DIR="${HEARTH_MCP_SEARXNG_DIR:-$HOME/.local/share/hearth/mcp-searxng}"
 command -v snyk >/dev/null 2>&1 || { echo "could not run: snyk CLI not installed (brew tap snyk/tap && brew install snyk-cli)"; exit 2; }
 command -v podman >/dev/null 2>&1 || { echo "could not run: podman not installed"; exit 2; }
 snyk whoami --experimental >/dev/null 2>&1 || { echo "could not run: snyk not signed in (snyk auth)"; exit 2; }
@@ -28,6 +31,19 @@ podman info >/dev/null 2>&1 || { echo "could not run: podman VM not running (pod
 TMPD=$(mktemp -d); trap 'rm -rf "$TMPD"' EXIT
 rc=0; ran=0
 for kind in $KINDS; do
+  if [ "$kind" = mcp-searxng ]; then
+    if [ ! -f "${MCP_SEARXNG_DIR}/package-lock.json" ]; then
+      echo "skip   ${kind}: no install at ${MCP_SEARXNG_DIR}"; continue
+    fi
+    out=$(snyk monitor --file="${MCP_SEARXNG_DIR}/package-lock.json" --project-name="hearth/${kind}" 2>&1); src=$?
+    ran=$((ran + 1))
+    if [ "$src" -eq 0 ]; then
+      echo "ok     ${kind}: $(printf '%s\n' "$out" | grep -oE 'https://app\.snyk\.io[^ ]*' | tail -1)"
+    else
+      echo "FAIL   ${kind}: snyk monitor exited ${src}: $(printf '%s' "$out" | tail -2 | tr '\n' ' ')"; rc=1
+    fi
+    continue
+  fi
   c="$(ai_container "$kind")"
   if ! podman container exists "$c" 2>/dev/null; then
     echo "skip   ${kind}: container ${c} not created (scripts/${kind}.sh up)"; continue
