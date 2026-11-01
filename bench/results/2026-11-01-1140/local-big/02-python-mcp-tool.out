@@ -1,0 +1,45 @@
+
+
+```python
+import sqlite3
+
+def search_cases(query: str, limit: int = 10) -> list[dict]:
+    conn = None
+    try:
+        conn = sqlite3.connect('cases.db')
+        cursor = conn.cursor()
+        
+        # Construct the search pattern for substring matching
+        # Using % wildcards allows for substring matching.
+        # The query string is passed as a parameter to execute,
+        # preventing SQL injection (parameterized query).
+        search_pattern = f"%{query}%"
+        
+        # Execute parameterized query
+        # Using COLLATE NOCASE ensures case-insensitive matching in SQLite.
+        sql = """
+            SELECT id, citation, court, year, summary 
+            FROM cases 
+            WHERE citation LIKE ? COLLATE NOCASE 
+               OR summary LIKE ? COLLATE NOCASE 
+            ORDER BY year DESC 
+            LIMIT ?
+        """
+        
+        cursor.execute(sql, (search_pattern, search_pattern, limit))
+        rows = cursor.fetchall()
+        
+        # Convert the result set to a list of standard dictionaries.
+        # Extract column names from cursor.description.
+        columns = [desc[0] for desc in cursor.description]
+        
+        # Map column names to row values to return standard dicts,
+        # avoiding sqlite3.Row objects.
+        results = [dict(zip(columns, row)) for row in rows]
+        
+        return results
+    finally:
+        # Ensure connection is closed on both success and failure.
+        if conn:
+            conn.close()
+```

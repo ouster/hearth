@@ -1,0 +1,21 @@
+
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+SERVICE_NAME="com.example.service"
+PLIST_PATH="$HOME/Library/LaunchAgents/${SERVICE_NAME}.plist"
+
+if [[ ! -f "$PLIST_PATH" ]]; then
+    echo "Error: LaunchAgent plist not found at $PLIST_PATH" >&2
+    exit 1
+fi
+
+if launchctl list | grep -q "^${SERVICE_NAME}$"; then
+    echo "$SERVICE_NAME is already loaded."
+else
+    launchctl load "$PLIST_PATH"
+    echo "$SERVICE_NAME loaded successfully."
+fi
+```

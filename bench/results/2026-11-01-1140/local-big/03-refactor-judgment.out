@@ -1,0 +1,54 @@
+
+
+### 1. Bug Identification
+
+The provided function contains several critical failures for a billing system:
+
+*   **Floating Point Precision (The "Float-for-Currency" Problem):**
+    *   **What breaks:** Python's native `float` type uses binary floating-point arithmetic, which cannot represent decimal fractions (like 0.1 or 0.01) exactly.
+    *   **Impact:** Summing values like `0.1 + 0.2` results in `0.30000000000000004`. In a billing system, these off-by-penny errors accumulate, leading to incorrect totals.
+*   **Integer Division (Python 2 Compatibility):**
+    *   **What breaks:** The expression `discount_pct / 100` performs integer division in Python 2 if `discount_pct` is an integer.
+    *   **Impact:** For any discount less than 100%, the calculation `discount_pct / 100` evaluates to `0`. The discount is effectively ignored.
+*   **Rounding Bias (Banker's Rounding):**
+    *   **What breaks:** The built-in `round()` function uses "Round Half to Even."
+    *   **Impact:** A value of `0.005` may round down to `0.00` rather than up to `0.01`. This creates a systematic financial bias against the merchant over many transactions.
+*   **Negative Discount Logic:**
+    *   **What breaks:** The `if discount_pct > 0` condition skips negative values.
+    *   **Impact:** Negative discounts (surcharges) are completely ignored, failing to apply the intended fee.
+
+### 2. Corrected Version
+
+This version uses the `decimal` library for exact arithmetic and explicitly defines the rounding behavior required for finance.
+
+```python
+from decimal import Decimal, ROUND_HALF_UP
+
+def apply_discount(items, discount_pct):
+    # 1. Convert discount to Decimal. 
+    # We convert to string first to preserve precision if the input is a float.
+    discount = Decimal(str(discount_pct))
+    
+    # 2. Initialize total as Decimal('0')
+    total = Decimal('0')
+    
+    # 3. Iterate over items directly (more Pythonic and robust)
+    for item in items:
+        # Convert price and qty to Decimal via string to avoid float artifacts
+        price = Decimal(str(item['price']))
+        qty = Decimal(str(item['qty']))
+        total += price * qty
+
+    # 4. Handle discount logic (fixes negative discount logic)
+    if discount > 0:
+        discount_amount = total * discount / Decimal('100')
+        total -= discount_amount
+    elif discount < 0:
+        # Apply negative discounts (surcharges) correctly
+        surcharge_amount = total * abs(discount) / Decimal('100')
+        total += surcharge_amount
+
+    # 5. Explicitly round to 2 decimal places using ROUND_HALF_UP
+    # (e.g., 0.005 rounds to 0.01)
+    return float(total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+```

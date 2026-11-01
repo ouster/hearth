@@ -1,0 +1,64 @@
+### Identified Bugs
+
+1.  **Floating-Point Precision Error (Critical for Billing):**
+    The function uses standard Python `float` types for currency calculations. Floats use binary floating-point arithmetic (IEEE 754), which cannot accurately represent many decimal fractions (e.g., `0.1 + 0.2 != 0.3`). In a billing system, cumulative rounding errors can lead to "missing pennies" or incorrect totals when summing large lists of items.
+2.  **Incorrect Discount Logic (Edge Case):**
+    The condition `if discount_pct > 0:` prevents the function from applying a negative discount. While a "negative discount" sounds counter-intuitive, in many billing systems, a negative discount is used to apply a **surcharge** or tax adjustment. By skipping the logic when `discount_pct <= 0`, the function fails to handle these adjustments.
+3.  **Potential `KeyError` (Robustness):**
+    The code assumes every dictionary in the `items` list contains exactly `'price'` and `'qty'`. If an item is missing a key, the entire billing process crashes with a `KeyError`.
+4.  **Inefficient Iteration (Style/Performance):**
+    While not a "bug" that breaks logic, using `range(len(items))` is unidiomatic in Python. Iterating directly over the objects is faster and cleaner.
+
+---
+
+### Corrected Version
+
+To ensure absolute arithmetic correctness for a billing system, we must use the **`decimal`** module. The `Decimal` type is designed for financial applications because it provides exact decimal representation and allows you to control rounding modes.
+
+```python
+from decimal import Decimal, ROUND_HALF_UP
+
+def apply_discount(items, discount_pct):
+    """
+    Calculates total price with a discount using Decimal for financial accuracy.
+    
+    :param items: List of dicts, e.g., [{'price': '10.99', 'qty': 2}]
+    :param discount_pct: Numeric value (e.g., 10 for 10%)
+    :return: Decimal rounded to two decimal places.
+    """
+    total = Decimal('0.00')
+    
+    # Convert discount to Decimal once for precision
+    discount_factor = Decimal(str(discount_pct)) / Decimal('100')
+
+    for item in items:
+        # Use str() conversion or ensure inputs are already Decimals/Strings 
+        # to avoid float-to-decimal precision contamination.
+        price = Decimal(str(item['price']))
+        qty = Decimal(str(item['qty']))
+        
+        total += price * qty
+
+    # Apply discount (handles positive, zero, and negative/surcharge)
+    total = total * (Decimal('1') - discount_factor)
+
+    # Quantize to 2 decimal places using ROUND_HALF_UP (standard commercial rounding)
+    return total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+# --- Test Case for Verification ---
+if __name__ == "__main__":
+    # Example: The classic float error case (0.1 + 0.2)
+    test_items = [
+        {'price': '0.1', 'qty': 1},
+        {'price': '0.2', 'qty': 1}
+    ]
+    # Using floats would result in 0.30000000000000004
+    # Using Decimal results in 0.30
+    print(f"Total: {apply_discount(test_items, 0)}") 
+```
+
+### Key Improvements Explained:
+1.  **`decimal.Decimal`**: Replaced `float`. This ensures that `0.1 + 0.2` equals exactly `0.3`, preventing penny-drift in large invoices.
+2.  **`quantize(..., ROUND_HALF_UP)`**: Standard `round()` in Python uses "Round Half to Even" (Banker's Rounding), which can be unexpected in retail. `ROUND_HALF_UP` is the standard mathematical rounding taught in schools and used in most commercial billing.
+3.  **String Conversion**: Note the use of `Decimal(str(value))`. Converting a float directly to a Decimal (e.g., `Decimal(0.1)`) actually carries the float's inaccuracy into the Decimal object. Converting via a string ensures the decimal representation is exactly what the user intended.
+4.  **Removed `if discount_pct > 0`**: The math now works for any value, allowing the function to act as a surcharge mechanism if `discount_pct` is negative.

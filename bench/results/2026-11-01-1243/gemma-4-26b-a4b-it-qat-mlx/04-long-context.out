@@ -1,0 +1,7 @@
+1. Not in the file.
+
+2. The dormant roles and what they are blocked on:
+* `cloud-code`: Anthropic API key — **deliberately unset**.
+* `cloud-frontier*`: OpenRouter key. Primary frontier route.
+
+3. Postgres is bound to `:5433`. The file does not state why that port was chosen specifically, only that it is the port used by the Postgres container.

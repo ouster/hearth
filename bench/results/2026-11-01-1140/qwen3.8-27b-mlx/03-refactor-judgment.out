@@ -1,0 +1,532 @@
+
+
+The main bug is that this does **money arithmetic in binary floats** and then uses Python’s `round()`. In a billing system, that is a correctness bug, not just a style issue.
+
+## Bugs / defects found
+
+### 1. Float-for-currency arithmetic and rounding
+
+If `price` or `qty` are floats, the total is a binary float. Many decimal currency values cannot be represented exactly, and `round()` operates on the binary value.
+
+Example:
+
+```python
+items = [{"price": 2.675, "qty": 1}]
+apply_discount(items, 0)
+```
+
+In CPython:
+
+```python
+round(2.675, 2) == 2.67
+```
+
+But if the intended decimal value is `2.675`, common billing half-up rounding would give:
+
+```python
+2.68
+```
+
+So the function can return the wrong cent value.
+
+Another example:
+
+```python
+items = [{"price": 0.1, "qty": 3}]
+apply_discount(items, 0)
+```
+
+The unrounded internal total is:
+
+```python
+0.30000000000000004
+```
+
+The final `round()` may hide that in this case, but once discounts or further arithmetic are applied, the binary noise can change the final cent.
+
+---
+
+### 2. `round()` is not a reliable money rounding function
+
+Even if the inputs are `Decimal`, this line:
+
+```python
+return round(total, 2)
+```
+
+is still problematic because it does not explicitly choose an accounting rounding mode.
+
+Example:
+
+```python
+from decimal import Decimal
+
+items = [{"price": Decimal("1.005"), "qty": 1}]
+apply_discount(items, 0)
+```
+
+By default, Decimal rounding is half-even:
+
+```python
+round(Decimal("1.005"), 2) == Decimal("1.00")
+```
+
+But many billing systems expect half-up:
+
+```python
+Decimal("1.01")
+```
+
+So the function has an unspecified and potentially wrong rounding policy.
+
+---
+
+### 3. `discount_pct` is not validated
+
+The function only checks:
+
+```python
+if discount_pct > 0:
+```
+
+That is not enough.
+
+#### Discount greater than 100%
+
+```python
+items = [{"price": 10, "qty": 1}]
+apply_discount(items, 150)
+```
+
+Result:
+
+```python
+-5.0
+```
+
+A 150% discount should probably be rejected, not produce a negative invoice.
+
+#### Negative discount silently ignored
+
+```python
+items = [{"price": 10, "qty": 1}]
+apply_discount(items, -10)
+```
+
+Result:
+
+```python
+10.0
+```
+
+A negative “discount” is silently treated as no discount. If the caller made a sign error, this hides it.
+
+#### `NaN` silently ignored for floats
+
+```python
+items = [{"price": 10, "qty": 1}]
+apply_discount(items, float("nan"))
+```
+
+Because:
+
+```python
+float("nan") > 0  # False
+```
+
+the function returns the undiscounted total. Invalid input is not caught.
+
+#### `inf` produces invalid money values
+
+```python
+items = [{"price": 10, "qty": 1}]
+apply_discount(items, float("inf"))
+```
+
+This can produce `-inf` or `nan`, which are not valid billing totals.
+
+#### Non-numeric percentage breaks
+
+```python
+items = [{"price": 10, "qty": 1}]
+apply_discount(items, None)
+```
+
+Raises:
+
+```python
+TypeError
+```
+
+Also:
+
+```python
+apply_discount(items, "10")
+```
+
+Raises because Python 3 does not allow:
+
+```python
+"10" > 0
+```
+
+A robust money function should explicitly validate and coerce the percentage.
+
+---
+
+### 4. Item fields are not validated or coerced
+
+#### Missing `qty`
+
+```python
+items = [{"price": 10}]
+apply_discount(items, 0)
+```
+
+Raises:
+
+```python
+KeyError: 'qty'
+```
+
+That is better than silently producing a wrong total, but the error message does not identify which item or field is bad.
+
+#### Missing `price`
+
+```python
+items = [{"qty": 1}]
+apply_discount(items, 0)
+```
+
+Raises:
+
+```python
+KeyError: 'price'
+```
+
+#### Non-numeric price or qty
+
+```python
+items = [{"price": "ten", "qty": 1}]
+apply_discount(items, 0)
+```
+
+This breaks with a `TypeError` because the code tries to do arithmetic on non-numeric values.
+
+#### Negative price or qty
+
+```python
+items = [{"price": -10, "qty": 1}]
+apply_discount(items, 50)
+```
+
+Result:
+
+```python
+-5.0
+```
+
+Unless your billing system explicitly supports negative line items or credits, this should be rejected.
+
+#### `NaN` / `Infinity` in item values
+
+```python
+items = [{"price": float("nan"), "qty": 1}]
+apply_discount(items, 0)
+```
+
+Produces a `nan` total. That is not valid money.
+
+---
+
+### 5. The return type is inconsistent and unsafe for money
+
+If the inputs are ints, this still returns a float:
+
+```python
+items = [{"price": 10, "qty": 2}]
+apply_discount(items, 0)
+```
+
+Result:
+
+```python
+20.0
+```
+
+If the inputs are floats, it returns a float. If the inputs are Decimals, it may return a Decimal. A billing function should have one explicit money representation, such as:
+
+- `Decimal` with two decimal places, or
+- integer cents.
+
+Returning a float is unsafe because floats cannot exactly represent many cent values and lose precision for large totals.
+
+Example of large-total float precision loss:
+
+```python
+items = [{"price": 1e16, "qty": 1}]
+apply_discount(items, 0)
+```
+
+At that magnitude, a float cannot represent cent-level detail.
+
+If the inputs are Decimal and very large, `round(total, 2)` can also be affected by the Decimal context precision and may raise `InvalidOperation` for large values.
+
+---
+
+### 6. Rounding policy: final total only vs per-line rounding
+
+The function sums unrounded line totals, applies the discount to the aggregate, and rounds only at the end.
+
+That may be correct for some billing rules, but many systems require each line total to be rounded to cents before applying discounts.
+
+Example with sub-cent unit prices:
+
+```python
+items = [
+    {"price": Decimal("1.005"), "qty": 1},
+    {"price": Decimal("1.005"), "qty": 1},
+]
+```
+
+If each line is rounded half-up first:
+
+```python
+1.01 + 1.01 = 2.02
+```
+
+If the aggregate is rounded only at the end:
+
+```python
+1.005 + 1.005 = 2.01
+```
+
+So if your billing rule is “round each line before discount,” the original function has a business-rule bug. The corrected version below preserves final-total rounding; if you need per-line rounding, that policy must be added explicitly.
+
+---
+
+### 7. Minor robustness issue: `range(len(items))`
+
+This is not the main money bug, but it makes the function less robust:
+
+```python
+for i in range(len(items)):
+```
+
+This fails if `items` is a generator or other non-sequence iterable. A billing API should probably accept any iterable of item mappings.
+
+---
+
+## Corrected version
+
+This corrected version:
+
+- rejects floats for money values,
+- accepts `Decimal`, `int`, or numeric strings,
+- validates the discount percentage range,
+- rejects non-finite values,
+- uses exact rational arithmetic internally,
+- rounds half-up to cents explicitly,
+- returns a `Decimal` with two decimal places.
+
+```python
+from collections.abc import Mapping
+import math
+from decimal import Decimal, InvalidOperation
+from fractions import Fraction
+
+
+def _to_decimal(value: object, field: str) -> Decimal:
+    """
+    Convert a money/quantity value to Decimal.
+
+    Floats are intentionally rejected because binary floats are not safe
+    for currency arithmetic. If you must accept existing float inputs as a
+    temporary compatibility shim, replace the raise below with:
+
+        return Decimal(str(value))
+
+    But the real fix is to stop using floats for money upstream.
+    """
+    if isinstance(value, Decimal):
+        return value
+
+    if isinstance(value, int) and not isinstance(value, bool):
+        return Decimal(value)
+
+    if isinstance(value, str):
+        try:
+            return Decimal(value.strip())
+        except InvalidOperation as exc:
+            raise ValueError(
+                f"{field} must be a valid decimal number, got {value!r}"
+            ) from exc
+
+    if isinstance(value, float):
+        raise TypeError(
+            f"{field} must be Decimal/int/str for money; floats are not safe. "
+            f"Use Decimal(str({value!r})) or integer cents."
+        )
+
+    raise TypeError(
+        f"{field} must be Decimal/int/str, got {type(value).__name__}"
+    )
+
+
+def _finite_decimal(value: object, field: str) -> Decimal:
+    d = _to_decimal(value, field)
+    if not d.is_finite():
+        raise ValueError(f"{field} must be finite, got {d}")
+    return d
+
+
+def _decimal_from_cents(cents: int) -> Decimal:
+    """
+    Build an exact two-decimal-place Decimal from integer cents.
+
+    This avoids another context-dependent rounding step.
+    """
+    if cents == 0:
+        return Decimal("0.00")
+
+    sign = 1 if cents < 0 else 0
+    digits = tuple(int(ch) for ch in str(abs(cents)))
+    return Decimal((sign, digits, -2))
+
+
+def _round_half_up_to_cents(amount: Fraction) -> Decimal:
+    """
+    Round a non-negative or negative rational amount to cents using half-up.
+
+    For positive amounts:
+        1.005 -> 1.01
+        1.004 -> 1.00
+
+    For negative amounts, this rounds away from zero on ties:
+        -1.005 -> -1.01
+    """
+    if amount < 0:
+        cents = -math.floor(-amount * 100 + Fraction(1, 2))
+    else:
+        cents = math.floor(amount * 100 + Fraction(1, 2))
+
+    return _decimal_from_cents(cents)
+
+
+def apply_discount(items, discount_pct):
+    """
+    Apply a percentage discount to line items and return the total in cents.
+
+    Returns:
+        Decimal with exactly two decimal places.
+
+    Raises:
+        TypeError: if items is not iterable or item fields have unsafe types.
+        ValueError: if discount_pct is out of range, non-finite, or item values are invalid.
+    """
+    if items is None:
+        raise TypeError("items must be an iterable of mappings")
+
+    # Validate discount percentage before consuming items.
+    pct_d = _finite_decimal(discount_pct, "discount_pct")
+
+    if not (Decimal(0) <= pct_d <= Decimal(100)):
+        raise ValueError("discount_pct must be between 0 and 100")
+
+    pct = Fraction(pct_d)
+
+    try:
+        item_iter = iter(items)
+    except TypeError as exc:
+        raise TypeError("items must be an iterable of mappings") from exc
+
+    total = Fraction(0)
+
+    for idx, item in enumerate(item_iter):
+        if not isinstance(item, Mapping):
+            raise ValueError(f"items[{idx}] must be a mapping")
+
+        price_d = _finite_decimal(item.get("price"), f"items[{idx}].price")
+        qty_d = _finite_decimal(item.get("qty"), f"items[{idx}].qty")
+
+        if price_d < 0:
+            raise ValueError(f"items[{idx}].price must be non-negative")
+
+        if qty_d < 0:
+            raise ValueError(f"items[{idx}].qty must be non-negative")
+
+        total += Fraction(price_d) * Fraction(qty_d)
+
+    if pct > 0:
+        total *= (Fraction(100) - pct) / Fraction(100)
+
+    return _round_half_up_to_cents(total)
+```
+
+## Notes on the corrected version
+
+### It intentionally rejects floats
+
+This is deliberate. If your current callers pass floats, the function will fail loudly instead of silently producing unsafe money arithmetic.
+
+If you need a temporary drop-in compatibility shim, change the float branch in `_to_decimal` to:
+
+```python
+if isinstance(value, float):
+    return Decimal(str(value))
+```
+
+That avoids binary-float arithmetic inside this function, but it is still a band-aid. The proper fix is to store and pass money as `Decimal` or integer cents from the start.
+
+---
+
+### It returns `Decimal`, not float
+
+For example:
+
+```python
+items = [
+    {"price": Decimal("2.675"), "qty": 1},
+]
+
+apply_discount(items, 0)
+```
+
+Returns:
+
+```python
+Decimal("2.68")
+```
+
+If your API must serialize to JSON, do not convert back to float. Serialize as a string or integer cents:
+
+```python
+str(total)          # "2.68"
+int(total * 100)    # 268 cents, if you need integer cents
+```
+
+---
+
+### It uses half-up rounding
+
+The corrected version uses half-up rounding:
+
+```python
+1.005 -> 1.01
+```
+
+If your accounting policy requires half-even, banker’s rounding, or some other mode, replace `_round_half_up_to_cents` with the appropriate rounding logic. The important part is that the rounding mode must be explicit and tested.
+
+---
+
+### It implements final-total rounding, not per-line rounding
+
+This version matches the original behavior in that it rounds only the final discounted total.
+
+If your billing system requires each line to be rounded before discount, you would need something like:
+
+```python
+line_total = _round_half_up_to_cents(Fraction(price_d) * Fraction(qty_d))
+```
+
+inside the loop, then sum the rounded line totals. That is a business-rule decision, not just an arithmetic detail.

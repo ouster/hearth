@@ -1,0 +1,31 @@
+
+
+#!/bin/bash
+set -euo pipefail
+
+service="com.example.service"
+
+if [ -z "${HOME:-}" ]; then
+  HOME="$(cd ~ >/dev/null 2>&1 && pwd)" || {
+    printf 'Error: unable to determine home directory.\n' >&2
+    exit 1
+  }
+fi
+
+plist="$HOME/Library/LaunchAgents/${service}.plist"
+
+if [ ! -f "$plist" ]; then
+  printf 'Error: plist does not exist: %s\n' "$plist" >&2
+  exit 1
+fi
+
+command -v launchctl >/dev/null 2>&1 || {
+  printf 'Error: launchctl was not found.\n' >&2
+  exit 1
+}
+
+if launchctl list 2>/dev/null | awk -v svc="$service" 'BEGIN { found = 0 } $3 == svc { found = 1 } END { exit found ? 0 : 1 }'; then
+  :
+else
+  launchctl load "$plist"
+fi

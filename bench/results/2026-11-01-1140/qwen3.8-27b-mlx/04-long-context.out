@@ -1,0 +1,14 @@
+
+
+1. Not in the file as a specific fallback chain for `cloud-frontier`. The only related statement is that the current design has **no fallbacks** because there is no router, and `cloud-frontier` is dormant with no key.
+
+2. Dormant roles:
+
+| Role | Blocked on |
+|---|---|
+| `cloud-code` | Anthropic API key — deliberately unset; a Console key bills separately from any Claude subscription |
+| `cloud-frontier` | OpenRouter key; primary frontier route |
+| `cloud-frontier-direct` | Moonshot key; same price, best K3 caching |
+| `cloud-frontier-fast` | Fireworks key; dearest; throughput or LoRA only |
+
+3. Postgres was bound to `:5433` in the historical gateway-era plan; it is removed from the current stack. Why that port specifically: not in the file.

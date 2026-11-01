@@ -1,0 +1,5 @@
+model	task	tokens	seconds	verdict
+gemma-4-26b-a4b-it-qat-mlx	01-bash-launchd	190	2.7	syntax-ok
+gemma-4-26b-a4b-it-qat-mlx	02-python-mcp-tool	312	3.0	syntax-ok
+gemma-4-26b-a4b-it-qat-mlx	03-refactor-judgment	1027	9.8	needs-reading
+gemma-4-26b-a4b-it-qat-mlx	04-long-context	92	35.0	needs-reading

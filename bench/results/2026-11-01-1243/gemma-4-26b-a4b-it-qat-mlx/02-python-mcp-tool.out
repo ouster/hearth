@@ -1,0 +1,42 @@
+```python
+import sqlite3
+
+def search_cases(query: str, limit: int = 10) -> list[dict]:
+    """
+    Searches the local SQLite database for cases matching a query string 
+    within the citation or summary columns.
+    """
+    db_path = "cases.db"
+    results: list[dict] = []
+    conn: sqlite3.Connection | None = None
+
+    try:
+        conn = sqlite3.connect(db_path)
+        # Use Row factory to easily convert to dict, though we manually 
+        # cast to ensure standard dict objects are returned.
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+
+        sql = """
+            SELECT id, citation, court, year, summary 
+            FROM cases 
+            WHERE citation LIKE ? OR summary LIKE ?
+            ORDER BY year DESC
+            LIMIT ?
+        """
+        # Use % for substring matching in SQLite LIKE
+        search_term = f"%{query}%"
+        cursor.execute(sql, (search_term, search_term, limit))
+
+        for row in cursor.fetchall():
+            results.append(dict(row))
+
+    except sqlite3.Error:
+        # In a production MCP server, you might log the error here
+        raise
+    finally:
+        if conn:
+            conn.close()
+
+    return results
+```

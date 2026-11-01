@@ -1,0 +1,13 @@
+
+
+Based strictly on the provided file:
+
+1. **Fallback chain for `cloud-frontier`:** The file explicitly states there are **no fallback chains** in the current architecture (`"no router means no fallbacks"`), and `cloud-frontier` is listed as dormant with no fallback chain defined.
+
+2. **Dormant roles and what they are blocked on:**
+   * `cloud-code`: Blocked on the **Anthropic API key** (deliberately unset).
+   * `cloud-frontier`: Blocked on the **OpenRouter key**.
+   * `cloud-frontier-direct`: Blocked on the **Moonshot key**.
+   * `cloud-frontier-fast`: Blocked on the **Fireworks key**.
+
+3. **Postgres port and why:** The file notes Postgres was bound to `:5433` (documented in the historical build status table), but it **does not state why** that specific port was chosen. (Postgres was also removed from the stack on 2026-10-31.)
