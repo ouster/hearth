@@ -19,7 +19,9 @@
 #     127.0.0.1:1234 (LM Studio), :3000 (Open WebUI) and :8888 (SearXNG, for a
 #     laptop's SearXNG MCP — ADR 0022) and do nothing else — no shell, no -R,
 #     no other ports. --update-keys brings an older restriction up to date and
-#     keeps options it does not own (from=, expiry-time=, …). A hearth-tunnel-*
+#     keeps only options that narrow access (from=, expiry-time=, no-*);
+#     granting ones (pty, agent-forwarding, …) would undo `restrict` and are
+#     dropped. A hearth-tunnel-*
 #     line with no tunnel restriction is a full shell key: reported, left
 #     unchanged, exit 1. Options must not contain spaces.
 #   - its own Google API key for ask-cloud. The host's key never leaves.
@@ -57,9 +59,11 @@ for ch in s:
         buf.append(ch)
 if buf:
     parts.append("".join(buf))
-managed_exact = set(["restrict", "port-forwarding"])
-managed_prefix = ("command=", "permitopen=", "permitlisten=")
-keep = [p for p in parts if p and p not in managed_exact and not p.startswith(managed_prefix)]
+# Keep only options that narrow access. Anything after `restrict` that grants
+# (pty, agent-forwarding, x11-forwarding, user-rc, environment=, ...) would
+# switch that feature back on, so it is dropped.
+narrowing_prefix = ("from=", "expiry-time=", "no-")
+keep = [p for p in parts if p.startswith(narrowing_prefix)]
 sys.stdout.write(",".join(keep))
 ' "$1"
 }
