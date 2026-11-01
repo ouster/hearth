@@ -72,7 +72,8 @@ for model in $MODELS; do
       fi
       "$HEARTH_LMS" unload bench-candidate >/dev/null 2>&1 || true
       [ "$EVICT" -eq 1 ] && "$HEARTH_LMS" unload --all >/dev/null 2>&1
-      if ! "$HEARTH_LMS" load "$model" --identifier bench-candidate -c 65536 --gpu max -y </dev/null >/dev/null 2>&1; then
+      # --parallel 1 explicitly: without it LM Studio loads 4 slots.
+      if ! "$HEARTH_LMS" load "$model" --identifier bench-candidate -c 65536 --parallel 1 --gpu max -y </dev/null >/dev/null 2>&1; then
         echo "SKIP ${model} — load failed (too big beside local-big? try --evict)"; continue
       fi
       target=bench-candidate ;;
@@ -134,7 +135,12 @@ PY
     case "$check" in
       bash-syntax|python-syntax)
         sed -n '/```/,/```/p' "$outfile" | sed '1d;$d' > "${outfile}.code"
-        if [ "$check" = "bash-syntax" ]; then
+        # A fence-less answer is checked as written. An empty file passes
+        # bash -n and ast.parse, so no code at all must not count as a pass.
+        grep -q '```' "$outfile" || cp "$outfile" "${outfile}.code"
+        if ! grep -q '[^[:space:]]' "${outfile}.code"; then
+          verdict="NO-CODE"
+        elif [ "$check" = "bash-syntax" ]; then
           bash -n "${outfile}.code" 2>/dev/null && verdict="syntax-ok" || verdict="SYNTAX-FAIL"
         else
           "$AI_PY" -I -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "${outfile}.code" \
@@ -167,7 +173,7 @@ for r in rows:
     a["secs"] += float(r["seconds"] or 0)
     v = r["verdict"]
     if v == "syntax-ok":   a["ok"]  += 1
-    elif v == "SYNTAX-FAIL": a["bad"] += 1
+    elif v in ("SYNTAX-FAIL", "NO-CODE"): a["bad"] += 1
     elif v == "error":     a["err"] += 1
 
 print(f"# Bench — {stamp}\n")
