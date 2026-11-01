@@ -8,7 +8,8 @@
 # the role name, never a model. model_key is the modelKey from `lms ls
 # --json`, with @variant (e.g. @f16) when several quantisations are on disk;
 # `lms load` does not accept a file path.
-# slots > 1 becomes --parallel. draft=mtp becomes --speculative-draft-mtp
+# slots is always passed as --parallel for chat models: without it LM Studio
+# picks its own default (4 on 0.4.28), not 1. draft=mtp becomes --speculative-draft-mtp
 # (same weights; faster decode, not faster prefill). No --ttl: a resident
 # role never auto-unloads. `lms ps` does not report the draft flag, so
 # --check cannot see it. A load without the flag looks in sync.
@@ -85,7 +86,8 @@ while IFS="$(printf '\t')" read -r role key ctx slots draft; do
     echo "DRIFT  ${role}: not loaded"; rc=1; continue
   fi
   par=()
-  [ "$slots" -gt 1 ] 2>/dev/null && par=(--parallel "$slots")
+  # Embedding models report no parallel value in `lms ps`; leave them alone.
+  case "$key" in *embed*) ;; *) par=(--parallel "$slots") ;; esac
   spec=()
   [ "$draft" = "mtp" ] && spec=(--speculative-draft-mtp)
   extra=""
