@@ -113,8 +113,8 @@ Kept as a record of why the tooling exists.
   agent is allowed to call it. Highest value per effort of anything left.
 - **No confirmation gates** on consequential actions beyond git commits. Costs
   nothing today because nothing in the stack can send mail or move money.
-- **`local-embed` indexes nothing** — a local reference corpus would keep
-  the most sensitive queries off SearXNG entirely.
+- **No local embeddings.** `local-embed` was removed 2026-11-01 (ADR 0018).
+  A reference corpus would be a new role, benched first.
 
 Optional, when the need arises:
 

@@ -16,7 +16,7 @@ aliases, IDE settings, and laptop configs means every upgrade is a scavenger
 hunt. This stack addresses **roles** instead:
 
 ```
-local-big   local-embed   cloud-cheap
+local-big   cloud-cheap
 ```
 
 Each local role is an LM Studio `--identifier`, so clients ask for
@@ -30,7 +30,7 @@ flowchart LR
         aider["aider / ask-*"]
         webui["Open WebUI :3000"]
         sbx["sandboxed.sh agents<br/>egress: 127.0.0.1:1234 only"]
-        lms["LM Studio 127.0.0.1:1234<br/>local-big x3 slots, local-embed<br/>token required"]
+        lms["LM Studio 127.0.0.1:1234<br/>local-big x3 slots<br/>token required"]
     end
     laptop["Laptop<br/>own token, tunnel-only key"]
     cloud["Gemini<br/>tool's own key"]

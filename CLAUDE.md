@@ -37,7 +37,7 @@ removed gateway — never suggest commands against it.
    Same discipline for MCP servers: client config docs (`docs/IDES.md`) and
    `docs/MCP.md`.
 
-   Live: `local-big`, `local-embed` (LM Studio identifiers), `cloud-cheap`
+   Live: `local-big` (LM Studio identifier), `cloud-cheap`
    (Gemini, `ask-cloud` only). `local-code` / `local-chat` are alias names that
    mean `local-big` (D1). Dormant: `cloud-code`, `cloud-frontier*` — no keys.
 
@@ -67,7 +67,7 @@ removed gateway — never suggest commands against it.
    immutable. Re-record only after re-benching.
 
 7. **Check the RAM envelope.** 64 GB total, but macOS caps GPU-accessible memory at ~48 GB
-   (75% above 36 GB) — that is the real ceiling. Current idle footprint is 20.7 GB at 128K × 3 plus `local-embed` (measured 2026-10-31, ADR 0017). The last concurrency-3 peak was 29.7 GB, on the 64K load. Say when a suggestion will not fit, or
+   (75% above 36 GB) — that is the real ceiling. Idle footprint was 20.7 GB at 128K × 3 while `local-embed` was also loaded (measured 2026-10-31, ADR 0017). That role is gone (ADR 0018); its weights were 0.3 GB. The last concurrency-3 peak was 29.7 GB, on the 64K load. Say when a suggestion will not fit, or
    will evict something that needs to stay loaded — on this machine the resident
    set matters more than any one model's quality.
 

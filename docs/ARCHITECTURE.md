@@ -16,7 +16,7 @@ flowchart TB
         scripts["scripts / benches"]
         webui["Open WebUI :3000<br/>(Podman)"]
         sbx["sandboxed.sh agents"]
-        lms["LM Studio 127.0.0.1:1234<br/>local-big: 128K x 3 parallel<br/>local-embed<br/>token required, JIT off"]
+        lms["LM Studio 127.0.0.1:1234<br/>local-big: 128K x 3 parallel<br/>token required, JIT off"]
     end
 
     laptop["Laptop<br/>SSH tunnel, own token"]
@@ -45,8 +45,7 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 
 | Role | Backend | What |
 |---|---|---|
-| `local-big` | LM Studio | the only local chat/agent model. 128K context, 3 concurrent predictions (ADR 0017) |
-| `local-embed` | LM Studio | embeddings, resident beside `local-big` |
+| `local-big` | LM Studio | the only local model. 128K context, 3 concurrent predictions (ADR 0017) |
 | `cloud-cheap` | Gemini | reached directly by `ask-cloud`; never loaded into LM Studio |
 
 `local-code` and `local-chat` were collapsed into `local-big` (D1): two heavy

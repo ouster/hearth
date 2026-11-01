@@ -43,7 +43,7 @@ cold on Ollama MLX (ADR 0012, 0013).
    retired after a soak period.
 2. **One agent model, always resident**, loaded with a fixed identifier equal
    to its role name (`local-big`), 64K context per slot (raised to 128K by ADR 0017), 3 concurrent
-   predictions, JIT loading off. `local-embed` stays resident beside it. Whether
+   predictions, JIT loading off. `local-embed` stayed resident beside it until ADR 0018 removed the role. Whether
    `local-code` and `local-chat` survive as separate models is decision D1 in
    the plan; the recommendation is to collapse them into `local-big` so
    nothing ever evicts the agent model.
@@ -67,7 +67,7 @@ flowchart LR
         aider["aider / ask-*"]
         webui["Open WebUI"]
         sbx["sandboxed.sh agents<br/>egress: 127.0.0.1:1234 only"]
-        lms["LM Studio :1234<br/>local-big x3 slots<br/>local-embed<br/>token required"]
+        lms["LM Studio :1234<br/>local-big x3 slots<br/>token required"]
     end
     laptop["LAN laptop<br/>own token"]
     cloud["Gemini<br/>tool's own key"]

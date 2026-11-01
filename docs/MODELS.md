@@ -18,13 +18,13 @@ The LM Studio app 0.4.28 owns the server (D6). Machine-read copy:
 | Role | Model key | Source | Size | Load | Set | Why |
 |---|---|---|---|---|---|---|
 | `local-big` | `qwen/qwen3.6-35b-a3b` | `lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a` | 20.4 GB | 128K × 3 parallel, draft MTP | 2026-10-31 | Same base model as the Ollama-era agent; MLX 4-bit from lmstudio-community (quantisation may differ from the Ollama build). The only local chat/agent role (D1). Context raised from 64K the same day (ADR 0017): the model card asks for at least 128K so thinking holds. Native window is 262,144 |
-| `local-embed` | `text-embedding-nomic-embed-text-v1.5@f16` | `nomic-ai/nomic-embed-text-v1.5-GGUF` f16 @ `0188c9b`, sha256 `f7af6f66…` | 0.3 GB | 2K | 2026-10-31 | f16 to match the Ollama-era embeddings |
 | `cloud-cheap` | `gemini-3.6-flash` | Google, `ask-cloud` only | — | — | 2026-10-22 | 1M ctx, 65K output. ADR 0014 |
 
-**Resident set:** 20.7 GB idle at 128K × 3 plus `local-embed`, measured
-2026-10-31 right after reload (ADR 0017). The 64K concurrency-3 peak was
-29.7 GB (`bench/results/2026-10-31-phase1`); that bench was not re-run at
-128K. Both sit well under the ~48 GB ceiling, so the slot count stays 3.
+**Resident set:** 20.7 GB idle at 128K × 3 with `local-embed` still loaded,
+measured 2026-10-31 (ADR 0017). That role was removed 2026-11-01 (ADR 0018);
+its weights were 0.3 GB. The 64K concurrency-3 peak was 29.7 GB
+(`bench/results/2026-10-31-phase1`); that bench was not re-run at 128K.
+The slot count stays 3.
 
 `local-code` and `local-chat` were collapsed into `local-big` on 2026-10-31
 (D1). The Ollama weights were deleted the same day with the rest of the old
@@ -64,7 +64,7 @@ Frontier is cloud-only by necessity, which is what these roles are for.
 | `qwen3.6:35b-mlx` (Ollama) | `local-big` | 2026-10-31 | Same base model now served by LM Studio (lmstudio-community MLX 4-bit). ADR 0016 |
 | `qwen3-coder:30b` | `local-code` | 2026-10-31 | Role collapsed into `local-big` (D1). ADR 0016 |
 | `qwen3:8b` | `local-chat` | 2026-10-31 | Role collapsed into `local-big` (D1). ADR 0016 |
-| `nomic-embed-text` (Ollama) | `local-embed` | 2026-10-31 | Same model, f16 GGUF, now on LM Studio |
+| `nomic-embed-text` (Ollama, then LM Studio f16 GGUF) | `local-embed` | 2026-11-01 | Nothing called it. Healthcheck was the only request. ADR 0018 |
 | `gpt-oss:20b` | `local-big` | 2026-09-06 | Slower tool-smoke than the Qwen3.6 agent. ADR 0012, then 0013 |
 | `llama3.3:70b` | `local-big` | 2026-08-02 | 42 GB, could not stay resident. 440 s to first reply. ADR 0004 |
 | `qwen2.5-coder:32b` | `local-code` | 2026-08-02 | Superseded by the 30B MoE at the same size |
@@ -147,16 +147,15 @@ scripts/pin-digests.sh --check          # fast; preflight runs this
 scripts/pin-digests.sh --check --deep   # re-hash everything
 ```
 
-Recorded 2026-10-31. The embedding file's hash matches Hugging Face's
-published sha256 (`f7af6f66…`). This detects, it does not enforce — LM Studio
-loads whatever is on disk.
+Recorded 2026-10-31. This detects, it does not enforce — LM Studio loads
+whatever is on disk. The embedding pin was removed with the role (ADR 0018).
 
 ## Changing a role
 
 1. Download the candidate with an exact source: `lms get <hugging face URL> -y`
 2. Bench it against the incumbent: `scripts/concurrency-bench.sh` and
    `bench/tasks/` (rule 5). Same settings as the last baseline
-3. Check the footprint fits beside `local-embed` under the ~48 GB ceiling
+3. Check the footprint fits under the ~48 GB ceiling with `local-big` already resident
 4. Update this table and `config/roles.tsv` together, then `scripts/lms-load.sh`
    (which also refreshes Zed's labels via `scripts/zed-sync.sh`)
 5. `scripts/tool-smoke.sh openai http://127.0.0.1:1234/v1 local-big`

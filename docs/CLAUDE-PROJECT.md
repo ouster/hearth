@@ -42,10 +42,9 @@ is the only path that calls a cloud API, and it calls Gemini directly.
 
 Models are addressed by ROLE, never by vendor model name:
 
-  local-big               the only local chat and agent role
+  local-big               the only local model
   local-code              alias of local-big
   local-chat              alias of local-big
-  local-embed             embeddings
   cloud-cheap             Gemini, via ask-cloud only — bulk non-sensitive work
 
 cloud-code and cloud-frontier* are dormant: no keys.

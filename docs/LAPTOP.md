@@ -122,7 +122,7 @@ key works, the second that it can do nothing else.
 |---|---|
 | `ai-tunnel` | `tunnel: up` (the first run asks the person to confirm the host fingerprint) |
 | `ai-ping` | `up` |
-| `ai-models` | `local-big`, `local-embed` |
+| `ai-models` | `local-big` |
 | `ai-ask "say ok"` | a short reply from local-big |
 | `ssh hearth true; echo $?` | **non-zero**, no shell: the key is tunnel-only |
 | `ask-cloud` (optional) | aider on Gemini with the laptop's own key |

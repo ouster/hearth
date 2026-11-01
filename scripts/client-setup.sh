@@ -118,7 +118,7 @@ if [ "$WINDOWS" -eq 0 ]; then cat <<EOF
 4. ON THE LAPTOP — prove it:
      ai-tunnel        # ssh -f -N -L 1234 -L 3000 via the tunnel-only key
      ai-ping          # up / BAD TOKEN / NO ANSWER / DOWN
-     ai-models        # local-big, local-embed
+     ai-models        # local-big
      ask              # aider on local-big
      ask-cloud        # Gemini with the laptop's own key
      ai-webui         # the host's Open WebUI at http://127.0.0.1:3000

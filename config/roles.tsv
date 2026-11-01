@@ -10,5 +10,4 @@
 # draft: mtp → lms load --speculative-draft-mtp; "-" leaves it off.
 # Same weights, so the tokens are still the model's. Speeds decode, not prefill.
 local-big	lmstudio	qwen/qwen3.6-35b-a3b	131072	3	lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit	mtp
-local-embed	lmstudio	text-embedding-nomic-embed-text-v1.5@f16	2048	1	nomic-ai/nomic-embed-text-v1.5-GGUF/nomic-embed-text-v1.5.f16.gguf	-
 cloud-cheap	gemini	gemini-3.6-flash	-	-	-	-

@@ -25,8 +25,8 @@ Route to `local-*` roles (LM Studio, `:1234`), always:
 | Role | Use for | Reached by | State |
 |---|---|---|---|
 | `local-big` | everything local: code, agent, chat, long context | LM Studio `:1234` | live |
-| `local-embed` | embeddings for local RAG | LM Studio `:1234` | live |
 | `cloud-cheap` | bulk non-sensitive work, big context | `ask-cloud` → Gemini directly | live |
+| `local-embed` | — | — | removed 2026-11-01, nothing called it (ADR 0018) |
 | `local-code`, `local-chat` | — | alias names only; mean `local-big` (D1) | collapsed |
 | `cloud-code`, `cloud-frontier*` | — | — | dormant, no keys |
 

@@ -2,4 +2,3 @@
 # Written by scripts/pin-digests.sh (D4). Hash of the weights on disk
 # under ~/.lmstudio/models. Detects drift; does not enforce.
 local-big	qwen/qwen3.6-35b-a3b	lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit	15	20429174878	1793406921	e26e5ac44ab378917283d187930c9169894798b6402be5b9d4f2fc95fc2ab01e	2026-10-31
-local-embed	text-embedding-nomic-embed-text-v1.5@f16	nomic-ai/nomic-embed-text-v1.5-GGUF/nomic-embed-text-v1.5.f16.gguf	1	274290560	1793407655	f7af6f66802f4df86eda10fe9bbcfc75c39562bed48ef6ace719a251cf1c2fdb	2026-10-31
