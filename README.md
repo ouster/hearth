@@ -106,8 +106,6 @@ ask-cloud          # Gemini via GOOGLE_API_KEY — the only alias that leaves th
 # Server management
 ai-load            # scripts/lms-load.sh — load roles.tsv, report drift
 ai-loaded          # lms ps — list loaded models
-ai-deep-on         # swap local-deep in for local-main (Web UI, Zed and laptops then see it)
-ai-deep-off        # swap back to local-main
 ai-restart         # stop and start the server on 127.0.0.1:1234
 ai-log             # lms log stream
 ai-status          # scripts/status.sh

@@ -47,10 +47,10 @@ in for that session only (ADR 0020). It unloads `local-main` while it runs:
 beside a busy `local-main` the two passed the memory ceiling and `local-main`'s
 requests timed out. It is also in Zed's model picker, labelled "load first":
 with JIT off, a request to an unloaded role is answered by whatever is loaded,
-without saying so. To use it from Zed or Open WebUI, run
-`ai-deep-on` (`scripts/demand-load.sh local-deep up --evict`) on the host, and
-`ai-deep-off` when done (that brings `local-main` back). Open WebUI lists only
-loaded models, so refresh it after either. While it is swapped in, Zed's `local-main` slots are answered by
+without saying so. To use it from Zed, run
+`scripts/demand-load.sh local-deep up --evict` on the host, and
+`scripts/demand-load.sh local-deep down` when done (that brings `local-main`
+back). While it is swapped in, Zed's `local-main` slots are answered by
 `local-deep`.
 
 ### Switching mid-session

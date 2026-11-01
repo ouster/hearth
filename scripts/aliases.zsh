@@ -98,9 +98,5 @@ alias ai-status='"${HEARTH_ROOT}/scripts/status.sh"'
 alias ai-boot='"${HEARTH_ROOT}/scripts/boot.sh"'
 alias ai-load='"${HEARTH_ROOT}/scripts/lms-load.sh"'
 alias ai-loaded='"$HEARTH_LMS" ps'
-# Swap local-deep in for local-main (Web UI, Zed, laptops then see local-deep)
-# and back again (ADR 0020).
-alias ai-deep-on='"${HEARTH_ROOT}/scripts/demand-load.sh" local-deep up --evict'
-alias ai-deep-off='"${HEARTH_ROOT}/scripts/demand-load.sh" local-deep down'
 ai-restart() { "$HEARTH_LMS" server stop; hearth_server_start; }
 alias ai-log='"$HEARTH_LMS" log stream'
