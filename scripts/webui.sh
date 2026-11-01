@@ -87,8 +87,8 @@ case "$CMD" in
       -e ENABLE_OLLAMA_API=False \
       -e WEBUI_NAME="hearth" \
       -e ENABLE_SIGNUP=False \
-      -e TASK_MODEL_EXTERNAL="local-big" \
-      -e DEFAULT_MODELS="local-big" \
+      -e TASK_MODEL_EXTERNAL="local-main" \
+      -e DEFAULT_MODELS="local-main" \
       ${SEARCH_ENV[@]+"${SEARCH_ENV[@]}"} \
       -v "${VOLUME}:/app/backend/data" \
       "$IMAGE" >/dev/null
@@ -136,7 +136,7 @@ case "$CMD" in
       Key: the host token (LMSTUDIO_HOST_TOKEN)
     Delete any leftover :4000 or :11434 connection.
 
-  Default model and title/tag generation are local-big (D1): one resident
+  Default model and title/tag generation are local-main (D1): one resident
   model, so housekeeping never evicts anything.
 
   Two settings worth changing on first run:

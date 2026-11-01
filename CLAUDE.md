@@ -37,14 +37,14 @@ removed gateway — never suggest commands against it.
    Same discipline for MCP servers: client config docs (`docs/IDES.md`) and
    `docs/MCP.md`.
 
-   Live: `local-big` (LM Studio identifier, resident), `local-deep` (swapped in
-   instead of `local-big` for an `ask-deep` session, ADR 0020 — never call it
-   unless loaded, never load it beside `local-big`), `cloud-cheap`
+   Live: `local-main` (LM Studio identifier, resident), `local-deep` (swapped in
+   instead of `local-main` for an `ask-deep` session, ADR 0020 — never call it
+   unless loaded, never load it beside `local-main`), `cloud-cheap`
    (Gemini, `ask-cloud` only). `local-code` / `local-chat` are alias names that
-   mean `local-big` (D1). Dormant: `cloud-code`, `cloud-frontier*` — no keys.
+   mean `local-main` (D1). Dormant: `cloud-code`, `cloud-frontier*` — no keys.
 
 2. **LM Studio never holds a cloud model.** There is no router, so there are no
-   fallbacks; if `local-big` is down, fail loudly. No script adds a remote backend
+   fallbacks; if `local-main` is down, fail loudly. No script adds a remote backend
    to `config/roles.tsv` except as an explicit cloud row (`gemini` or another named
    cloud backend). A change that would let `:1234` reach a remote model is a bug.
 
@@ -69,7 +69,7 @@ removed gateway — never suggest commands against it.
    immutable. Re-record only after re-benching.
 
 7. **Check the RAM envelope.** 64 GB total, but macOS caps GPU-accessible memory at ~48 GB
-   (75% above 36 GB) — that is the real ceiling. `local-big` (ADR 0019) peaks at 25.2 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-01, footprint includes the app). Say when a suggestion will not fit, or
+   (75% above 36 GB) — that is the real ceiling. `local-main` (ADR 0019) peaks at 25.2 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-01, footprint includes the app). Say when a suggestion will not fit, or
    will evict something that needs to stay loaded — on this machine the resident
    set matters more than any one model's quality.
 

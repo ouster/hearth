@@ -20,7 +20,7 @@ fi
 export HEARTH_ROOT
 
 # LM Studio (the app owns the server, D6) on localhost — ADR 0016. Every local alias is
-# local-big (D1); there is no router, so a role name is an LM Studio
+# local-main (D1); there is no router, so a role name is an LM Studio
 # --identifier and nothing can fall back anywhere.
 HEARTH_LOCAL="${HEARTH_LOCAL:-http://127.0.0.1:1234/v1}"
 HEARTH_LMS="${HEARTH_LMS:-$HOME/.lmstudio/bin/lms}"
@@ -48,12 +48,12 @@ _aider_local() {
   local tok; tok="$(_hearth_var LMSTUDIO_HOST_TOKEN)" || return 1
   OPENAI_API_BASE="$HEARTH_LOCAL" \
   OPENAI_API_KEY="$tok" \
-  aider --model openai/local-big "$@"
+  aider --model openai/local-main "$@"
 }
 
 # --- local: stays on this machine, safe for client / sensitive work ---
 # ask-fast, ask-local, ask-chat, ask-big and ask-architect are kept as names
-# so muscle memory still works; they all mean local-big now (D1).
+# so muscle memory still works; they all mean local-main now (D1).
 alias ask='_aider_local'
 alias ask-fast='_aider_local'
 alias ask-local='_aider_local'
@@ -63,12 +63,12 @@ alias ask-architect='_aider_local'
 
 # Architect mode with the same model on both sides: the design step stays
 # visible, and nothing is evicted because there is only one model.
-ask-arch() { _aider_local --architect --editor-model openai/local-big "$@"; }
+ask-arch() { _aider_local --architect --editor-model openai/local-main "$@"; }
 
 # Slow, careful local model for hard one-off questions (ADR 0020). Still
-# local: safe for sensitive work. It swaps local-big out for the session —
-# Zed, aider and laptops have no local-big until you quit — because beside a
-# busy local-big it passed the memory ceiling and stalled local-big's agents.
+# local: safe for sensitive work. It swaps local-main out for the session —
+# Zed, aider and laptops have no local-main until you quit — because beside a
+# busy local-main it passed the memory ceiling and stalled local-main's agents.
 ask-deep() {
   local tok state rc
   tok="$(_hearth_var LMSTUDIO_HOST_TOKEN)" || return 1
@@ -87,7 +87,7 @@ ask-cloud() {
   id=$(awk -F'\t' '$1 == "cloud-cheap" && $2 == "gemini" {print $3; exit}' "${HEARTH_ROOT}/config/roles.tsv")
   [ -n "$id" ] || { echo "cloud-cheap missing from config/roles.tsv" >&2; return 1; }
   key="$(_hearth_var GOOGLE_API_KEY)" || return 1
-  # --weak-model too: ~/.aider.conf.yml says openai/local-big, which without
+  # --weak-model too: ~/.aider.conf.yml says openai/local-main, which without
   # OPENAI_API_BASE would send commit messages to api.openai.com.
   GEMINI_API_KEY="$key" aider --model "gemini/${id}" --weak-model "gemini/${id}" "$@"
 }

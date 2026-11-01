@@ -17,13 +17,13 @@ The LM Studio app 0.4.28 owns the server (D6). Machine-read copy:
 
 | Role | Model key | Source | Size | Load | Set | Why |
 |---|---|---|---|---|---|---|
-| `local-big` | `gemma-4-26b-a4b-it-qat-mlx` | `lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit` @ `aa5e2e5` | 15.6 GB | 128K × 3 parallel, no draft, **thinking on (app setting, below)** | 2026-11-01 | MoE, ~4B active, Google QAT 4-bit. Beat the Qwen3.6 build on `bench/tasks` 03 and matched it on 01/02/04 in fewer tokens; 40/40 valid tool calls under concurrency; ~15% slower prefill, 3–4.5 GB less memory. ADR 0019. Native window 262,144 |
+| `local-main` | `gemma-4-26b-a4b-it-qat-mlx` | `lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit` @ `aa5e2e5` | 15.6 GB | 128K × 3 parallel, no draft, **thinking on (app setting, below)** | 2026-11-01 | MoE, ~4B active, Google QAT 4-bit. Beat the Qwen3.6 build on `bench/tasks` 03 and matched it on 01/02/04 in fewer tokens; 40/40 valid tool calls under concurrency; ~15% slower prefill, 3–4.5 GB less memory. ADR 0019. Native window 262,144 |
 | `local-deep` | `qwen3.8-27b-mlx` | `lmstudio-community/Qwen3.8-27B-MLX-4bit` @ `6067b15` | 16.1 GB | 64K × 1, **on demand**: `ask-deep` swaps it in for `local-big` and back | 2026-11-01 | Dense 27B. Best `bench/tasks` 03 answer of the three benched; ~26 tok/s and 2.5–5.5× the tokens, so 10–24× slower than `local-big`. For hard one-off questions, never agent loops. Thinks by default (its template), no app setting needed. Beside a busy `local-big` both peaked at 49.9 GB, over the ceiling, and `local-big`'s requests timed out while it read a long prompt: so it is only ever loaded instead of `local-big` (`demand-load.sh … up --evict`). ADR 0020 (proposed) |
 | `cloud-cheap` | `gemini-3.6-flash` | Google, `ask-cloud` only | — | — | 2026-10-22 | 1M ctx, 65K output. ADR 0014 |
 
 **Resident set:** concurrency-3 peak 25.2 GB at 128K × 3, ~30K-token prompts
 (`bench/results/2026-11-01-gemma-concurrency`, footprint includes the app).
-The previous `local-big` peaked at 29.7 GB on the same bench.
+The previous model in this role peaked at 29.7 GB on the same bench.
 
 **Thinking is an LM Studio app setting, not repo state.** This build's chat
 template thinks only when `enable_thinking` is true, and nothing sets it: it
@@ -35,10 +35,10 @@ in the app, My Models → this model → settings → Inference:
 - Reasoning Section Parsing: on, start `<|channel>thought`, end `<channel|>`
 
 A reinstall or settings reset loses both. `scripts/healthcheck.sh` fails if
-`local-big` returns no `reasoning_content` or leaks those markers into the
+`local-main` returns no `reasoning_content` or leaks those markers into the
 answer. Without thinking it answered a simple change sum wrongly three times.
 
-`local-code` and `local-chat` were collapsed into `local-big` on 2026-10-31
+`local-code` and `local-chat` were collapsed into `local-big` (now `local-main`, ADR 0021) on 2026-10-31
 (D1). The Ollama weights were deleted the same day with the rest of the old
 stack.
 
@@ -70,7 +70,7 @@ Frontier is cloud-only by necessity, which is what these roles are for.
 
 | Model | Was | Removed | Why |
 |---|---|---|---|
-| `qwen/qwen3.6-35b-a3b` (`lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a`) | `local-big` | 2026-11-01 | Replaced by the 26B-A4B (ADR 0019). Weak on `bench/tasks` 03; 3 of 40 wrong-tool picks in phase 1 (0 of 40 at 128K). Weights kept on disk for rollback: `scripts/swap-role.sh local-big qwen/qwen3.6-35b-a3b lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit 131072 3 mtp` |
+| `qwen/qwen3.6-35b-a3b` (`lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a`) | `local-big` | 2026-11-01 | Replaced by the 26B-A4B (ADR 0019). Weak on `bench/tasks` 03; 3 of 40 wrong-tool picks in phase 1 (0 of 40 at 128K). Weights kept on disk for rollback: `scripts/swap-role.sh local-main qwen/qwen3.6-35b-a3b lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit 131072 3 mtp` |
 | `qwen3.6:35b-mlx` (Ollama) | `local-big` | 2026-10-31 | Same base model now served by LM Studio (lmstudio-community MLX 4-bit). ADR 0016 |
 | `qwen3-coder:30b` | `local-code` | 2026-10-31 | Role collapsed into `local-big` (D1). ADR 0016 |
 | `qwen3:8b` | `local-chat` | 2026-10-31 | Role collapsed into `local-big` (D1). ADR 0016 |
@@ -165,15 +165,15 @@ whatever is on disk. The embedding pin was removed with the role (ADR 0018).
 1. Download the candidate with an exact source: `lms get <hugging face URL> -y`
 2. Bench it against the incumbent: `scripts/concurrency-bench.sh` and
    `bench/tasks/` (rule 5). Same settings as the last baseline
-3. Check the footprint fits under the ~48 GB ceiling with `local-big` already resident
+3. Check the footprint fits under the ~48 GB ceiling with `local-main` already resident
 4. Update this table and `config/roles.tsv` together, then `scripts/lms-load.sh`
    (which also refreshes Zed's labels via `scripts/zed-sync.sh`)
-5. `scripts/tool-smoke.sh openai http://127.0.0.1:1234/v1 local-big`
+5. `scripts/tool-smoke.sh openai http://127.0.0.1:1234/v1 local-main`
 6. Write an ADR in `docs/decisions/` and a row in `docs/HISTORY.md`
 7. Delete the old weights only once the replacement has proven itself
 
 `scripts/swap-role.sh <role> <model key> <weights path> [ctx] [slots]` does
 steps 4–5 and reverts on failure; `scripts/bench.sh <model key>` loads a
 candidate as `bench-candidate` (`--evict` if it will not fit beside
-`local-big`); `scripts/pull-candidates.sh <url> …` sizes downloads against
+`local-main`); `scripts/pull-candidates.sh <url> …` sizes downloads against
 disk and the GPU ceiling.

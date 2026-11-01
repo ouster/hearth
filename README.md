@@ -16,11 +16,11 @@ aliases, IDE settings, and laptop configs means every upgrade is a scavenger
 hunt. This stack addresses **roles** instead:
 
 ```
-local-big   cloud-cheap
+local-main   cloud-cheap
 ```
 
 Each local role is an LM Studio `--identifier`, so clients ask for
-`local-big`, never a model. Concrete models live in exactly two files —
+`local-main`, never a model. Concrete models live in exactly two files —
 [`config/roles.tsv`](config/roles.tsv) and [`docs/MODELS.md`](docs/MODELS.md).
 
 ```mermaid
@@ -30,7 +30,7 @@ flowchart LR
         aider["aider / ask-*"]
         webui["Open WebUI :3000"]
         sbx["sandboxed.sh agents<br/>egress: 127.0.0.1:1234 only"]
-        lms["LM Studio 127.0.0.1:1234<br/>local-big x3 slots<br/>token required"]
+        lms["LM Studio 127.0.0.1:1234<br/>local-main x3 slots<br/>token required"]
     end
     laptop["Laptop<br/>own token, tunnel-only key"]
     cloud["Gemini<br/>tool's own key"]
@@ -57,7 +57,7 @@ flowchart LR
    provider key in the calling tool; only `ask-cloud` has one. Sandboxed agents
    can reach `127.0.0.1:1234` and nothing else (`scripts/sandbox-probe.sh`).
 2. **No silent route changes.** There is no router, so there is no fallback to
-   leak through. If `local-big` is down, requests fail.
+   leak through. If `local-main` is down, requests fail.
 3. **Nothing is claimed without being measured.** Role and serving changes get
    an ADR and a bench (`bench/results/`, committed).
 
@@ -96,10 +96,10 @@ Ops detail: [`docs/RUNBOOK.md`](docs/RUNBOOK.md). Architecture:
 ### On the host
 
 ```bash
-# Local models — all mean local-big (D1)
-ask                # aider with openai/local-big
+# Local models — all mean local-main (D1)
+ask                # aider with openai/local-main
 ask-big            # same
-ask-arch           # aider architect mode (two local-big sides)
+ask-arch           # aider architect mode (two local-main sides)
 ask-deep           # aider on local-deep: slow, careful, loaded for the session only (ADR 0020)
 ask-cloud          # Gemini via GOOGLE_API_KEY — the only alias that leaves the host
 
@@ -128,8 +128,8 @@ ai-models          # list models available through the tunnel
 
 # Asking
 ai-ask "question"  # one-shot question without aider
-ask                # local-big. ask-big / ask-local / ask-chat / ask-fast are the same
-ask-arch           # aider architect mode, local-big on both sides
+ask                # local-main. ask-big / ask-local / ask-chat / ask-fast are the same
+ask-arch           # aider architect mode, local-main on both sides
 ask-deep           # aider on local-deep — only while the host has it loaded
 ask-cloud          # Gemini via THIS machine's own key — the only cloud alias
 
@@ -170,7 +170,7 @@ The assistant does the plumbing (SSH key, `~/.ssh/config`, client script,
 shell rc) and the checks; you type the secrets and do the two host-side steps.
 Cursor can help with setup but **cannot use hearth as a model provider** — its
 servers make the model calls, so they would need the host exposed publicly.
-Use Zed or aider for `local-big` on the laptop.
+Use Zed or aider for `local-main` on the laptop.
 
 ### Changing this repo
 

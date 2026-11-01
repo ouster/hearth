@@ -3,11 +3,11 @@
 # report. LM Studio on :1234 (ADR 0016).
 #
 #   scripts/bench.sh                         every lmstudio LLM role in roles.tsv
-#   scripts/bench.sh local-big               a loaded role
+#   scripts/bench.sh local-main               a loaded role
 #   scripts/bench.sh <lms model key> ...     candidates (see `lms ls`)
 #   scripts/bench.sh --evict <key>           unload the roles first — for a
 #                                            candidate that will not fit beside
-#                                            local-big under the ~48 GB ceiling
+#                                            local-main under the ~48 GB ceiling
 #
 # JIT is off, so a candidate is loaded explicitly as `bench-candidate`
 # (64K context, 1 slot), benched, and unloaded; roles.tsv is restored with
@@ -49,7 +49,7 @@ else
 fi
 ROLE_NAMES=" $(hearth_resident_roles | cut -f1 | tr '\n' ' ') "
 # A demand role is usually unloaded, and JIT-off LM Studio would answer it
-# with local-big. Bench its model key instead (loaded as bench-candidate).
+# with local-main. Bench its model key instead (loaded as bench-candidate).
 for m in $MODELS; do
   if hearth_demand_roles | grep -qxF "$m"; then
     echo "could not run: ${m} is loaded on demand — pass its model key from roles.tsv instead"; exit 2
@@ -81,7 +81,7 @@ for model in $MODELS; do
       [ "$EVICT" -eq 1 ] && "$HEARTH_LMS" unload --all >/dev/null 2>&1
       # --parallel 1 explicitly: without it LM Studio loads 4 slots.
       if ! "$HEARTH_LMS" load "$model" --identifier bench-candidate -c 65536 --parallel 1 --gpu max -y </dev/null >/dev/null 2>&1; then
-        echo "SKIP ${model} — load failed (too big beside local-big? try --evict)"; continue
+        echo "SKIP ${model} — load failed (too big beside local-main? try --evict)"; continue
       fi
       target=bench-candidate ;;
   esac
@@ -212,7 +212,7 @@ Syntax checks prove a model emitted parseable code, nothing more.
 
 - **03-refactor-judgment** hides a float-for-currency bug in money
   arithmetic. A weak model fixes the obvious `range(len())` and misses the one
-  that matters. This is the task that should decide `local-big`.
+  that matters. This is the task that should decide `local-main`.
 - **04-long-context** feeds the repo's own docs in. It separates models that
   genuinely use long context from ones that skim the start and confabulate.
 

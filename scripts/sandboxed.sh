@@ -20,7 +20,7 @@
 #
 # Usage:
 #   scripts/sandboxed.sh aider
-#   scripts/sandboxed.sh --dir ~/dev/some-repo aider --model openai/local-big
+#   scripts/sandboxed.sh --dir ~/dev/some-repo aider --model openai/local-main
 #   scripts/sandboxed.sh --print-profile
 #
 set -eu

@@ -65,7 +65,7 @@ else
     $2 == "lmstudio" && $8 != "resident" && $8 != "demand" { print $1 ": load must be resident or demand" }
     $2 != "lmstudio" && $8 != "-" { print $1 ": load must be - on a cloud row" }
     $2 == "lmstudio" && $8 == "resident" { res++ }
-    END { if (n > 0 && res == 0) print "no resident lmstudio role — nothing would serve local-big" }
+    END { if (n > 0 && res == 0) print "no resident lmstudio role — nothing would serve local-main" }
     seen[$1]++ { print "duplicate role " $1 }
     $2 != "lmstudio" && $2 != "gemini" { print $1 ": backend \"" $2 "\" is not lmstudio or an explicit cloud backend (gemini)" }
     $2 == "lmstudio" && ($4 !~ /^[0-9]+$/ || $5 !~ /^[0-9]+$/) { print $1 ": ctx/slots must be integers" }
@@ -127,7 +127,7 @@ else
   [ "$v" = "127.0.0.1" ] && ok "bind ${v}" || bad "bind ${v:-?}, want 127.0.0.1 — scripts/boot.sh locks loopback (D8)"
   [ "$(hearth_server_setting port)" = "$HEARTH_PORT" ] && ok "port ${HEARTH_PORT}" || bad "port $(hearth_server_setting port), want ${HEARTH_PORT}"
   [ "$(hearth_server_setting cors)" = "false" ] && ok "CORS off" || bad "CORS on — any website you visit could call the server"
-  [ "$(hearth_server_setting justInTimeModelLoading)" = "false" ] && ok "JIT loading off" || bad "JIT loading on — an unlisted model could load and evict local-big"
+  [ "$(hearth_server_setting justInTimeModelLoading)" = "false" ] && ok "JIT loading off" || bad "JIT loading on — an unlisted model could load and evict local-main"
   [ "$(hearth_server_setting logSensitiveData)" = "false" ] && ok "sensitive-data logging off" || bad "logSensitiveData on — prompts are written to server logs"
   echo "        (Require Authentication is not in this file; healthcheck.sh proves it live.)"
 fi

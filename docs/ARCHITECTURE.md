@@ -16,7 +16,7 @@ flowchart TB
         scripts["scripts / benches"]
         webui["Open WebUI :3000<br/>(Podman)"]
         sbx["sandboxed.sh agents"]
-        lms["LM Studio 127.0.0.1:1234<br/>local-big: 128K x 3 parallel<br/>token required, JIT off"]
+        lms["LM Studio 127.0.0.1:1234<br/>local-main: 128K x 3 parallel<br/>token required, JIT off"]
     end
 
     laptop["Laptop<br/>SSH tunnel, own token"]
@@ -45,13 +45,13 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 
 | Role | Backend | What |
 |---|---|---|
-| `local-big` | LM Studio | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0019) |
-| `local-deep` | LM Studio | slower, more careful model for hard one-off questions. Swapped in **instead of** `local-big` for an `ask-deep` session, then swapped back; beside it, memory passed the ceiling and `local-big` timed out. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up --evict`) (ADR 0020, proposed) |
+| `local-main` | LM Studio | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0019) |
+| `local-deep` | LM Studio | slower, more careful model for hard one-off questions. Swapped in **instead of** `local-main` for an `ask-deep` session, then swapped back; beside it, memory passed the ceiling and `local-main` timed out. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up --evict`) (ADR 0020, proposed) |
 | `cloud-cheap` | Gemini | reached directly by `ask-cloud`; never loaded into LM Studio |
 
-`local-code` and `local-chat` were collapsed into `local-big` (D1): two heavy
+`local-code` and `local-chat` were collapsed into `local-main` (D1): two heavy
 models cannot both stay resident with 3 × 128K slots, and evicting the agent
-model was failure F2. The old alias names still work and mean `local-big`.
+model was failure F2. The old alias names still work and mean `local-main`.
 
 `scripts/lms-load.sh` makes the loaded set match `config/roles.tsv`: it
 unloads anything unlisted, loads each `lmstudio` row with
@@ -135,7 +135,7 @@ Exit 2 always means "could not run", never "found a problem".
 
 Known behaviour: with JIT off, LM Studio answers a request for an **unknown
 model name with the loaded LLM** rather than refusing. Nothing new loads (so
-nothing is evicted), but a typo'd model id silently gets `local-big`.
+nothing is evicted), but a typo'd model id silently gets `local-main`.
 `healthcheck.sh` reports it as a warning.
 
 ## Measured (2026-10-31)
@@ -153,7 +153,7 @@ memory, no evictions and no gateway hop, not concurrency.
 `bench/results/2026-10-31-phase0`, `…-phase1`. The live server is the LM
 Studio app (D6), loaded at 128K × 3 (ADR 0017). Those rows are the 64K
 measurement, not a claim that llmster is still running. The current
-`local-big` (ADR 0019) at 128K × 3: c1 TTFT p95 25.0 s, c3 total p95 75.2 s,
+`local-main` (ADR 0019) at 128K × 3: c1 TTFT p95 25.0 s, c3 total p95 75.2 s,
 peak 25.2 GB (`bench/results/2026-11-01-gemma-concurrency`).
 
 ## The second boundary: containment

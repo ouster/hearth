@@ -9,10 +9,10 @@
 # request for an unloaded role with whatever IS loaded, so `up` confirms the
 # role is really loaded before it returns 0.
 #
-# Memory guard, from the 2026-11-01 measurement (ADR 0020): beside local-big,
-# a ~30K-token prompt to this role grew its cache by ~8 GB while local-big's
+# Memory guard, from the 2026-11-01 measurement (ADR 0020): beside local-main,
+# a ~30K-token prompt to this role grew its cache by ~8 GB while local-main's
 # own three slots grew by ~8.4 GB, peaking at 49.9 GB — over the ~48 GB
-# ceiling, macOS swapped, and local-big's requests timed out while this role
+# ceiling, macOS swapped, and local-main's requests timed out while this role
 # read its prompt. So without --evict, `up` refuses when LM Studio's
 # footprint now + the weights + HEARTH_DEMAND_KV_GB (8) + HEARTH_RESIDENT_GROWTH_GB
 # (9) would pass 44 GB (4 GB headroom). With --evict only the first three count.
@@ -41,7 +41,7 @@ sys.exit(0 if any(m.get("identifier") == sys.argv[1] and m.get("modelKey") == sy
 
 if [ "$ACTION" = down ]; then
   "$HEARTH_LMS" unload "$ROLE" >/dev/null 2>&1 || { echo "unload ${ROLE} failed" >&2; exit 1; }
-  # Brings local-big back after --evict; a no-op when it never left.
+  # Brings local-main back after --evict; a no-op when it never left.
   "${ROOT}/scripts/lms-load.sh" >/dev/null 2>&1 || { echo "lms-load.sh failed — run it by hand" >&2; exit 1; }
   exit 0
 fi
@@ -57,15 +57,15 @@ print(next(("%.1f" % (m["sizeBytes"] / 1e9) for m in json.load(sys.stdin) if m.g
 [ -n "$size" ] || { echo "could not run: ${key} not downloaded" >&2; exit 2; }
 
 if [ "$EVICT" -eq 1 ]; then
-  echo "unloading resident roles for this session (Zed, aider and laptops have no local-big until down)…" >&2
+  echo "unloading resident roles for this session (Zed, aider and laptops have no local-main until down)…" >&2
   for r in $(hearth_resident_roles | cut -f1); do "$HEARTH_LMS" unload "$r" >/dev/null 2>&1; done
   GROWTH_GB=0
 fi
 
 used=$(hearth_footprint_gb)
 if awk -v u="$used" -v s="$size" -v k="$KV_GB" -v g="$GROWTH_GB" -v l="$LIMIT_GB" 'BEGIN {exit !(u + s + k + g > l)}'; then
-  echo "not loading ${ROLE}: LM Studio uses ${used} GB; + ${size} GB weights + ${KV_GB} GB cache + ${GROWTH_GB} GB for local-big under load would pass ${LIMIT_GB} GB (~48 GB ceiling, 4 GB headroom)." >&2
-  echo "Use --evict to unload local-big for the session (ask-deep always does)." >&2
+  echo "not loading ${ROLE}: LM Studio uses ${used} GB; + ${size} GB weights + ${KV_GB} GB cache + ${GROWTH_GB} GB for local-main under load would pass ${LIMIT_GB} GB (~48 GB ceiling, 4 GB headroom)." >&2
+  echo "Use --evict to unload local-main for the session (ask-deep always does)." >&2
   exit 1
 fi
 

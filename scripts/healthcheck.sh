@@ -113,7 +113,7 @@ elif any(t in c for t in ("<think>", "</think>", "<|channel>", "<channel|>")): p
   done <<EOF
 $(hearth_resident_roles)
 EOF
-  # Calling an unloaded demand role would be answered by local-big (JIT off).
+  # Calling an unloaded demand role would be answered by local-main (JIT off).
   for r in $(hearth_demand_roles); do
     echo "        ${r}: loaded on demand by ask-deep — not called here"
   done

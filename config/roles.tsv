@@ -11,6 +11,6 @@
 # Same weights, so the tokens are still the model's. Speeds decode, not prefill.
 # load: resident → scripts/lms-load.sh keeps it loaded; demand → loaded only
 # by ask-deep or scripts/demand-load.sh (ADR 0020); skipped by healthcheck and bench.
-local-big	lmstudio	gemma-4-26b-a4b-it-qat-mlx	131072	3	lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit	-	resident
+local-main	lmstudio	gemma-4-26b-a4b-it-qat-mlx	131072	3	lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit	-	resident
 local-deep	lmstudio	qwen3.8-27b-mlx	65536	1	lmstudio-community/Qwen3.8-27B-MLX-4bit	-	demand
 cloud-cheap	gemini	gemini-3.6-flash	-	-	-	-	-

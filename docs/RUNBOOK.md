@@ -10,7 +10,7 @@ Start, stop, diagnose. The LM Studio app serving `127.0.0.1:1234`, ADR 0016
 |---|---|---|
 | LM Studio app | `/Applications/LM Studio.app` | owns the daemon and `~/.lmstudio`. "Enable Local LLM Service (headless)" on. Never run llmster as well |
 | Server | `127.0.0.1:1234` | `lms server start --bind 127.0.0.1 -p 1234` |
-| Roles | `config/roles.tsv` → `scripts/lms-load.sh` | `local-big` 128K × 3 parallel |
+| Roles | `config/roles.tsv` → `scripts/lms-load.sh` | `local-main` 128K × 3 parallel |
 | Token | `~/.config/hearth/env`, mode 600 | `LMSTUDIO_HOST_TOKEN`, created in the app |
 | Server settings | `~/.lmstudio/.internal/http-server-config.json` | edited through the app; auth/tokens are stored elsewhere |
 | Remote Login (sshd) | `:22` | laptops' tunnel; their keys are `restrict`ed to `-L` `:1234`/`:3000`, with `-R` denied |
@@ -141,7 +141,7 @@ a fresh database, so after the cutover the saved OpenAI connection may still
 point at `:4000`. If the model list is empty: Admin Panel → Settings →
 Connections → OpenAI API, URL `http://host.containers.internal:1234/v1`, key
 = the host token, and delete any `:4000` / `:11434` entry. Default and task
-model are `local-big`.
+model are `local-main`.
 
 ### Using the chat UI from a laptop
 
@@ -212,13 +212,13 @@ repo it was invited into. Commit first; `git diff` before accepting.
 | Slow under load | `concurrency-bench.sh` at the failing settings | prefill is serialised at any `--parallel`; see `docs/ARCHITECTURE.md` |
 | Zed agent stalls | `scripts/diagnose.sh`, `ai-log`, bench | capture all three **before** changing anything |
 | Server LAN-visible or CORS on | `ai-status`, `ai-health` | `scripts/boot.sh` restarts it on 127.0.0.1 without CORS |
-| aider errors naming `ollama_chat/…` or `local-code` | an old `.aider.conf.yml` in the repo dir | roles are `openai/local-big` now |
+| aider errors naming `ollama_chat/…` or `local-code` | an old `.aider.conf.yml` in the repo dir | roles are `openai/local-main` now |
 
 Bench any change the same way as the baseline:
 
 ```bash
 scripts/concurrency-bench.sh --base-url http://127.0.0.1:1234/v1 \
-  --token-env LMSTUDIO_HOST_TOKEN --model local-big --concurrency 3 \
+  --token-env LMSTUDIO_HOST_TOKEN --model local-main --concurrency 3 \
   --proc-match '(\.lmstudio/|LM Studio)'
 ```
 

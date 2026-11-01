@@ -24,10 +24,10 @@ Route to `local-*` roles (LM Studio, `:1234`), always:
 
 | Role | Use for | Reached by | State |
 |---|---|---|---|
-| `local-big` | everything local: code, agent, chat, long context | LM Studio `:1234` | live |
+| `local-main` | everything local: code, agent, chat, long context | LM Studio `:1234` | live |
 | `cloud-cheap` | bulk non-sensitive work, big context | `ask-cloud` → Gemini directly | live |
 | `local-embed` | — | — | removed 2026-11-01, nothing called it (ADR 0018) |
-| `local-code`, `local-chat` | — | alias names only; mean `local-big` (D1) | collapsed |
+| `local-code`, `local-chat` | — | alias names only; mean `local-main` (D1) | collapsed |
 | `cloud-code`, `cloud-frontier*` | — | — | dormant, no keys |
 
 ## Enforcement
@@ -77,7 +77,7 @@ to AustLII.
 
 ## No fallbacks
 
-There is no router, so nothing can quietly reroute a request. If `local-big`
+There is no router, so nothing can quietly reroute a request. If `local-main`
 is down, requests fail — that is the intended behaviour. The earlier rule
 ("local roles never fall back to cloud") existed because the inherited gateway
 had `local → gemini` fallbacks; see `docs/HISTORY.md`.

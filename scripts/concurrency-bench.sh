@@ -3,7 +3,7 @@
 # See docs/MIGRATION-LMSTUDIO.md phase 0 and bench/concurrency.py.
 #
 #   scripts/concurrency-bench.sh --base-url http://127.0.0.1:1234/v1 \
-#       --token-env LMSTUDIO_HOST_TOKEN --model local-big --concurrency 3
+#       --token-env LMSTUDIO_HOST_TOKEN --model local-main --concurrency 3
 #
 # Options (defaults): --concurrency 3, --rounds 10, --prompt-tokens 30000,
 #   --timeout 180, --proc-match '(\.lmstudio/|LM Studio)', --out <auto>,

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Write each LM Studio role's label and context into Zed's settings, from
-# config/roles.tsv + `lms ls`. Clients still call the role (`local-big`);
+# config/roles.tsv + `lms ls`. Clients still call the role (`local-main`);
 # only the label shown in Zed's model picker names the model, and it is
 # regenerated whenever roles change, so it cannot go stale.
 #
@@ -28,7 +28,7 @@ ls_json=$("$HEARTH_LMS" ls --json 2>/dev/null) || { echo "could not run: lms ls 
 
 # Program on stdin (heredoc), data in argv — never both on stdin.
 # A demand role's label says to load it first: picking it in Zed while it is
-# unloaded is answered by local-big without saying so (JIT off).
+# unloaded is answered by local-main without saying so (JIT off).
 /usr/bin/python3 -I - "$ZED" "$CHECK" "$ls_json" "$(hearth_roles lmstudio)" "$(hearth_demand_roles)" <<'PY'
 import json, re, shutil, sys
 zed, check, ls_json, roles_tsv = sys.argv[1], sys.argv[2] == "1", sys.argv[3], sys.argv[4]

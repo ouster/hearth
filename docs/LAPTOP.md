@@ -122,11 +122,11 @@ key works, the second that it can do nothing else.
 |---|---|
 | `ai-tunnel` | `tunnel: up` (the first run asks the person to confirm the host fingerprint) |
 | `ai-ping` | `up` |
-| `ai-models` | `local-big` (plus `local-deep` only while the host has it loaded) |
-| `ai-ask "say ok"` | a short reply from local-big |
+| `ai-models` | `local-main` (plus `local-deep` only while the host has it loaded) |
+| `ai-ask "say ok"` | a short reply from local-main |
 | `ssh hearth true; echo $?` | **non-zero**, no shell: the key is tunnel-only |
 | `ask-cloud` (optional) | aider on Gemini with the laptop's own key |
-| `ask-deep` (optional) | refuses with "not loaded on the host" unless the host ran `scripts/demand-load.sh local-deep up --evict`; the laptop cannot load it (tunnel-only key). While it is loaded the host has no `local-big`, and `local-big` requests are answered by `local-deep` |
+| `ask-deep` (optional) | refuses with "not loaded on the host" unless the host ran `scripts/demand-load.sh local-deep up --evict`; the laptop cannot load it (tunnel-only key). While it is loaded the host has no `local-main`, and `local-main` requests are answered by `local-deep` |
 
 If `ai-ping` says `BAD TOKEN`, the person re-runs the `read -rs` step with
 the right token; `NO ANSWER` means the host is asleep or LM Studio is down
@@ -141,7 +141,7 @@ with the laptop's token entered through Zed's UI by the person.
 the model call, not the laptop, so a `localhost` base URL never reaches the
 tunnel; the only workaround is a public endpoint, which the *Never* list
 forbids, and prompts would still pass through Cursor's servers (checked
-2026-10-31). Use Zed, aider or `ask` for local-big on the laptop; Cursor
+2026-10-31). Use Zed, aider or `ask` for local-main on the laptop; Cursor
 with its own models only, and not on sensitive repos.
 
 ## Zed on the laptop
@@ -155,12 +155,12 @@ Same provider as the host, through the tunnel:
       "hearth": {
         "api_url": "http://127.0.0.1:1234/v1",
         "available_models": [
-          { "name": "local-big", "display_name": "local-big", "max_tokens": 131072 }
+          { "name": "local-main", "display_name": "local-main", "max_tokens": 131072 }
         ]
       }
     }
   },
-  "agent": { "default_model": { "provider": "hearth", "model": "local-big" } }
+  "agent": { "default_model": { "provider": "hearth", "model": "local-main" } }
 }
 ```
 
@@ -169,7 +169,7 @@ Token through the UI (Agent panel → settings → `hearth` → API key): the
 models show as unavailable.
 
 A Gemini provider **is allowed on the laptop** (D3), with the laptop's own
-key. The host has none. Keep sensitive repos on `hearth/local-big`.
+key. The host has none. Keep sensitive repos on `hearth/local-main`.
 
 Copy the Write/Research profile block from `docs/IDES.md` too if the laptop
 uses auslaw: the same "Write enables every server" trap applies.
