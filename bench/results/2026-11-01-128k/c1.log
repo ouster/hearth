@@ -1,0 +1,36 @@
+round 1 slot 0: status=200 ttft=21.084 total=21.686 tool_ok=1 finish=tool_calls 
+round 2 slot 0: status=200 ttft=20.562 total=21.169 tool_ok=1 finish=tool_calls 
+round 3 slot 0: status=200 ttft=20.454 total=21.126 tool_ok=1 finish=tool_calls 
+round 4 slot 0: status=200 ttft=20.58 total=21.219 tool_ok=1 finish=tool_calls 
+round 5 slot 0: status=200 ttft=21.016 total=21.686 tool_ok=1 finish=tool_calls 
+round 6 slot 0: status=200 ttft=21.765 total=22.46 tool_ok=1 finish=tool_calls 
+round 7 slot 0: status=200 ttft=21.33 total=21.96 tool_ok=1 finish=tool_calls 
+round 8 slot 0: status=200 ttft=21.274 total=21.911 tool_ok=1 finish=tool_calls 
+round 9 slot 0: status=200 ttft=21.287 total=21.992 tool_ok=1 finish=tool_calls 
+round 10 slot 0: status=200 ttft=21.712 total=22.429 tool_ok=1 finish=tool_calls 
+# Concurrency bench — 128K re-baseline, LM Studio app, 3 slots x 128K, c1
+
+| | |
+|---|---|
+| Base URL | `http://127.0.0.1:1234/v1` |
+| Role | `local-big` |
+| Concurrency × rounds | 1 × 10 = 10 requests |
+| Target prompt tokens | 30000 (actual median 29869) |
+| Client timeout | 180 s |
+| Run | 2026-11-01T10:39:02 → 2026-11-01T10:42:39 (218 s wall) |
+| Footprint process match | `(\.lmstudio/|LM Studio)` |
+
+## Result
+
+| Metric | Value |
+|---|---|
+| Valid `read_file` tool calls | 10 / 10 |
+| Timeouts (client, 180 s) | 0 |
+| HTTP errors | 0 |
+| Other failures (bad/no tool call, stream error) | 0 |
+| TTFB p50 / p95 | 21.1 s / 21.8 s |
+| TTFT p50 / p95 (requests that produced a token) | 21.1 s / 21.8 s |
+| Total time p50 / p95 (successful) | 21.7 s / 22.5 s |
+| Peak footprint (sum of matched processes) | 26.7 GB |
+
+Raw: `raw.tsv`, `footprint.tsv`.
