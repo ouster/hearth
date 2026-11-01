@@ -36,6 +36,7 @@ redacted (billing/invoice substituted); figures are unchanged.
 | 2026-11-01 | Draft MTP on for `local-big` | Same weights. Speeds decode, not the prefill wait. `lms load` accepted the flag; the server log does not name the drafter, and `lms ps` cannot show it | Flag set | — |
 | 2026-11-01 | Drop `local-embed` | Nothing requested embeddings except healthcheck. Weights stay on disk, unloaded | Removed | ADR 0018 |
 | 2026-11-01 | `local-big` c3 re-run at 128K; then 1 slot vs 3 | 128K costs nothing over 64K at ~30K prompts (29.7 GB peak). 1 slot: median finish 48 s vs 63 s, but p95 72 s vs 66 s and 12% less throughput | Kept 3 slots | `2026-11-01-128k` |
+| 2026-11-01 | Notify when a prompt is trimmed to fit the context window | The server drops the middle and still returns a normal reply, so an agent thread repeats work it can no longer see | Notification names the role, prompt size, and tokens dropped. The turn still runs | `scripts/context-watch.sh` |
 
 ## Roles
 

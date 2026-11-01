@@ -3,7 +3,8 @@
 # settings a server-like Mac wants.
 #
 #   scripts/install-autostart.sh --check    # default: report, change nothing
-#   scripts/install-autostart.sh --apply    # write + load the launchd agent
+#   scripts/install-autostart.sh --apply    # write + load both launchd agents
+#   scripts/install-autostart.sh --watch    # load only the context-trim watcher
 #   scripts/install-autostart.sh --remove
 #
 # The agent runs scripts/boot.sh once at login (RunAtLoad, no KeepAlive):
@@ -20,6 +21,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LABEL="$(ai_boot_label)"
 PLIST="$HOME/Library/LaunchAgents/${LABEL}.plist"
 LOG="$HOME/Library/Logs/hearth-boot.log"
+WATCH_LABEL="com.hearth.context-watch"
+WATCH_PLIST="$HOME/Library/LaunchAgents/${WATCH_LABEL}.plist"
+WATCH_LOG="$HOME/Library/Logs/hearth-context-watch.log"
 DOMAIN="gui/$(id -u)"
 MODE="${1:---check}"
 
@@ -58,6 +62,46 @@ write_plist() {
 EOF
 }
 
+write_watch_plist() {
+  cat > "$WATCH_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${WATCH_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${ROOT}/scripts/context-watch.sh</string>
+  </array>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>${WATCH_LOG}</string>
+  <key>StandardErrorPath</key>
+  <string>${WATCH_LOG}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+</dict>
+</plist>
+EOF
+}
+
+load_watch() {
+  mkdir -p "$(dirname "$WATCH_PLIST")" "$(dirname "$WATCH_LOG")"
+  write_watch_plist
+  plutil -lint "$WATCH_PLIST" >/dev/null || { echo "FAIL: context-watch plist does not lint"; return 1; }
+  launchctl bootout "${DOMAIN}/${WATCH_LABEL}" >/dev/null 2>&1 || true
+  launchctl bootstrap "$DOMAIN" "$WATCH_PLIST" || { echo "FAIL: launchctl bootstrap ${WATCH_LABEL}"; return 1; }
+  echo "installed ${WATCH_LABEL} — notifies when a prompt is trimmed (the turn still runs)"
+}
+
 print_sleep_advice() {
   cat <<'EOF'
 
@@ -82,13 +126,19 @@ case "$MODE" in
     else
       echo "FAIL: launchctl bootstrap"; exit 1
     fi
+    load_watch || exit 1
     print_sleep_advice
+    exec "$0" --check
+    ;;
+  --watch)
+    load_watch || exit 1
     exec "$0" --check
     ;;
   --remove)
     launchctl bootout "${DOMAIN}/${LABEL}" >/dev/null 2>&1 || true
-    rm -f "$PLIST"
-    echo "removed ${LABEL}"
+    launchctl bootout "${DOMAIN}/${WATCH_LABEL}" >/dev/null 2>&1 || true
+    rm -f "$PLIST" "$WATCH_PLIST"
+    echo "removed ${LABEL} and ${WATCH_LABEL}"
     ;;
   --check)
     rc=0
@@ -110,8 +160,19 @@ case "$MODE" in
     else
       echo "FAIL  not loaded"; rc=1
     fi
+    if [ -f "$WATCH_PLIST" ] && plutil -lint "$WATCH_PLIST" >/dev/null 2>&1 \
+       && grep -q "${ROOT}/scripts/context-watch.sh" "$WATCH_PLIST"; then
+      echo "OK    plist ${WATCH_PLIST}"
+    else
+      echo "FAIL  no valid context-watch plist (--apply)"; rc=1
+    fi
+    if launchctl print "${DOMAIN}/${WATCH_LABEL}" >/dev/null 2>&1; then
+      echo "OK    ${WATCH_LABEL} loaded"
+    else
+      echo "FAIL  ${WATCH_LABEL} not loaded"; rc=1
+    fi
     [ -f "$LOG" ] && { echo "--- last lines of ${LOG}"; tail -5 "$LOG"; }
     exit "$rc"
     ;;
-  *) echo "usage: $0 [--check|--apply|--remove]"; exit 2 ;;
+  *) echo "usage: $0 [--check|--apply|--watch|--remove]"; exit 2 ;;
 esac

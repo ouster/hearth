@@ -89,6 +89,13 @@ SearXNG died minutes after login (seen and reproduced 2026-10-31).
 Log: `~/Library/Logs/hearth-boot.log`. Check it with
 `scripts/install-autostart.sh --check`. By hand: `scripts/boot.sh`.
 
+The same install loads `com.hearth.context-watch` (`scripts/context-watch.sh`,
+KeepAlive). When LM Studio trims the middle of a prompt to fit the context
+window, a notification names the role, the prompt size, and how many tokens
+were dropped. The turn still runs. `scripts/install-autostart.sh --watch`
+loads only that agent. Notices also land in
+`~/Library/Logs/hearth-context-watch.log`.
+
 ### Sleep
 
 A sleeping host means every laptop loses inference. These are printed, not

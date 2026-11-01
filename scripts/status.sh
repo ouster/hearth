@@ -54,4 +54,8 @@ fi
 
 echo
 echo "Autostart"
-"${ROOT}/scripts/install-autostart.sh" --check >/dev/null 2>&1 && g "$(ai_boot_label) loaded" || y "$(ai_boot_label) not installed (scripts/install-autostart.sh --apply)"
+"${ROOT}/scripts/install-autostart.sh" --check >/dev/null 2>&1 && g "login agents loaded" || y "autostart incomplete — scripts/install-autostart.sh --check"
+last_trim="$HOME/Library/Logs/hearth-context-watch.log"
+if [ -f "$last_trim" ] && [ -s "$last_trim" ]; then
+  y "last context trim: $(tail -1 "$last_trim")"
+fi
