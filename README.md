@@ -137,7 +137,9 @@ ask-cloud          # Gemini via THIS machine's own key — the only cloud alias
 ai-webui           # open host's Open WebUI (http://127.0.0.1:3000)
 ```
 
-Editors (aider + Zed): [`docs/IDES.md`](docs/IDES.md).
+Editors (aider + Zed): [`docs/IDES.md`](docs/IDES.md). Zed compacts an
+agent thread at 80,000 tokens, before the 128K window fills and LM Studio
+drops the middle of the prompt. `/compact` does it by hand.
 
 ## Laptops
 
