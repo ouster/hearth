@@ -142,10 +142,10 @@ Editors (aider + Zed): [`docs/IDES.md`](docs/IDES.md).
 ## Laptops
 
 SSH tunnel only — the server never listens on the LAN. Each laptop gets its
-own LM Studio token and an SSH key that can forward to `:1234` / `:3000` and
+own LM Studio token and an SSH key that can forward to `:1234` / `:3000` / `:8888` and
 nothing else. `scripts/client-setup.sh <laptop-name>` prints the steps;
 details in [`docs/LAPTOP.md`](docs/LAPTOP.md). Never port-forward `:22`,
-`:1234` or `:3000`.
+`:1234`, `:3000` or `:8888`.
 
 ## Using an AI assistant with this repo
 

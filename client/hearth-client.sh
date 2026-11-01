@@ -15,6 +15,8 @@
 # Optional:
 #   HEARTH_LOCAL_PORT   local end of the tunnel (default 1234)
 #   HEARTH_WEBUI_PORT   local end for Open WebUI (default 3000)
+#   HEARTH_SEARXNG_PORT local end for the host's SearXNG (default 8888; 0 skips
+#                       it). For a SearXNG MCP server on this laptop (ADR 0022).
 #
 # Secrets (files, mode 600 — never exported into this shell):
 #   ~/.hearth-key         this machine's LM Studio token (laptop-<name>)
@@ -36,6 +38,7 @@ fi
 
 HEARTH_LOCAL_PORT="${HEARTH_LOCAL_PORT:-1234}"
 HEARTH_WEBUI_PORT="${HEARTH_WEBUI_PORT:-3000}"
+HEARTH_SEARXNG_PORT="${HEARTH_SEARXNG_PORT:-8888}"
 HEARTH_URL="http://127.0.0.1:${HEARTH_LOCAL_PORT}/v1"
 
 # Read a secret file without exporting it. Refuses a world-readable file.
@@ -64,13 +67,25 @@ ai-tunnel() {
     echo "tunnel: already listening on 127.0.0.1:${HEARTH_LOCAL_PORT}"
     return 0
   fi
-  # ExitOnForwardFailure: fail loudly instead of a half-open tunnel.
+  # ExitOnForwardFailure: fail loudly instead of a half-open tunnel — so a
+  # local port already in use fails the whole tunnel. HEARTH_SEARXNG_PORT=0
+  # leaves SearXNG out.
+  # "$@" splits the same way in bash and zsh; an unquoted ${x:+...} does not.
+  _sxmsg=""
+  if [ "${HEARTH_SEARXNG_PORT}" != "0" ]; then
+    set -- -L "127.0.0.1:${HEARTH_SEARXNG_PORT}:127.0.0.1:8888"
+    _sxmsg=", SearXNG → 127.0.0.1:${HEARTH_SEARXNG_PORT}"
+  else
+    set --
+  fi
   ssh -f -N \
     -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
     -L "127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" \
     -L "127.0.0.1:${HEARTH_WEBUI_PORT}:127.0.0.1:3000" \
+    "$@" \
     "$HEARTH_SSH" \
-    && echo "tunnel: up (LM Studio → 127.0.0.1:${HEARTH_LOCAL_PORT}, WebUI → 127.0.0.1:${HEARTH_WEBUI_PORT})"
+    && echo "tunnel: up (LM Studio → 127.0.0.1:${HEARTH_LOCAL_PORT}, WebUI → 127.0.0.1:${HEARTH_WEBUI_PORT}${_sxmsg})"
+  _rc=$?; unset _sxmsg; return $_rc
 }
 
 ai-tunnel-stop() {

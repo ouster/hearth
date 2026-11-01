@@ -6,6 +6,9 @@
 #   scripts/client-setup.sh <laptop-name> --authorize <pub>  # add the laptop's
 #                                                            # tunnel-only key
 #   scripts/client-setup.sh <laptop-name> --install user@laptop  # scp the client
+#   scripts/client-setup.sh --update-keys    # bring every hearth-tunnel-* line in
+#                                            # authorized_keys to the current
+#                                            # restriction (backup kept)
 #
 # The host stays bound to 127.0.0.1 (ADR 0016, phase 4 decision: tunnel only).
 # Each laptop gets:
@@ -13,8 +16,9 @@
 #     machine without touching the others;
 #   - its own SSH key, authorized here with `restrict` + permitopen + a
 #     permitlisten that matches nothing, so that key can forward to
-#     127.0.0.1:1234 and :3000 and do nothing else — no shell, no -R, no
-#     other ports;
+#     127.0.0.1:1234 (LM Studio), :3000 (Open WebUI) and :8888 (SearXNG, for a
+#     laptop's SearXNG MCP — ADR 0022) and do nothing else — no shell, no -R,
+#     no other ports;
 #   - its own Google API key for ask-cloud. The host's key never leaves.
 #
 # Exit 0 ok, 1 failed, 2 could not run.
@@ -23,8 +27,39 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
 
+AK="$HOME/.ssh/authorized_keys"
+# permitlisten="none:1" is an allowlist entry that no real -R request matches
+# (sshd compares the listen host literally; clients send localhost or
+# 127.0.0.1). Port 0 is rejected as "invalid permission port" on OpenSSH 10.5,
+# so the dummy port is 1. permitopen limits -L only. Without permitlisten,
+# port-forwarding re-enables remote forwards.
+RESTRICT='command="/usr/bin/false",restrict,port-forwarding,permitopen="127.0.0.1:1234",permitopen="127.0.0.1:3000",permitopen="127.0.0.1:8888",permitlisten="none:1"'
+TUNNEL_PREFIX='command="/usr/bin/false",restrict,port-forwarding,'
+
+# ---------------------------------------------------------------- --update-keys
+# Rewrites only lines whose comment is hearth-tunnel-<name> and whose options
+# are an older tunnel restriction. Options never contain spaces, so the fields
+# are: options, key type, key, comment. The keys are never printed.
+if [ "${1:-}" = "--update-keys" ]; then
+  [ -f "$AK" ] || { echo "could not run: no ${AK}"; exit 2; }
+  n=$(awk -v r="$RESTRICT" -v p="$TUNNEL_PREFIX" '$4 ~ /^hearth-tunnel-/ && index($1, p) == 1 && $1 != r {c++} END {print c+0}' "$AK")
+  total=$(awk '$4 ~ /^hearth-tunnel-/ {c++} END {print c+0}' "$AK")
+  if [ "$n" -eq 0 ]; then
+    echo "all ${total} hearth-tunnel key(s) already have the current restriction"; exit 0
+  fi
+  cp -p "$AK" "${AK}.bak-$(date +%Y%m%d%H%M%S)"
+  awk -v r="$RESTRICT" -v p="$TUNNEL_PREFIX" '
+    $4 ~ /^hearth-tunnel-/ && index($1, p) == 1 && $1 != r { print r " " $2 " " $3 " " $4; next }
+    { print }' "$AK" > "${AK}.tmp" && mv "${AK}.tmp" "$AK"
+  chmod 600 "$AK"
+  left=$(awk -v r="$RESTRICT" '$4 ~ /^hearth-tunnel-/ && $1 != r {c++} END {print c+0}' "$AK")
+  echo "updated ${n} of ${total} hearth-tunnel key(s) (backup kept); ${left} still differ"
+  [ "$left" -eq 0 ] || exit 1
+  exit 0
+fi
+
 NAME="${1:-}"; shift || true
-case "$NAME" in ''|-*) sed -n '2,9p' "$0"; exit 2 ;; esac
+case "$NAME" in ''|-*) sed -n '2,12p' "$0"; exit 2 ;; esac
 case "$NAME" in *[!A-Za-z0-9_-]*) echo "laptop name: letters, digits, - and _ only"; exit 2 ;; esac
 WINDOWS=0; AUTH=""; INSTALL=""
 while [ $# -gt 0 ]; do
@@ -39,13 +74,6 @@ done
 HOSTNAME_LOCAL="$(scutil --get LocalHostName 2>/dev/null || hostname -s).local"
 USER_NAME="$(id -un)"
 CLOUD_MODEL=$(hearth_roles gemini | awk -F'\t' '$1 == "cloud-cheap" {print $3; exit}')
-AK="$HOME/.ssh/authorized_keys"
-# permitlisten="none:1" is an allowlist entry that no real -R request matches
-# (sshd compares the listen host literally; clients send localhost or
-# 127.0.0.1). Port 0 is rejected as "invalid permission port" on OpenSSH 10.5,
-# so the dummy port is 1. permitopen limits -L only. Without permitlisten,
-# port-forwarding re-enables remote forwards.
-RESTRICT='command="/usr/bin/false",restrict,port-forwarding,permitopen="127.0.0.1:1234",permitopen="127.0.0.1:3000",permitlisten="none:1"'
 
 # ---------------------------------------------------------------- --authorize
 if [ -n "$AUTH" ]; then
@@ -54,21 +82,21 @@ if [ -n "$AUTH" ]; then
   keybody=$(printf '%s' "$pub" | awk '{print $1" "$2}')
   mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"; touch "$AK"; chmod 600 "$AK"
   if grep -qF "$keybody" "$AK"; then
-    if grep -F "$keybody" "$AK" | grep -q 'permitlisten="none:1"'; then
-      echo "already authorized (tunnel-only) for ${NAME}"; exit 0
+    if grep -F "$keybody" "$AK" | grep -qF "$RESTRICT "; then
+      echo "already authorized (tunnel-only, current restriction) for ${NAME}"; exit 0
     fi
-    if grep -F "$keybody" "$AK" | grep -q 'restrict,port-forwarding,permitopen'; then
+    if grep -F "$keybody" "$AK" | grep -qF "$TUNNEL_PREFIX"; then
       cp -p "$AK" "${AK}.bak-$(date +%Y%m%d%H%M%S)"
       # Rewrite options on the matching line. Do not print the key.
       awk -v body="$keybody" -v restrict="$RESTRICT" -v name="$NAME" '
-        index($0, body) && $0 !~ /permitlisten="none:1"/ {
+        index($0, body) && index($0, restrict " ") != 1 {
           print restrict " " body " hearth-tunnel-" name
           next
         }
         { print }
       ' "$AK" > "${AK}.tmp" && mv "${AK}.tmp" "$AK"
       chmod 600 "$AK"
-      echo "updated ${NAME} to tunnel-only (remote forwards denied; backup kept)"
+      echo "updated ${NAME} to the current tunnel-only restriction (backup kept)"
       exit 0
     fi
     echo "REFUSING: that key is already in ${AK} WITHOUT restrictions (full shell)."
@@ -78,7 +106,7 @@ if [ -n "$AUTH" ]; then
   cp -p "$AK" "${AK}.bak-$(date +%Y%m%d%H%M%S)"
   printf '%s %s hearth-tunnel-%s\n' "$RESTRICT" "$keybody" "$NAME" >> "$AK"
   echo "authorized tunnel-only key for ${NAME} in ${AK} (backup kept)"
-  echo "  can forward to 127.0.0.1:1234 and 127.0.0.1:3000; no shell, no commands, no other ports"
+  echo "  can forward to 127.0.0.1:1234, :3000 and :8888; no shell, no commands, no other ports"
   exit 0
 fi
 
@@ -116,7 +144,7 @@ if [ "$WINDOWS" -eq 0 ]; then cat <<EOF
      printf 'export HEARTH_SSH=hearth\nexport HEARTH_CLOUD_MODEL=%s\nsource ~/.hearth-client.sh\n' ${CLOUD_MODEL} >> ~/.zshrc   # or ~/.bashrc
 
 4. ON THE LAPTOP — prove it:
-     ai-tunnel        # ssh -f -N -L 1234 -L 3000 via the tunnel-only key
+     ai-tunnel        # ssh -f -N -L 1234 -L 3000 -L 8888 via the tunnel-only key
      ai-ping          # up / BAD TOKEN / NO ANSWER / DOWN
      ai-models        # local-main
      ask              # aider on local-main

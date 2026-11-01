@@ -13,7 +13,7 @@ Start, stop, diagnose. The LM Studio app serving `127.0.0.1:1234`, ADR 0016
 | Roles | `config/roles.tsv` → `scripts/lms-load.sh` | `local-main` 128K × 3 parallel |
 | Token | `~/.config/hearth/env`, mode 600 | `LMSTUDIO_HOST_TOKEN`, created in the app |
 | Server settings | `~/.lmstudio/.internal/http-server-config.json` | edited through the app; auth/tokens are stored elsewhere |
-| Remote Login (sshd) | `:22` | laptops' tunnel; their keys are `restrict`ed to `-L` `:1234`/`:3000`, with `-R` denied |
+| Remote Login (sshd) | `:22` | laptops' tunnel; their keys are `restrict`ed to `-L` `:1234`/`:3000`/`:8888`, with `-R` denied (`scripts/client-setup.sh --update-keys` brings old keys up to date) |
 | Open WebUI | Podman, `127.0.0.1:3000` | `scripts/webui.sh` |
 | SearXNG | Podman, `:8888` | `scripts/searxng.sh` |
 

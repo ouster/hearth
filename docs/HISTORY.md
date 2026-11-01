@@ -56,3 +56,4 @@ redacted (billing/invoice substituted); figures are unchanged.
 | 2026-11-01 | Rename `local-big` to `local-main` | Size no longer described it (26B resident, 27B on demand); `local-code` rejected as a retired name | Renamed | ADR 0021 |
 | 2026-11-01 | Snyk monitoring of the WebUI and SearXNG images | No manifests in the repo; the containers are the third-party code | Kept, re-run on `up` | `scripts/snyk-monitor.sh` |
 | 2026-11-01 | SearXNG MCP server for the Zed agent, `web` profile | ~12 candidates vetted; one passed. Search only; URL reader off and refuses private addresses | Kept | ADR 0022 |
+| 2026-11-01 | Tunnel keys also forward `:8888` (SearXNG) for laptops | Throwaway sshd: `:8888`/`:1234` forward; commands, `:22`, `-R` refused. Existing key widened in place | Kept | ADR 0022 |

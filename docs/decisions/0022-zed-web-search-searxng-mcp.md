@@ -32,6 +32,11 @@ maintainer, frequent releases, and no server-side tool allow-list.
   `scripts/snyk-monitor.sh mcp-searxng`.
 - It depends on Homebrew's Node (`/opt/homebrew/bin/node`, ≥ 22), installed as
   a dependency of the Snyk CLI. Removing that breaks the server.
+- Amended the same day: laptop tunnel keys also allow `-L` to
+  `127.0.0.1:8888` so a laptop's Zed can use the host's SearXNG the same way
+  (`scripts/client-setup.sh --update-keys` widened existing keys, backup
+  kept). Checked against a throwaway sshd: `:8888` and `:1234` forward;
+  commands, `:22` and `-R` are refused.
 - Tested 2026-11-01 over stdio: search returned results via the local
   SearXNG; `web_url_read` refused `127.0.0.1:1234` and `localhost:8888`; no
   listening port.

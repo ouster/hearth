@@ -25,6 +25,8 @@ if (-not $env:HEARTH_SSH) {
 
 $script:HearthLocalPort = if ($env:HEARTH_LOCAL_PORT) { $env:HEARTH_LOCAL_PORT } else { "1234" }
 $script:HearthWebuiPort = if ($env:HEARTH_WEBUI_PORT) { $env:HEARTH_WEBUI_PORT } else { "3000" }
+# Host's SearXNG, for a SearXNG MCP server on this laptop (ADR 0022). "0" skips it.
+$script:HearthSearxngPort = if ($env:HEARTH_SEARXNG_PORT) { $env:HEARTH_SEARXNG_PORT } else { "8888" }
 $script:HearthUrl = "http://127.0.0.1:$($script:HearthLocalPort)/v1"
 
 function Get-HearthSecret([string]$Name) {
@@ -56,11 +58,12 @@ function Test-HearthTunnel {
 
 function ai-tunnel {
     if (Test-HearthTunnel) { Write-Host "tunnel: already listening on 127.0.0.1:$($script:HearthLocalPort)"; return }
-    Start-Process -WindowStyle Hidden ssh -ArgumentList @(
+    $sshArgs = @(
         "-N", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30",
         "-L", "127.0.0.1:$($script:HearthLocalPort):127.0.0.1:1234",
-        "-L", "127.0.0.1:$($script:HearthWebuiPort):127.0.0.1:3000",
-        $env:HEARTH_SSH)
+        "-L", "127.0.0.1:$($script:HearthWebuiPort):127.0.0.1:3000")
+    if ($script:HearthSearxngPort -ne "0") { $sshArgs += @("-L", "127.0.0.1:$($script:HearthSearxngPort):127.0.0.1:8888") }
+    Start-Process -WindowStyle Hidden ssh -ArgumentList ($sshArgs + @($env:HEARTH_SSH))
     Start-Sleep -Seconds 3
     if (Test-HearthTunnel) { Write-Host "tunnel: up" } else { Write-Host "tunnel: FAILED — try: ssh $env:HEARTH_SSH" -ForegroundColor Red }
 }

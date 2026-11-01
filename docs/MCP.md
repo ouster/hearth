@@ -105,6 +105,10 @@ Host Zed, `web` profile only. That profile has read-only file tools (no edit,
 no terminal), so text from search results has nothing to act with. Not for
 client work: rule 3, and `docs/ROUTING.md` (web search punctures the boundary).
 
+Laptops may run the same pinned server against the host's SearXNG through
+the tunnel (`127.0.0.1:8888` on the laptop; tunnel keys allow `:8888` since
+2026-11-01), same `web`-profile-only rule — `docs/LAPTOP.md`.
+
 ## Rules these enforce
 
 **Off by default.** Zed's built-in Write profile enables every context server
