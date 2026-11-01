@@ -1,4 +1,4 @@
 # role	model_key	weights	files	bytes	newest_mtime	sha256	recorded
 # Written by scripts/pin-digests.sh (D4). Hash of the weights on disk
 # under ~/.lmstudio/models. Detects drift; does not enforce.
-local-big	qwen/qwen3.6-35b-a3b	lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit	15	20429174878	1793406921	e26e5ac44ab378917283d187930c9169894798b6402be5b9d4f2fc95fc2ab01e	2026-10-31
+local-big	gemma-4-26b-a4b-it-qat-mlx	lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit	10	15641259740	1793497374	709524c5d10355225b489d50399def6b7ba96222e3ecf5f44dd4026d63eceeb9	2026-11-01

@@ -151,7 +151,9 @@ decode, so all three requests in a round finish together. The wins are
 memory, no evictions and no gateway hop, not concurrency.
 `bench/results/2026-10-31-phase0`, `…-phase1`. The live server is the LM
 Studio app (D6), loaded at 128K × 3 (ADR 0017). Those rows are the 64K
-measurement, not a claim that llmster is still running.
+measurement, not a claim that llmster is still running. The current
+`local-big` (ADR 0019) at 128K × 3: c1 TTFT p95 25.0 s, c3 total p95 75.2 s,
+peak 25.2 GB (`bench/results/2026-11-01-gemma-concurrency`).
 
 ## The second boundary: containment
 

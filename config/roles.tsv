@@ -2,12 +2,12 @@
 # allowed to name concrete models (the other is docs/MODELS.md).
 # model_key is the modelKey from `lms ls --json`, with @variant when a model
 # has several quantisations on disk. ctx and slots are per load;
-# slots > 1 becomes `lms load --parallel`. Read by scripts/lms-load.sh.
+# slots becomes `lms load --parallel` for chat models. Read by scripts/lms-load.sh.
 # weights is the path under ~/.lmstudio/models that scripts/pin-digests.sh
 # hashes (D4); `lms ls` reports a catalogue key, not the folder on disk.
 #
 # role	backend	model_key	ctx	slots	weights	draft
 # draft: mtp → lms load --speculative-draft-mtp; "-" leaves it off.
 # Same weights, so the tokens are still the model's. Speeds decode, not prefill.
-local-big	lmstudio	qwen/qwen3.6-35b-a3b	131072	3	lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit	mtp
+local-big	lmstudio	gemma-4-26b-a4b-it-qat-mlx	131072	3	lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit	-
 cloud-cheap	gemini	gemini-3.6-flash	-	-	-	-

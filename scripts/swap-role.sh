@@ -1,7 +1,7 @@
 #!/bin/bash
 # Repoint an LM Studio role at a different model, safely.
 #
-#   scripts/swap-role.sh <role> <lms model key> <weights path> [ctx] [slots]
+#   scripts/swap-role.sh <role> <lms model key> <weights path> [ctx] [slots] [draft]
 #
 #   e.g. scripts/swap-role.sh local-big <key from `lms ls`> <dir under ~/.lmstudio/models>
 #
@@ -9,7 +9,9 @@
 # script does the mechanical part and reverts on failure:
 #
 #   1. the key is downloaded and the weights path exists
-#   2. config/roles.tsv row rewritten (ctx/slots kept unless given)
+#   2. config/roles.tsv row rewritten (ctx/slots kept unless given; draft is
+#      kept only for the same model — an MTP drafter belongs to its model —
+#      and reset to "-" for a new one unless given)
 #   3. scripts/lms-load.sh reloads, then re-reads lms ps
 #   4. tool-smoke passes against the role (chat roles only)
 #
@@ -24,7 +26,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ai_load_env
 ROLES="${ROOT}/config/roles.tsv"
 
-ROLE="${1:-}"; KEY="${2:-}"; W="${3:-}"; CTX="${4:-}"; SLOTS="${5:-}"
+ROLE="${1:-}"; KEY="${2:-}"; W="${3:-}"; CTX="${4:-}"; SLOTS="${5:-}"; DRAFT="${6:-}"
 [ -n "$ROLE" ] && [ -n "$KEY" ] && [ -n "$W" ] || { sed -n '2,4p' "$0"; exit 2; }
 hearth_lms_ok || { echo "could not run: LM Studio not running"; exit 2; }
 
@@ -33,11 +35,17 @@ row=$(hearth_roles lmstudio | awk -F'\t' -v r="$ROLE" '$1 == r')
 old_key=$(printf '%s' "$row" | cut -f3)
 [ -n "$CTX" ]   || CTX=$(printf '%s' "$row" | cut -f4)
 [ -n "$SLOTS" ] || SLOTS=$(printf '%s' "$row" | cut -f5)
+old_draft=$(awk -F'\t' -v r="$ROLE" '!/^[[:space:]]*#/ && $1 == r {print $7; exit}' "$ROLES")
+if [ -z "$DRAFT" ]; then
+  if [ "$KEY" = "$old_key" ]; then DRAFT="${old_draft:--}"; else DRAFT="-"; fi
+fi
+case "$DRAFT" in mtp|-) ;; *) echo "could not run: draft must be mtp or -"; exit 2 ;; esac
 
 "$HEARTH_LMS" ls --json 2>/dev/null | grep -qF "\"${KEY}\"" || { echo "could not run: ${KEY} not downloaded (lms get <url> -y)"; exit 2; }
 [ -e "$HOME/.lmstudio/models/${W}" ] || { echo "could not run: weights ${W} not under ~/.lmstudio/models"; exit 2; }
 [ "$KEY" = "$old_key" ] && [ "$CTX" = "$(printf '%s' "$row" | cut -f4)" ] && [ "$SLOTS" = "$(printf '%s' "$row" | cut -f5)" ] \
-  && { echo "nothing to do: ${ROLE} is already ${KEY} ctx ${CTX} slots ${SLOTS}"; exit 0; }
+  && [ "$DRAFT" = "$old_draft" ] \
+  && { echo "nothing to do: ${ROLE} is already ${KEY} ctx ${CTX} slots ${SLOTS} draft ${DRAFT}"; exit 0; }
 
 BACKUP=$(mktemp)
 cp "$ROLES" "$BACKUP"
@@ -49,9 +57,9 @@ revert() {
   exit 1
 }
 
-awk -F'\t' -v OFS='\t' -v r="$ROLE" -v k="$KEY" -v c="$CTX" -v s="$SLOTS" -v w="$W" \
-  '/^[[:space:]]*#/ || $1 != r {print; next} {$3=k; $4=c; $5=s; $6=w; print}' "$BACKUP" > "$ROLES"
-echo "roles.tsv: ${ROLE} ${old_key} → ${KEY} (ctx ${CTX}, ${SLOTS} slot(s))"
+awk -F'\t' -v OFS='\t' -v r="$ROLE" -v k="$KEY" -v c="$CTX" -v s="$SLOTS" -v w="$W" -v d="$DRAFT" \
+  '/^[[:space:]]*#/ || $1 != r {print; next} {$3=k; $4=c; $5=s; $6=w; $7=d; print}' "$BACKUP" > "$ROLES"
+echo "roles.tsv: ${ROLE} ${old_key} → ${KEY} (ctx ${CTX}, ${SLOTS} slot(s), draft ${DRAFT})"
 
 echo "loading…"
 "${ROOT}/scripts/lms-load.sh" || revert

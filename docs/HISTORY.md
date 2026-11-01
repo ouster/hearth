@@ -35,6 +35,7 @@ redacted (billing/invoice substituted); figures are unchanged.
 | 2026-10-31 | `local-big` context raised to 128K, still 3 slots | Model card asks for ≥128K so thinking holds. Reload honored 131072 (not 262144). Idle footprint 20.7 GB; c3 bench not re-run | Kept | ADR 0017 |
 | 2026-11-01 | Draft MTP on for `local-big` | Same weights. Speeds decode, not the prefill wait. `lms load` accepted the flag; the server log does not name the drafter, and `lms ps` cannot show it | Flag set | — |
 | 2026-11-01 | Drop `local-embed` | Nothing requested embeddings except healthcheck. Weights stay on disk, unloaded | Removed | ADR 0018 |
+| 2026-11-01 | `local-big` c3 re-run at 128K; then 1 slot vs 3 | 128K costs nothing over 64K at ~30K prompts (29.7 GB peak). 1 slot: median finish 48 s vs 63 s, but p95 72 s vs 66 s and 12% less throughput | Kept 3 slots | `2026-11-01-128k` |
 
 ## Roles
 
@@ -48,3 +49,6 @@ redacted (billing/invoice substituted); figures are unchanged.
 | 2026-09-06 | 20B reasoning model as `local-big` | Slower tool smoke than the MLX agent model | Retired | ADR 0012 |
 | 2026-10-22 | `cloud-cheap` on a newer Flash tier | Thinks by default; tiny caps return empty | Kept, reasoning advertised | ADR 0014 |
 | 2026-10-31 | Collapse `local-code` / `local-chat` into `local-big` (D1) | Decided; avoids evicting the agent model | Phase 1 onward | ADR 0016 |
+| 2026-11-01 | 27B dense model as `local-big` candidate | Best `bench/tasks` 03 answer, but ~26 tok/s and 2.5–5.5× the tokens: 10–24× the wall time | Not adopted as `local-big` | `2026-11-01-1140` |
+| 2026-11-01 | 26B-A4B MoE (QAT) as `local-big`, thinking off | Fast, but task 04 dropped two keys; a simple sum wrong 3 times | Thinking turned on in the app | `2026-11-01-1243` |
+| 2026-11-01 | Same, thinking on | All four tasks correct, 12–64 s each; 40/40 tool calls; ~15% slower prefill, 25.2 GB c3 peak | Became `local-big` | ADR 0019, `2026-11-01-1307`, `2026-11-01-gemma-concurrency` |

@@ -9,7 +9,8 @@
 #
 #   1. server answers; the host token works (positive control)
 #   2. no token → 401, wrong token → 401
-#   3. each lmstudio role in config/roles.tsv answers a real request
+#   3. each lmstudio role in config/roles.tsv answers a real request, and each
+#      chat role thinks with its reasoning parsed out of the answer
 #   4. what is actually listening on :1234, and only LM Studio
 #   5. LAN: no answer — laptops use the SSH tunnel (D8). Any LAN answer fails.
 #   6. CORS: no Access-Control-Allow-Origin for a foreign Origin
@@ -88,6 +89,23 @@ if [ "$SERVER_OK" -eq 1 ]; then
         c=$(post /chat/completions "{\"model\":\"${role}\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the word ok.\"}]}" 120)
         if [ "$c" = "200" ] && /usr/bin/python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); m=d["choices"][0]["message"]; assert (m.get("content") or m.get("reasoning_content"))' "$TMPD/out" 2>/dev/null; then
           ok "${role}: chat completion returned"
+          # Thinking can depend on settings held in the LM Studio app, not the
+          # repo (docs/MODELS.md). A reset turns it off silently, so prove it.
+          c=$(post /chat/completions "{\"model\":\"${role}\",\"max_tokens\":3000,\"messages\":[{\"role\":\"user\",\"content\":\"Pens are 3 for \$2.10 and notebooks \$1.35 each. 7 pens and 4 notebooks, paid with \$20. Change? Amount only.\"}]}" 300)
+          why=$(/usr/bin/python3 -I -c '
+import json, sys
+m = json.load(open(sys.argv[1]))["choices"][0]["message"]
+c = m.get("content") or ""
+if not (m.get("reasoning_content") or "").strip(): print("no reasoning_content")
+elif any(t in c for t in ("<think>", "</think>", "<|channel>", "<channel|>")): print("thinking markers in the answer")
+' "$TMPD/out" 2>/dev/null || echo "unreadable reply")
+          if [ "$c" != "200" ]; then
+            bad "${role}: thinking probe → ${c}"
+          elif [ -n "$why" ]; then
+            bad "${role}: thinking off or unparsed (${why}) — LM Studio per-model settings, docs/MODELS.md"
+          else
+            ok "${role}: thinks, and reasoning is parsed out of the answer"
+          fi
         else
           bad "${role}: chat → ${c} $(head -c 160 "$TMPD/out" 2>/dev/null)"
         fi ;;
