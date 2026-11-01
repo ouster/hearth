@@ -49,15 +49,37 @@ function Get-HearthSecret([string]$Name) {
     (Get-Content -LiteralPath $f -Raw).Trim()
 }
 
-function Test-HearthTunnel {
+function Test-HearthPort([int]$Port) {
     try {
         $c = New-Object System.Net.Sockets.TcpClient
-        $c.Connect("127.0.0.1", [int]$script:HearthLocalPort); $c.Close(); return $true
+        $c.Connect("127.0.0.1", $Port); $c.Close(); return $true
     } catch { return $false }
 }
 
+function Test-HearthTunnel {
+    Test-HearthPort ([int]$script:HearthLocalPort)
+}
+
+function Test-HearthForwards {
+    if (-not (Test-HearthPort ([int]$script:HearthLocalPort))) { return $false }
+    if (-not (Test-HearthPort ([int]$script:HearthWebuiPort))) { return $false }
+    if ($script:HearthSearxngPort -ne "0" -and -not (Test-HearthPort ([int]$script:HearthSearxngPort))) { return $false }
+    return $true
+}
+
 function ai-tunnel {
-    if (Test-HearthTunnel) { Write-Host "tunnel: already listening on 127.0.0.1:$($script:HearthLocalPort)"; return }
+    if (Test-HearthPort ([int]$script:HearthLocalPort)) {
+        if (Test-HearthForwards) {
+            Write-Host "tunnel: already listening on 127.0.0.1:$($script:HearthLocalPort)"
+            return $true
+        }
+        $missing = @()
+        if (-not (Test-HearthPort ([int]$script:HearthWebuiPort))) { $missing += "WebUI $($script:HearthWebuiPort)" }
+        if ($script:HearthSearxngPort -ne "0" -and -not (Test-HearthPort ([int]$script:HearthSearxngPort))) { $missing += "SearXNG $($script:HearthSearxngPort)" }
+        Write-Host "tunnel: 127.0.0.1:$($script:HearthLocalPort) is open but a forward is missing ($($missing -join ', '))." -ForegroundColor Red
+        Write-Host "        Run: ai-tunnel-stop; ai-tunnel" -ForegroundColor Red
+        return $false
+    }
     $sshArgs = @(
         "-N", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=30",
         "-L", "127.0.0.1:$($script:HearthLocalPort):127.0.0.1:1234",
@@ -65,7 +87,9 @@ function ai-tunnel {
     if ($script:HearthSearxngPort -ne "0") { $sshArgs += @("-L", "127.0.0.1:$($script:HearthSearxngPort):127.0.0.1:8888") }
     Start-Process -WindowStyle Hidden ssh -ArgumentList ($sshArgs + @($env:HEARTH_SSH))
     Start-Sleep -Seconds 3
-    if (Test-HearthTunnel) { Write-Host "tunnel: up" } else { Write-Host "tunnel: FAILED — try: ssh $env:HEARTH_SSH" -ForegroundColor Red }
+    if (Test-HearthForwards) { Write-Host "tunnel: up"; return $true }
+    Write-Host "tunnel: FAILED — try: ssh $env:HEARTH_SSH" -ForegroundColor Red
+    return $false
 }
 
 function ai-tunnel-stop {
@@ -104,14 +128,14 @@ function ai-ask {
 }
 
 function ai-webui {
-    if (-not (Test-HearthTunnel)) { ai-tunnel }
+    if (-not (Test-HearthForwards)) { if (-not (ai-tunnel)) { return } }
     Start-Process "http://127.0.0.1:$($script:HearthWebuiPort)"
 }
 
 # aider: token set only for the child process, then removed.
 function Invoke-HearthAider {
     $k = Get-HearthSecret ".hearth-key"; if (-not $k) { return }
-    if (-not (Test-HearthTunnel)) { ai-tunnel }
+    if (-not (Test-HearthForwards)) { if (-not (ai-tunnel)) { return } }
     $env:OPENAI_API_BASE = $script:HearthUrl; $env:OPENAI_API_KEY = $k
     try { aider --model openai/local-main --weak-model openai/local-main @args }
     finally { Remove-Item Env:OPENAI_API_KEY, Env:OPENAI_API_BASE -ErrorAction SilentlyContinue }
@@ -126,14 +150,14 @@ function ask-arch  { Invoke-HearthAider --architect --editor-model openai/local-
 # would be answered by local-main without saying so, so refuse unless listed.
 function ask-deep {
     $k = Get-HearthSecret ".hearth-key"; if (-not $k) { return }
-    if (-not (Test-HearthTunnel)) { ai-tunnel }
+    if (-not (Test-HearthForwards)) { if (-not (ai-tunnel)) { return } }
     $ids = (Invoke-RestMethod -TimeoutSec 8 -Uri "$($script:HearthUrl)/models" -Headers @{ Authorization = "Bearer $k" }).data.id
     if ($ids -notcontains "local-deep") {
         Write-Host "local-deep is not loaded on the host. On the host: scripts/demand-load.sh local-deep up --evict (swaps out local-main; ... down brings it back)" -ForegroundColor Yellow
         return
     }
     $env:OPENAI_API_BASE = $script:HearthUrl; $env:OPENAI_API_KEY = $k
-    try { aider --model openai/local-deep --weak-model openai/local-main @args }
+    try { aider --model openai/local-deep --weak-model openai/local-deep @args }
     finally { Remove-Item Env:OPENAI_API_KEY, Env:OPENAI_API_BASE -ErrorAction SilentlyContinue }
 }
 

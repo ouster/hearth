@@ -52,20 +52,48 @@ _hearth_secret() {
   tr -d '\r\n' < "$_f"
 }
 
-_hearth_tunnel_up() {
-  # A listener on the local port is not proof the tunnel works, but no
-  # listener is proof it does not.
+_hearth_port_open() {
+  _p="$1"
   if command -v nc >/dev/null 2>&1; then
-    nc -z 127.0.0.1 "$HEARTH_LOCAL_PORT" >/dev/null 2>&1
+    nc -z 127.0.0.1 "$_p" >/dev/null 2>&1
   else
-    curl -s -m 2 -o /dev/null "http://127.0.0.1:${HEARTH_LOCAL_PORT}/" >/dev/null 2>&1
+    curl -s -m 2 -o /dev/null "http://127.0.0.1:${_p}/" >/dev/null 2>&1
   fi
 }
 
+_hearth_tunnel_up() {
+  # A listener on the local port is not proof the tunnel works, but no
+  # listener is proof it does not.
+  _hearth_port_open "$HEARTH_LOCAL_PORT"
+}
+
+# Every forward this client asked for, not just LM Studio. An old ssh that
+# only has :1234 must not look like a finished tunnel.
+_hearth_forwards_open() {
+  _hearth_port_open "$HEARTH_LOCAL_PORT" || return 1
+  _hearth_port_open "$HEARTH_WEBUI_PORT" || return 1
+  if [ "${HEARTH_SEARXNG_PORT}" != "0" ]; then
+    _hearth_port_open "$HEARTH_SEARXNG_PORT" || return 1
+  fi
+  return 0
+}
+
 ai-tunnel() {
-  if _hearth_tunnel_up; then
-    echo "tunnel: already listening on 127.0.0.1:${HEARTH_LOCAL_PORT}"
-    return 0
+  if _hearth_port_open "$HEARTH_LOCAL_PORT"; then
+    if _hearth_forwards_open; then
+      echo "tunnel: already listening on 127.0.0.1:${HEARTH_LOCAL_PORT}"
+      return 0
+    fi
+    _miss=""
+    _hearth_port_open "$HEARTH_WEBUI_PORT" || _miss="WebUI ${HEARTH_WEBUI_PORT}"
+    if [ "${HEARTH_SEARXNG_PORT}" != "0" ] && ! _hearth_port_open "$HEARTH_SEARXNG_PORT"; then
+      [ -n "$_miss" ] && _miss="${_miss}, "
+      _miss="${_miss}SearXNG ${HEARTH_SEARXNG_PORT}"
+    fi
+    echo "tunnel: 127.0.0.1:${HEARTH_LOCAL_PORT} is open but a forward is missing (${_miss:-one of its ports})." >&2
+    echo "        Run: ai-tunnel-stop && ai-tunnel" >&2
+    echo "        If that does not clear it, something else is listening on ${HEARTH_LOCAL_PORT}." >&2
+    return 1
   fi
   # ExitOnForwardFailure: fail loudly instead of a half-open tunnel — so a
   # local port already in use fails the whole tunnel. HEARTH_SEARXNG_PORT=0
@@ -148,7 +176,7 @@ print((d["choices"][0]["message"].get("content") or "").strip())'
 }
 
 ai-webui() {
-  _hearth_tunnel_up || ai-tunnel || return 1
+  _hearth_forwards_open || ai-tunnel || return 1
   _u="http://127.0.0.1:${HEARTH_WEBUI_PORT}"
   echo "Open WebUI: ${_u}  (the host's instance — same login and history)"
   command -v open >/dev/null 2>&1 && open "$_u" || { command -v xdg-open >/dev/null 2>&1 && xdg-open "$_u" >/dev/null 2>&1; }
@@ -160,7 +188,7 @@ ai-webui() {
 # local-main (D1); clients call roles, never models.
 _hearth_aider() {
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
-  _hearth_tunnel_up || ai-tunnel || { unset _k; return 1; }
+  _hearth_forwards_open || ai-tunnel || { unset _k; return 1; }
   OPENAI_API_BASE="$HEARTH_URL" OPENAI_API_KEY="$_k" \
     aider --model openai/local-main --weak-model openai/local-main "$@"
   _rc=$?; unset _k; return $_rc
@@ -177,7 +205,7 @@ ask-arch() { _hearth_aider --architect --editor-model openai/local-main "$@"; }
 # answered by local-main without saying so, so refuse unless it is listed.
 ask-deep() {
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
-  _hearth_tunnel_up || ai-tunnel || { unset _k; return 1; }
+  _hearth_forwards_open || ai-tunnel || { unset _k; return 1; }
   if ! printf 'header = "Authorization: Bearer %s"\n' "$_k" \
        | curl -s -m 8 -K - "${HEARTH_URL}/models" \
        | python3 -c 'import sys, json
@@ -186,8 +214,10 @@ sys.exit(0 if any(m.get("id") == "local-deep" for m in json.load(sys.stdin).get(
     echo "(that swaps out local-main; scripts/demand-load.sh local-deep down brings it back)" >&2
     unset _k; return 1
   fi
+  # weak-model is local-deep too: while this role is swapped in, local-main
+  # is not loaded, and JIT would answer that name with local-deep silently.
   OPENAI_API_BASE="$HEARTH_URL" OPENAI_API_KEY="$_k" \
-    aider --model openai/local-deep --weak-model openai/local-main "$@"
+    aider --model openai/local-deep --weak-model openai/local-deep "$@"
   _rc=$?; unset _k; return $_rc
 }
 

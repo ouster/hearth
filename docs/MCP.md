@@ -101,13 +101,17 @@ and a prompt-injection feed.
 
 ### Who may reach it
 
-Host Zed, `web` profile only. That profile has read-only file tools (no edit,
-no terminal), so text from search results has nothing to act with. Not for
-client work: rule 3, and `docs/ROUTING.md` (web search punctures the boundary).
+Host Zed, `web` profile only. The profile's built-in tool map is empty, so
+a search result cannot read a file. The query text still leaves. `confirm`
+on each tool call is the other gate. Not for client work: rule 3, and
+`docs/ROUTING.md` (web search punctures the boundary).
 
 Laptops may run the same pinned server against the host's SearXNG through
 the tunnel (`127.0.0.1:8888` on the laptop; tunnel keys allow `:8888` since
-2026-11-01), same `web`-profile-only rule — `docs/LAPTOP.md`.
+2026-11-01). Same profile: no file tools, `default_model` `hearth/local-main`,
+and do not switch it to Gemini. SearXNG has no authentication, so any
+process on the laptop can send queries through the host once the tunnel is
+up — `docs/LAPTOP.md`.
 
 ## Rules these enforce
 
@@ -117,8 +121,9 @@ Write with it `false`. A server's tools are switched on only in a profile
 named for its egress (`research` for auslaw).
 
 **No cloud model alongside a networked tool.** Tool output re-enters the
-prompt. Host Zed has no cloud provider (D3), so tool output only ever reaches
-a local model.
+prompt. Host Zed has no cloud provider (D3). The Web profile's model is
+`hearth/local-main`. A laptop may have a Gemini provider for other work;
+that profile stays on `local-main`.
 
 **Ask before each call.** `agent.tool_permissions.default` is `confirm`.
 
@@ -130,7 +135,10 @@ By hand, after any Zed upgrade or settings change:
 | Check | Proves |
 |---|---|
 | Agent panel → Write profile shows no auslaw tools | the default profile cannot reach AustLII |
+| Agent panel → Write profile shows no searxng tools | the default profile cannot search via SearXNG |
 | Research profile shows exactly the 7 allowed tools | the jade.io tools stay off |
+| Web profile shows `searxng_web_search` and not `web_url_read`, and no file tools | search cannot read the repo, and the URL reader stays off |
+| Write and Ask show `fetch` and `search_web` off | the built-in web tools stay off |
 | `grep -c JADE ~/.config/zed/settings.json` is 0 | the cookie is not configured |
 
 ## Adding a server

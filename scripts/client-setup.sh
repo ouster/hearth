@@ -18,7 +18,10 @@
 #     permitlisten that matches nothing, so that key can forward to
 #     127.0.0.1:1234 (LM Studio), :3000 (Open WebUI) and :8888 (SearXNG, for a
 #     laptop's SearXNG MCP — ADR 0022) and do nothing else — no shell, no -R,
-#     no other ports;
+#     no other ports. --update-keys brings an older restriction up to date and
+#     keeps options it does not own (from=, expiry-time=, …). A hearth-tunnel-*
+#     line with no tunnel restriction is a full shell key: reported, left
+#     unchanged, exit 1. Options must not contain spaces.
 #   - its own Google API key for ask-cloud. The host's key never leaves.
 #
 # Exit 0 ok, 1 failed, 2 could not run.
@@ -36,25 +39,90 @@ AK="$HOME/.ssh/authorized_keys"
 RESTRICT='command="/usr/bin/false",restrict,port-forwarding,permitopen="127.0.0.1:1234",permitopen="127.0.0.1:3000",permitopen="127.0.0.1:8888",permitlisten="none:1"'
 TUNNEL_PREFIX='command="/usr/bin/false",restrict,port-forwarding,'
 
+# Comma-separated options this script does not own, in their original order.
+# Quotes can contain commas. Empty if the field is only our restriction.
+_hearth_extra_opts() {
+  /usr/bin/python3 -I -c '
+import sys
+s = sys.argv[1]
+parts, buf, q = [], [], False
+for ch in s:
+    if ch == chr(34):
+        q = not q
+        buf.append(ch)
+    elif ch == "," and not q:
+        parts.append("".join(buf))
+        buf = []
+    else:
+        buf.append(ch)
+if buf:
+    parts.append("".join(buf))
+managed_exact = set(["restrict", "port-forwarding"])
+managed_prefix = ("command=", "permitopen=", "permitlisten=")
+keep = [p for p in parts if p and p not in managed_exact and not p.startswith(managed_prefix)]
+sys.stdout.write(",".join(keep))
+' "$1"
+}
+
+_hearth_opts_new() {
+  local extra
+  extra=$(_hearth_extra_opts "$1")
+  if [ -n "$extra" ]; then
+    printf '%s,%s' "$RESTRICT" "$extra"
+  else
+    printf '%s' "$RESTRICT"
+  fi
+}
+
 # ---------------------------------------------------------------- --update-keys
-# Rewrites only lines whose comment is hearth-tunnel-<name> and whose options
-# are an older tunnel restriction. Options never contain spaces, so the fields
-# are: options, key type, key, comment. The keys are never printed.
+# The comment is the last field (hearth-tunnel-<name>, no spaces). A tunnel
+# line's first field is the options. Keys are never printed.
 if [ "${1:-}" = "--update-keys" ]; then
   [ -f "$AK" ] || { echo "could not run: no ${AK}"; exit 2; }
-  n=$(awk -v r="$RESTRICT" -v p="$TUNNEL_PREFIX" '$4 ~ /^hearth-tunnel-/ && index($1, p) == 1 && $1 != r {c++} END {print c+0}' "$AK")
-  total=$(awk '$4 ~ /^hearth-tunnel-/ {c++} END {print c+0}' "$AK")
-  if [ "$n" -eq 0 ]; then
-    echo "all ${total} hearth-tunnel key(s) already have the current restriction"; exit 0
+  umask 077
+  tmp=$(mktemp "${AK}.tmp.XXXXXX") || { echo "could not run: mktemp failed"; exit 2; }
+  total=0; changed=0; unsafe=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      ''|'#'*) printf '%s\n' "$line" >> "$tmp"; continue ;;
+    esac
+    comment="${line##* }"
+    case "$comment" in
+      hearth-tunnel-*) ;;
+      *) printf '%s\n' "$line" >> "$tmp"; continue ;;
+    esac
+    total=$((total + 1))
+    opts="${line%% *}"
+    case "$opts" in
+      "$TUNNEL_PREFIX"*)
+        new=$(_hearth_opts_new "$opts")
+        if [ "$opts" = "$new" ]; then
+          printf '%s\n' "$line" >> "$tmp"
+        else
+          printf '%s %s\n' "$new" "${line#* }" >> "$tmp"
+          changed=$((changed + 1))
+        fi
+        ;;
+      *)
+        printf '%s\n' "$line" >> "$tmp"
+        unsafe=$((unsafe + 1))
+        ;;
+    esac
+  done < "$AK"
+  if [ "$changed" -eq 0 ]; then
+    rm -f "$tmp"
+    if [ "$unsafe" -eq 0 ]; then
+      echo "all ${total} hearth-tunnel key(s) already have the current restriction"
+      exit 0
+    fi
+    echo "REFUSING: ${unsafe} hearth-tunnel-* line(s) have no tunnel restriction (full shell). Left unchanged."
+    exit 1
   fi
   cp -p "$AK" "${AK}.bak-$(date +%Y%m%d%H%M%S)"
-  awk -v r="$RESTRICT" -v p="$TUNNEL_PREFIX" '
-    $4 ~ /^hearth-tunnel-/ && index($1, p) == 1 && $1 != r { print r " " $2 " " $3 " " $4; next }
-    { print }' "$AK" > "${AK}.tmp" && mv "${AK}.tmp" "$AK"
+  mv "$tmp" "$AK"
   chmod 600 "$AK"
-  left=$(awk -v r="$RESTRICT" '$4 ~ /^hearth-tunnel-/ && $1 != r {c++} END {print c+0}' "$AK")
-  echo "updated ${n} of ${total} hearth-tunnel key(s) (backup kept); ${left} still differ"
-  [ "$left" -eq 0 ] || exit 1
+  echo "updated ${changed} of ${total} hearth-tunnel key(s) (extra options kept, backup kept); ${unsafe} full-shell line(s) left unchanged"
+  [ "$unsafe" -eq 0 ] || exit 1
   exit 0
 fi
 
@@ -82,26 +150,50 @@ if [ -n "$AUTH" ]; then
   keybody=$(printf '%s' "$pub" | awk '{print $1" "$2}')
   mkdir -p "$HOME/.ssh"; chmod 700 "$HOME/.ssh"; touch "$AK"; chmod 600 "$AK"
   if grep -qF "$keybody" "$AK"; then
-    if grep -F "$keybody" "$AK" | grep -qF "$RESTRICT "; then
+    # Any unrestricted copy of this key is a full shell, even if another
+    # line already has the current restriction. Do not rewrite those.
+    unsafe_copy=0
+    needs_update=0
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in *"$keybody"*) ;; *) continue ;; esac
+      opts="${line%% *}"
+      case "$opts" in
+        "$TUNNEL_PREFIX"*)
+          [ "$opts" = "$(_hearth_opts_new "$opts")" ] || needs_update=1
+          ;;
+        *) unsafe_copy=1 ;;
+      esac
+    done < "$AK"
+    if [ "$unsafe_copy" -eq 1 ]; then
+      echo "REFUSING: that key is already in ${AK} WITHOUT restrictions (full shell)."
+      echo "Generate a separate tunnel key on the laptop (step 2 below) and authorize that."
+      exit 1
+    fi
+    if [ "$needs_update" -eq 0 ]; then
       echo "already authorized (tunnel-only, current restriction) for ${NAME}"; exit 0
     fi
-    if grep -F "$keybody" "$AK" | grep -qF "$TUNNEL_PREFIX"; then
-      cp -p "$AK" "${AK}.bak-$(date +%Y%m%d%H%M%S)"
-      # Rewrite options on the matching line. Do not print the key.
-      awk -v body="$keybody" -v restrict="$RESTRICT" -v name="$NAME" '
-        index($0, body) && index($0, restrict " ") != 1 {
-          print restrict " " body " hearth-tunnel-" name
-          next
-        }
-        { print }
-      ' "$AK" > "${AK}.tmp" && mv "${AK}.tmp" "$AK"
-      chmod 600 "$AK"
-      echo "updated ${NAME} to the current tunnel-only restriction (backup kept)"
-      exit 0
-    fi
-    echo "REFUSING: that key is already in ${AK} WITHOUT restrictions (full shell)."
-    echo "Generate a separate tunnel key on the laptop (step 2 below) and authorize that."
-    exit 1
+    umask 077
+    cp -p "$AK" "${AK}.bak-$(date +%Y%m%d%H%M%S)"
+    tmp=$(mktemp "${AK}.tmp.XXXXXX") || exit 1
+    while IFS= read -r line || [ -n "$line" ]; do
+      if case "$line" in *"$keybody"*) true ;; *) false ;; esac; then
+        opts="${line%% *}"
+        case "$opts" in
+          "$TUNNEL_PREFIX"*)
+            new=$(_hearth_opts_new "$opts")
+            if [ "$opts" != "$new" ]; then
+              printf '%s %s\n' "$new" "${line#* }" >> "$tmp"
+              continue
+            fi
+            ;;
+        esac
+      fi
+      printf '%s\n' "$line" >> "$tmp"
+    done < "$AK"
+    mv "$tmp" "$AK"
+    chmod 600 "$AK"
+    echo "updated ${NAME} to the current tunnel-only restriction (extra options kept, backup kept)"
+    exit 0
   fi
   cp -p "$AK" "${AK}.bak-$(date +%Y%m%d%H%M%S)"
   printf '%s %s hearth-tunnel-%s\n' "$RESTRICT" "$keybody" "$NAME" >> "$AK"

@@ -69,14 +69,30 @@ ask-arch() { _aider_local --architect --editor-model openai/local-main "$@"; }
 # local: safe for sensitive work. It swaps local-main out for the session —
 # Zed, aider and laptops have no local-main until you quit — because beside a
 # busy local-main it passed the memory ceiling and stalled local-main's agents.
+# Runs on return and on Ctrl-C. Idempotent: INT and EXIT can both fire.
+_hearth_ask_deep_restore() {
+  [ "${_hearth_ask_deep_state:-}" = loaded ] || return 0
+  _hearth_ask_deep_state=restored
+  "${HEARTH_ROOT}/scripts/demand-load.sh" local-deep down
+}
+
 ask-deep() {
-  local tok state rc
+  setopt localoptions localtraps
+  local tok rc
   tok="$(_hearth_var LMSTUDIO_HOST_TOKEN)" || return 1
-  state=$("${HEARTH_ROOT}/scripts/demand-load.sh" local-deep up --evict) || return 1
+  _hearth_ask_deep_state=$("${HEARTH_ROOT}/scripts/demand-load.sh" local-deep up --evict) || return 1
+  # already: a manual `up --evict`, or a session this shell did not start.
+  # Leave that swap in place. loaded: this call evicted local-main, so the
+  # trap puts it back on the way out, including Ctrl-C.
+  if [ "$_hearth_ask_deep_state" != loaded ]; then
+    echo "local-deep is already loaded; this session will not restore local-main." >&2
+    echo "When you are finished: scripts/demand-load.sh local-deep down" >&2
+  else
+    trap _hearth_ask_deep_restore EXIT INT TERM
+  fi
   OPENAI_API_BASE="$HEARTH_LOCAL" OPENAI_API_KEY="$tok" \
     aider --model openai/local-deep --weak-model openai/local-deep "$@"
   rc=$?
-  [ "$state" = "loaded" ] && "${HEARTH_ROOT}/scripts/demand-load.sh" local-deep down
   return $rc
 }
 

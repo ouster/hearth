@@ -24,9 +24,23 @@ KINDS="${1:-webui searxng mcp-searxng}"
 # monitored like any npm project.
 MCP_SEARXNG_DIR="${HEARTH_MCP_SEARXNG_DIR:-$HOME/.local/share/hearth/mcp-searxng}"
 command -v snyk >/dev/null 2>&1 || { echo "could not run: snyk CLI not installed (brew tap snyk/tap && brew install snyk-cli)"; exit 2; }
-command -v podman >/dev/null 2>&1 || { echo "could not run: podman not installed"; exit 2; }
 snyk whoami --experimental >/dev/null 2>&1 || { echo "could not run: snyk not signed in (snyk auth)"; exit 2; }
-podman info >/dev/null 2>&1 || { echo "could not run: podman VM not running (podman machine start)"; exit 2; }
+
+# Podman is only needed for the container images. The npm lockfile is not.
+_snyk_podman_rc=""
+ensure_podman() {
+  [ -n "$_snyk_podman_rc" ] && return "$_snyk_podman_rc"
+  if ! command -v podman >/dev/null 2>&1; then
+    echo "could not run: podman not installed"
+    _snyk_podman_rc=2
+  elif ! podman info >/dev/null 2>&1; then
+    echo "could not run: podman VM not running (podman machine start)"
+    _snyk_podman_rc=2
+  else
+    _snyk_podman_rc=0
+  fi
+  return "$_snyk_podman_rc"
+}
 
 TMPD=$(mktemp -d); trap 'rm -rf "$TMPD"' EXIT
 rc=0; ran=0
@@ -42,6 +56,11 @@ for kind in $KINDS; do
     else
       echo "FAIL   ${kind}: snyk monitor exited ${src}: $(printf '%s' "$out" | tail -2 | tr '\n' ' ')"; rc=1
     fi
+    continue
+  fi
+  if ! ensure_podman; then
+    echo "skip   ${kind}: podman not available"
+    rc=2
     continue
   fi
   c="$(ai_container "$kind")"

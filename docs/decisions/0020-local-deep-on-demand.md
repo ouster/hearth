@@ -1,8 +1,9 @@
 # ADR 0020 — local-deep: a slower, more careful model, swapped in on demand
 
 **Date:** 2026-11-01
-**Status:** proposed 2026-11-01. Built and measured while the operator was
-away; awaiting acceptance.
+**Status:** accepted 2026-11-01 by the operator. The resident role in the
+measurement below was renamed `local-main` the same day (ADR 0021).
+Consequences use that name.
 
 ## Context
 
@@ -27,7 +28,7 @@ overall; later rounds were normal). A dense model's long prefill starves the
 resident agent model, the same symptom as the stalls in ADR 0015. Swapping
 `local-deep` in or out takes ~13 s.
 
-## Decision (proposed)
+## Decision
 
 - `config/roles.tsv` gains a `load` column: `resident` (kept loaded by
   `scripts/lms-load.sh`) or `demand`. `local-deep` is `demand`, 64K × 1.
@@ -45,10 +46,12 @@ resident agent model, the same symptom as the stalls in ADR 0015. Swapping
 
 ## Consequences
 
-- While `local-deep` is in, there is no `local-big`: Zed, aider, Open WebUI
-  and laptops asking for `local-big` are answered by `local-deep`, slowly.
-- Ending an `ask-deep` session restores `local-big`; a manual `up --evict`
-  must be followed by `down`, or by `scripts/lms-load.sh`.
+- While `local-deep` is in, there is no `local-main`: Zed, aider, Open WebUI
+  and laptops asking for `local-main` are answered by `local-deep`, slowly.
+- Ending an `ask-deep` session that loaded the role restores `local-main`,
+  including when the session is interrupted. A later `ask-deep` that finds
+  the role already loaded leaves that swap in place and says so. A manual
+  `up --evict` must be followed by `down`, or by `scripts/lms-load.sh`.
 - At rest there is still one resident model (D1 holds).
 - `local-deep`'s weights are pinned like any role; its thinking is on by the
   model's own template, with no app setting.

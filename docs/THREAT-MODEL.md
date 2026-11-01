@@ -1,6 +1,6 @@
 # Prompt injection threat model
 
-Last updated: 2026-08-02. Controls in §4 verified on macOS 26.4 by
+Last updated: 2026-11-01. Controls in §4 verified on macOS 26.4 by
 `scripts/sandbox-probe.sh` (10 passed, 0 failed).
 
 ## 1. The claim this document rests on
@@ -47,7 +47,7 @@ flowchart TB
 
     secrets["~/.ssh, .env, keychain<br/>readable - accepted"]
 
-    gw{{"llmster 127.0.0.1:1234<br/>local models only, token required"}}
+    gw{{"LM Studio app 127.0.0.1:1234<br/>local models only, token required"}}
     localm["local models"]
     cloudm["cloud models"]
     outside["blocked: github / pypi / attacker"]
@@ -111,20 +111,19 @@ it landed*, which is knowable.
 | # | Surface | Untrusted content arrives via | If injected, it can | Risk |
 |---|---|---|---|---|
 | 1 | **aider** | files you `/add`, vendored deps, cloned repos, sample data | edit source, run commands, reach the network | **high** |
-| 2 | **Zed agents** | same, plus anything the agent opens itself | same | **high** |
-| 3 | **untrusted MCP** | fetched docs / tools from an unaudited server | depends entirely on what the MCP exposes — **unaudited** | unknown |
-| 4 | **SearXNG → Open WebUI** | arbitrary web pages, per message | produce text. No tools are enabled, so it can mislead you but not act | low today |
+| 2 | **Zed agents** | same, plus tool results. Write and Ask have `fetch` and `search_web` off. The `web` profile is SearXNG search only (no file tools). Research adds AustLII | edit or read in Write; in Web, send the query text out. `confirm` is the gate | **high** |
+| 3 | **untrusted MCP** | fetched docs / tools from a server not in `docs/MCP.md` | depends entirely on what the MCP exposes | unknown |
+| 4 | **SearXNG** | arbitrary web pages; the query text leaves | Open WebUI can mislead you and, when search is on, send a query. Zed's `web` profile can search and nothing else. The tunnel publishes SearXNG with no login, so any process on a laptop can send a query | medium |
 
-**Surface 3 is the one with no number next to it.** It can sit next to real
-  client data, it fetches from the open web, and nobody has asked what tools it
-  hands a model. That is the next thing to audit.
+**Surface 3 is a server that is not in `docs/MCP.md`.** auslaw and the SearXNG
+MCP server are registered there, with the tools they expose written down.
+Anything else is still unknown.
 
-**Surface 4's low rating is conditional and fragile.** The Open WebUI model is
-inert because it has no tools — it can lie to you convincingly, which matters
-for legal research, but it cannot act. **The moment tools, functions, or code
-execution are enabled in Open WebUI, this becomes surface 1 with a web feed
-attached.** Treat enabling them as a decision requiring an ADR, not a settings
-toggle.
+**Surface 4.** Open WebUI's search is opt-in per message. The Zed `web`
+profile can search and cannot read files. `confirm` on each tool call is
+the gate. **The moment Open WebUI gains tools, functions, or code
+execution, that UI becomes surface 1 with a web feed attached.** Treat
+enabling them as a decision requiring an ADR, not a settings toggle.
 
 ## 4. What is actually enforced
 

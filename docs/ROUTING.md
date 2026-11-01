@@ -38,7 +38,7 @@ in a different way:
 | Path | Can it leave the host? | Why |
 |---|---|---|
 | Anything to `127.0.0.1:1234` | **no** | LM Studio holds only local models |
-| Zed on this host | **no** model egress | no cloud provider configured (D3). Exception: its `fetch` / `search_web` tools, and auslaw in the Research profile |
+| Zed on this host | **no** model egress | no cloud provider configured (D3). Tool egress: auslaw in Research, SearXNG in the `web` profile. Write and Ask have `fetch` and `search_web` off |
 | `ask`, `ask-*` except `ask-cloud` | **no** | point at `:1234` with the host token |
 | `ask-cloud` | **yes** | the only alias with a provider key; it is explicit by name |
 | Sandboxed agents | **no** | egress allowed to `127.0.0.1:1234` only |
@@ -73,14 +73,21 @@ that started with a client document should never have it enabled — earlier
 context can be pulled into a generated search query.
 
 The same applies to Zed's Research profile: every auslaw tool sends its query
-to AustLII.
+to AustLII. It applies to Zed's `web` profile too: `searxng_web_search` sends
+the query text to public engines. That profile has no file tools. Its model
+is `local-main`. Each tool call asks first (`confirm`). Write and Ask do not
+include Zed's built-in `fetch` or `search_web`.
 
 ## No fallbacks
 
-There is no router, so nothing can quietly reroute a request. If `local-main`
-is down, requests fail — that is the intended behaviour. The earlier rule
-("local roles never fall back to cloud") existed because the inherited gateway
-had `local → gemini` fallbacks; see `docs/HISTORY.md`.
+There is no router, so nothing can quietly reroute a request to a cloud
+model. If `local-main` is not loaded, LM Studio does not fail the request:
+with JIT off it answers with whatever model is loaded, under the name you
+asked for. That is a wrong local answer, not a leak. `ask-deep` and the
+laptop clients refuse to call `local-deep` unless it is actually loaded, for
+this reason. The earlier rule ("local roles never fall back to cloud")
+existed because the inherited gateway had `local → gemini` fallbacks; see
+`docs/HISTORY.md`.
 
 ## Break-glass
 

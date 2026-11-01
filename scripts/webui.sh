@@ -121,9 +121,18 @@ case "$CMD" in
       fi
     fi
 
+    if [ "$BIND" = "0.0.0.0" ]; then
+      cat <<EOF
+
+  WARNING: Open WebUI is bound to 0.0.0.0:${PORT}.
+  That is every interface, not only this machine. It has its own login.
+  The SSH tunnel (docs/LAPTOP.md) is the way a laptop should reach it.
+EOF
+    fi
+
     cat <<EOF
 
-  http://127.0.0.1:${PORT}
+  http://127.0.0.1:${PORT}   (published on ${BIND}:${PORT})
 
   First visit asks you to create an account — it is local to the container,
   nothing leaves the machine. Signup is then disabled.
@@ -176,6 +185,7 @@ EOF
     [ "$c" = "destroy" ] || exit 1
     podman rm -f "$NAME" >/dev/null 2>&1 || true
     podman volume rm "$VOLUME" >/dev/null 2>&1 || true
+    podman secret rm hearth-lmstudio-token >/dev/null 2>&1 || true
     echo "gone"
     ;;
   *) echo "usage: $0 {up [--lan]|down|status|logs|destroy}"; exit 1 ;;

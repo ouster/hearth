@@ -131,16 +131,17 @@ Zed's built-in **Write** profile sets `enable_all_context_servers: true`
 (Zed 1.26 defaults), which would expose auslaw in every thread. Settings
 redefine Write with that set to `false`. A profile override **replaces** the
 built-in profile (`name` is required, tools are not merged), so the override
-carries Zed 1.26.2's full Write tool list. Re-check it after a Zed upgrade:
+carries Zed 1.26.2's full Write tool list, with `fetch` and `search_web`
+false. Ask is overridden the same way. Re-check both after a Zed upgrade:
 a partial override fails the whole settings load with `missing field name`. `tool_permissions.default` is `confirm`, so each
 tool call asks first.
 
 Switching to Research is the act of saying "this query goes to AustLII" —
 the same thing switching to the `research` key used to mean.
 
-Note that Write and Ask still include Zed's built-in `fetch` and
-`search_web` tools, which reach the internet on their own. That predates
-this migration.
+Write and Ask set `fetch` and `search_web` to false. Zed's built-in Ask
+profile includes both, so Ask is overridden here the same way Write is.
+Web search is the Web profile.
 
 ### MCP: searxng, Web profile only
 
@@ -148,8 +149,9 @@ this migration.
 server (`docs/MCP.md`, ADR 0022). Its search tool sends the query text through
 the host's SearXNG to public engines, so it is enabled **only** in the `web`
 agent profile, and only `searxng_web_search` — `web_url_read` (any URL) and
-the other two tools stay off. The profile has read-only file tools and no
-edit or terminal, so search results cannot drive changes.
+the other two tools stay off. The profile's built-in `tools` map is empty:
+no file reads, no edit, no terminal. Its `default_model` is
+`hearth/local-main`. Each tool call asks first.
 
 Switching to Web is the act of saying "this query goes to the search engines".
 Never on client work.
@@ -159,7 +161,8 @@ Never on client work.
 Through an SSH tunnel to the host — `docs/LAPTOP.md`. Zed points at
 `http://127.0.0.1:1234/v1` exactly as on the host (the tunnel's local end),
 with the **laptop's own** token. Run `ai-tunnel` before opening Zed. A Gemini
-provider is allowed on the laptop (D3).
+provider is allowed on the laptop (D3). The Web profile stays on
+`hearth/local-main`; do not switch that profile to Gemini.
 
 Zed's SSH remote projects also work: edit files on the host over SSH while
 the model call goes through the tunnel. That needs a normal SSH key, not the

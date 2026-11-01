@@ -226,11 +226,13 @@ else
 fi
 
 # ---------------------------------------------------------------- 8. UI
-hdr "8. Open WebUI / SearXNG (warn only — not part of the boundary)"
-for pu in "Open WebUI|http://127.0.0.1:3000/health" "SearXNG|http://127.0.0.1:8888/"; do
-  n="${pu%%|*}"; u="${pu#*|}"
+hdr "8. Open WebUI / SearXNG (down is a warning; a LAN bind is a failure)"
+for pu in "Open WebUI|3000|http://127.0.0.1:3000/health" "SearXNG|8888|http://127.0.0.1:8888/"; do
+  n="${pu%%|*}"; rest="${pu#*|}"; p="${rest%%|*}"; u="${rest#*|}"
   c=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$u" 2>/dev/null)
   [ "$c" = "200" ] && ok "${n} answering" || wrn "${n} not answering (${c}) — the Podman VM may have stopped: scripts/boot.sh"
+  wan=$(hearth_wan_binds "$p")
+  [ -z "$wan" ] || bad "${n} is not loopback-only:${wan}"
 done
 
 # ---------------------------------------------------------------- verdict

@@ -192,14 +192,20 @@ npm install --ignore-scripts --save-exact --prefix ~/.local/share/hearth/mcp-sea
 
 Then a `searxng` stdio context server in Zed with
 `SEARXNG_URL=http://127.0.0.1:8888` (or your `HEARTH_SEARXNG_PORT`), tools
-enabled only in a `web` profile with just `searxng_web_search`. Run
-`ai-tunnel` before searching. Search queries go to public search engines via
-the host, so never on client work.
+enabled only in a `web` profile with just `searxng_web_search`, no file
+tools, and `default_model` `hearth/local-main`. Do not switch that profile
+to Gemini. Run `ai-tunnel` before searching. Search queries go to public
+search engines via the host, so never on client work.
+
+SearXNG has no login. Once the tunnel is up, any process on the laptop can
+POST a query to `127.0.0.1:8888` and the host will send it to the public
+engines.
 
 **Existing laptops:** the host's tunnel keys were widened with
 `scripts/client-setup.sh --update-keys` (2026-11-01). On the laptop, copy the
 new client (`scripts/client-setup.sh <name> --install user@laptop` from the
-host), then `ai-tunnel-stop && ai-tunnel`.
+host), then `ai-tunnel-stop && ai-tunnel`. `ai-tunnel` refuses to report the
+tunnel up when `:1234` is open and `:3000` or `:8888` is not.
 
 ## Revoking a laptop
 

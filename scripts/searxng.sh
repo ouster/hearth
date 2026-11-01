@@ -65,14 +65,18 @@ case "${1:-status}" in
         echo "  no existing secret found — generated a new one"
       fi
 
-      podman exec -i "$NAME" sh -c 'cat > /etc/searxng/settings.yml' <<EOF
-# Managed by ~/dev/hearth/scripts/searxng.sh — regenerated on 'up'.
+      # Secret goes in as data (argv), not through an unquoted heredoc. A value
+      # containing $(...) or backticks must not be executed by this shell.
+      /usr/bin/python3 -I -c '
+import json, sys
+secret = json.dumps(sys.argv[1])
+sys.stdout.write("""# Managed by ~/dev/hearth/scripts/searxng.sh — regenerated on up.
 use_default_settings: true
 
 server:
-  secret_key: "${SECRET}"
+  secret_key: %s
   # Bound to 127.0.0.1 only, single user, so the bot limiter has nothing to
-  # protect against and would otherwise reject Open WebUI's API calls.
+  # protect against and would otherwise reject Open WebUI API calls.
   limiter: false
   image_proxy: true
 
@@ -81,7 +85,8 @@ search:
   formats:
     - html
     - json
-EOF
+""" % secret)
+' "$SECRET" | podman exec -i "$NAME" sh -c 'cat > /etc/searxng/settings.yml'
       podman restart "$NAME" >/dev/null
       printf '  restarting'
       for _ in $(seq 1 20); do

@@ -96,28 +96,89 @@ ai_load_env() {
 # `lms server start --cors` only turns CORS on; there is no flag to turn it
 # off. Write loopback + CORS off into the saved settings, then start without
 # --cors so a restart cannot come up on the LAN or with CORS.
+# A missing file or a failed write is a failure. Callers must not report
+# "CORS off" unless hearth_server_saved_ok says so after the start.
 hearth_lock_loopback() {
-  [ -f "$LMS_SERVER_CFG" ] || return 0
+  [ -f "$LMS_SERVER_CFG" ] || { echo "hearth: ${LMS_SERVER_CFG} missing — cannot lock loopback" >&2; return 1; }
   /usr/bin/python3 -I -c '
 import json, sys
 path, bind, port = sys.argv[1], sys.argv[2], int(sys.argv[3])
 try:
     with open(path) as fh:
         cfg = json.load(fh)
-except Exception:
-    sys.exit(0)
+except Exception as exc:
+    sys.stderr.write("hearth: cannot read %s: %s\n" % (path, exc))
+    sys.exit(1)
 cfg["networkInterface"] = bind
 cfg["port"] = port
 cfg["cors"] = False
-with open(path, "w") as fh:
-    json.dump(cfg, fh, indent=2)
-    fh.write("\n")
+try:
+    with open(path, "w") as fh:
+        json.dump(cfg, fh, indent=2)
+        fh.write("\n")
+    with open(path) as fh:
+        got = json.load(fh)
+except Exception as exc:
+    sys.stderr.write("hearth: cannot write %s: %s\n" % (path, exc))
+    sys.exit(1)
+if got.get("networkInterface") != bind or int(got.get("port") or 0) != port or got.get("cors") is not False:
+    sys.stderr.write("hearth: server settings did not stick in %s\n" % path)
+    sys.exit(1)
 ' "$LMS_SERVER_CFG" "127.0.0.1" "$HEARTH_PORT"
 }
 
+# Saved settings (not the live socket) say loopback, our port, CORS off.
+hearth_server_saved_ok() {
+  [ "$(hearth_server_setting networkInterface)" = "127.0.0.1" ] \
+    && [ "$(hearth_server_setting port)" = "$HEARTH_PORT" ] \
+    && [ "$(hearth_server_setting cors)" = "false" ]
+}
+
 hearth_server_start() {
+  if [ -f "$LMS_SERVER_CFG" ]; then
+    hearth_lock_loopback || return 1
+  fi
+  "$HEARTH_LMS" server start --bind 127.0.0.1 -p "$HEARTH_PORT" || return 1
+  if [ ! -f "$LMS_SERVER_CFG" ]; then
+    echo "hearth: ${LMS_SERVER_CFG} missing after server start — CORS not confirmed" >&2
+    return 1
+  fi
+  if hearth_server_saved_ok; then
+    return 0
+  fi
+  # The app can rewrite the file as it starts. Lock what it wrote and start once more.
+  echo "hearth: saved settings drifted on start — locking and restarting once" >&2
   hearth_lock_loopback || return 1
-  "$HEARTH_LMS" server start --bind 127.0.0.1 -p "$HEARTH_PORT"
+  "$HEARTH_LMS" server stop >/dev/null 2>&1 || true
+  "$HEARTH_LMS" server start --bind 127.0.0.1 -p "$HEARTH_PORT" || return 1
+  if hearth_server_saved_ok; then
+    return 0
+  fi
+  echo "hearth: saved settings still not loopback with CORS off (bind=$(hearth_server_setting networkInterface) cors=$(hearth_server_setting cors))" >&2
+  return 1
+}
+
+# Listen addresses on PORT that are not 127.0.0.1 or ::1, space-separated.
+# Empty when every listener is loopback, or when nothing is listening.
+hearth_wan_binds() {
+  local port="$1" addr bad
+  bad=""
+  [ -n "$port" ] || return 0
+  while IFS= read -r addr; do
+    [ -n "$addr" ] || continue
+    case "$addr" in
+      "127.0.0.1:${port}"|"[::1]:${port}") ;;
+      *) bad="${bad} ${addr}" ;;
+    esac
+  done <<EOF
+$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk '
+  NR>1 {
+    a=""
+    for (i=1; i<=NF; i++) if ($i ~ /:[0-9]+$/) a=$i
+    if (a != "") print a
+  }' | sort -u)
+EOF
+  printf '%s' "${bad# }"
 }
 
 # `lms` exists and a daemon (the app's, D6) answers.

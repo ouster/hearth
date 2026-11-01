@@ -20,8 +20,10 @@ maintainer, frequent releases, and no server-side tool allow-list.
   `~/.local/share/hearth/mcp-searxng`; never run it with `npx`.
 - Register it in host Zed as a stdio context server pointed at
   `127.0.0.1:8888`, with tools enabled only in a new `web` profile: just
-  `searxng_web_search`, plus read-only file tools. `web_url_read`,
-  suggestions and instance info stay off.
+  `searxng_web_search`. `web_url_read`, suggestions and instance info stay
+  off. Amended the same day, after review: the profile's built-in tool map
+  is empty (no file reads), its model is `local-main`, and Write and Ask
+  have Zed's `fetch` and `search_web` off.
 - Monitor its lockfile with Snyk (`scripts/snyk-monitor.sh`).
 
 ## Consequences

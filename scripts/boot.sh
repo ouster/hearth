@@ -62,10 +62,14 @@ fi
 
 # ---------------------------------------------------------------- server
 "$HEARTH_LMS" server stop >/dev/null 2>&1 || true
-if hearth_server_start >/dev/null 2>&1; then
-  log "server started on 127.0.0.1:${HEARTH_PORT} (CORS off)"
+start_log=$(mktemp)
+if hearth_server_start >"$start_log" 2>&1; then
+  log "server on 127.0.0.1:${HEARTH_PORT}; saved settings confirmed loopback and CORS off"
+  rm -f "$start_log"
 else
-  log "FAILED: lms server start"
+  log "FAILED: server start — loopback and CORS were not confirmed"
+  while IFS= read -r line; do log "$line"; done < "$start_log"
+  rm -f "$start_log"
   exit 1
 fi
 code=000
@@ -79,6 +83,11 @@ case "$code" in
   200) log "WARNING: no token → 200. Require Authentication is OFF — turn it on in the app"; rc=1 ;;
   *)   log "FAILED: server answered ${code} on /v1/models"; rc=1 ;;
 esac
+wan=$(hearth_wan_binds "$HEARTH_PORT")
+if [ -n "$wan" ]; then
+  log "FAILED: :${HEARTH_PORT} is not loopback-only:${wan}"
+  rc=1
+fi
 
 # ---------------------------------------------------------------- models
 if "${ROOT}/scripts/lms-load.sh" >/dev/null 2>&1; then
