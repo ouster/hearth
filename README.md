@@ -141,6 +141,13 @@ Editors (aider + Zed): [`docs/IDES.md`](docs/IDES.md). Zed compacts an
 agent thread at 80,000 tokens, before the 128K window fills and LM Studio
 drops the middle of the prompt. `/compact` does it by hand.
 
+Zed MCP tools are `context_servers`: Zed starts them as a stdio child on
+the machine where it is running. A networked server is enabled only
+in an agent profile named for where its traffic goes, and never in Write.
+The query text leaves, the same rule as web search. What is registered, and
+how to add one, is in [`docs/MCP.md`](docs/MCP.md) and
+[`docs/IDES.md`](docs/IDES.md).
+
 ## Laptops
 
 SSH tunnel only — the server never listens on the LAN. Each laptop gets its
