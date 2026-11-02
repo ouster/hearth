@@ -38,7 +38,7 @@ in a different way:
 | Path | Can it leave the host? | Why |
 |---|---|---|
 | Anything to `127.0.0.1:1234` | **no** | LM Studio holds only local models |
-| Zed on this host | **no** model egress | no cloud provider configured (D3). Tool egress: auslaw in Research, SearXNG in the `web` profile. Write and Ask have `fetch` and `search_web` off |
+| Zed on this host | **no** model egress | no cloud provider configured (D3). Tool egress: SearXNG in the `web` profile. Write and Ask have `fetch` and `search_web` off |
 | `ask`, `ask-*` except `ask-cloud` | **no** | point at `:1234` with the host token |
 | `ask-cloud` | **yes** | the only alias with a provider key; it is explicit by name |
 | Sandboxed agents | **no** | egress allowed to `127.0.0.1:1234` only |
@@ -72,11 +72,11 @@ Web search is opt-in per conversation. Leave it off by default. A conversation
 that started with a client document should never have it enabled — earlier
 context can be pulled into a generated search query.
 
-The same applies to Zed's Research profile: every auslaw tool sends its query
-to AustLII. It applies to Zed's `web` profile too: `searxng_web_search` sends
-the query text to public engines. That profile has no file tools. Its model
-is `local-main`. Each tool call asks first (`confirm`). Write and Ask do not
-include Zed's built-in `fetch` or `search_web`.
+Zed's `web` profile follows the same rule: `searxng_web_search` sends the
+query text to public engines. That profile has no file tools. Its model is
+`local-main`. Each tool call asks first (`confirm`). Write and Ask do not
+include Zed's built-in `fetch` or `search_web`. `docs/MCP.md` uses the former
+legal-research profile as a setup example; it is not installed.
 
 ## No fallbacks
 

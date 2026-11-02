@@ -131,23 +131,24 @@ The token goes in through the UI (Agent panel → settings → `hearth` → API
 key) so it lands in the keychain rather than a dotfile. Use the host token on
 this machine; each laptop gets its own (phase 4).
 
-### MCP: auslaw, Research profile only
+### MCP example: auslaw
 
-`auslaw` is a `context_servers` stdio entry (same seven tools, no jade
-cookie — `docs/MCP.md`). Every one of its useful tools sends the query to
-AustLII, so it is enabled **only** in the `research` agent profile.
+`auslaw` is not installed. `docs/MCP.md` uses its former setup as a worked
+example: a reviewed stdio child, no jade cookie, seven AustLII tools exposed
+only in a Research profile, and confirmation before each call.
 
 Zed's built-in **Write** profile sets `enable_all_context_servers: true`
-(Zed 1.26 defaults), which would expose auslaw in every thread. Settings
-redefine Write with that set to `false`. A profile override **replaces** the
-built-in profile (`name` is required, tools are not merged), so the override
-carries Zed 1.26.2's full Write tool list, with `fetch` and `search_web`
-false. Ask is overridden the same way. Re-check both after a Zed upgrade:
-a partial override fails the whole settings load with `missing field name`. `tool_permissions.default` is `confirm`, so each
-tool call asks first.
+(Zed 1.26 defaults), which would expose any configured server in an ordinary
+thread. Settings must redefine Write with that set to `false`. A profile
+override **replaces** the built-in profile (`name` is required, tools are not
+merged), so the override must carry the full intended tool list. Re-check
+Write and Ask after a Zed upgrade: a partial override can fail the whole
+settings load. `tool_permissions.default` is `confirm`, so each MCP call asks
+first.
 
-Switching to Research is the act of saying "this query goes to AustLII" —
-the same thing switching to the `research` key used to mean.
+If auslaw is restored, switching to Research is the act of saying "this query
+goes to AustLII." Follow the prerequisites, UI fields, JSON profile and checks
+in `docs/MCP.md`; do not infer a command from this document.
 
 Write and Ask set `fetch` and `search_web` to false. Zed's built-in Ask
 profile includes both, so Ask is overridden here the same way Write is.

@@ -199,8 +199,8 @@ removed gateway (`:4000`, `:11434`, LiteLLM); never read
 
 - Web search via SearXNG is opt-in per message. The **search query leaves**
   even when the model stays local. See `docs/ROUTING.md`.
-- Zed's `auslaw` MCP tools send queries to AustLII; they are enabled only in
-  Zed's Research profile. See `docs/MCP.md`.
+- `docs/MCP.md` includes a worked example of confining networked tools to a
+  named Zed profile; the example server is not installed.
 - Prompt-injection / agent containment: `docs/THREAT-MODEL.md`, ADR 0007.
 
 ## Layout

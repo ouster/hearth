@@ -15,12 +15,15 @@ for that egress.
 
 | Server | Transport | Egress | Tools | Clients |
 |---|---|---|---|---|
-| `auslaw` | stdio | `austlii.edu.au` | 7 of 10 | host Zed, `research` profile only (ADR 0016). Gateway `research` key until phase 5 |
 | `searxng` | stdio | local SearXNG `127.0.0.1:8888` → public search engines | 1 of 4 | host Zed, `web` profile only (ADR 0022) |
 
-## auslaw
+## Worked example: auslaw (not installed)
 
-Australian and NZ case law and legislation. Source: `~/dev/auslaw-mcp`.
+`auslaw` shows how to add a networked MCP without making it ambient. It
+provides Australian and NZ case-law and legislation tools through AustLII.
+It was live during migration phase 3, but neither its source nor its Zed
+configuration is currently on this host. The historical source location was
+`~/dev/auslaw-mcp`; this repo does not contain or install it.
 
 **stdio, not HTTP.** Its HTTP mode calls `listen(port)` with no host, so it
 binds every interface with no authentication, and defaults to `:3000` — which
@@ -41,10 +44,9 @@ is Open WebUI. stdio spawns a child process with no listener at all.
 | `jade_citation_lookup` | jade.io | **no** |
 | `search_citing_cases` | jade.io | **no** |
 
-The jade.io tools are excluded at the **server** level via `allowed_tools`, so
-they are not exposed to any key regardless of its grant, and
-`JADE_SESSION_COOKIE` is deliberately absent from the server's environment.
-Permission says no, and the credential to do it anyway is not present.
+The worked Zed profile below exposes only the seven AustLII tools.
+`JADE_SESSION_COOKIE` is deliberately absent from the child process's
+environment, so the credential to use the three jade.io tools is not present.
 
 Why exclude them: jade.io access is a reverse-engineered GWT-RPC endpoint
 driven by a session cookie lifted from a browser. That is a credential in a
@@ -52,22 +54,82 @@ config file and a fragile contract with a commercial provider. AustLII is free,
 public, and has neither problem. `search_cases` stays because its jade half
 returns an empty array without the cookie while its AustLII half still works.
 
-### Who may reach it
+### Zed setup
 
-**After ADR 0016 (host Zed, 2026-10-31):** a `context_servers` stdio entry in
-`~/.config/zed/settings.json`, tools enabled only in the `research` agent
-profile. The built-in Write profile's `enable_all_context_servers` is
-overridden to `false`, and each tool call asks first. There is no cloud
-provider in host Zed (D3), so tool output only ever re-enters a local model.
-See `docs/IDES.md`.
+Prerequisite: obtain the source from its owner, review it again, install its
+locked dependencies, build it, and confirm that an absolute
+`.../auslaw-mcp/dist/index.js` exists. Do not copy the historical path: it
+belonged to another home directory and no longer exists here.
 
-**Gateway era (until phase 5):** `research` only — local models plus these
-tools, and no cloud role.
+1. Open **Settings → AI → MCP Servers → Add Server → Add Local Server**.
+2. Enter:
+   - Server Name: `auslaw`
+   - Command: the absolute path to the reviewed Node executable
+   - Arguments: the absolute path to `auslaw-mcp/dist/index.js`
+   - Environment: `MCP_TRANSPORT=stdio`
+   - Timeout: `60`
+3. Do **not** add `JADE_SESSION_COOKIE`. Save, then require a green
+   **Server is active** indicator. A wrong command or argument exits
+   immediately and otherwise looks like an empty tool list.
+4. Open `zed: open settings file`. The server entry should have this shape,
+   with real absolute paths:
 
-`private` deliberately gets nothing. Its promise is that nothing leaves this
-machine, and every useful auslaw tool sends a query to AustLII. Switching to
-`research` is the act of saying "this query is going to AustLII" rather than
-that being an ambient property of the everyday key.
+```json
+{
+  "context_servers": {
+    "auslaw": {
+      "command": "/absolute/path/to/node",
+      "args": ["/absolute/path/to/auslaw-mcp/dist/index.js"],
+      "env": {
+        "MCP_TRANSPORT": "stdio"
+      }
+    }
+  }
+}
+```
+
+5. Add a profile under `agent.profiles` which has no built-in tools and
+   exposes only the seven AustLII tools:
+
+```json
+{
+  "agent": {
+    "profiles": {
+      "research": {
+        "name": "Research",
+        "tools": {},
+        "enable_all_context_servers": false,
+        "context_servers": {
+          "auslaw": {
+            "tools": {
+              "search_cases": true,
+              "search_legislation": true,
+              "search_by_citation": true,
+              "fetch_document_text": true,
+              "generate_pinpoint": true,
+              "validate_citation": true,
+              "format_citation": true
+            }
+          }
+        }
+      }
+    },
+    "tool_permissions": {
+      "default": "confirm"
+    }
+  }
+}
+```
+
+6. Ensure the ordinary Write and Ask profiles set
+   `enable_all_context_servers` to `false`; profile overrides replace rather
+   than merge with Zed's built-ins. Reload Zed, select **Research**, and check
+   that exactly those seven tools appear. Write and Ask must show none.
+
+Switching to Research is the deliberate act of saying that the query may go
+to AustLII. Keep the profile on `hearth/local-main`; host Zed has no cloud
+provider. Do not use it on client work unless sending that query to AustLII is
+permitted.
 
 ## searxng
 
@@ -92,8 +154,8 @@ not. Env: `SEARXNG_URL=http://127.0.0.1:8888`, `SEARXNG_LITE_TOOLS=true`
 | `searxng_instance_info` | local SearXNG `/config` only | **no** (not needed) |
 | `web_url_read` | **any public URL** | **no** |
 
-Unlike auslaw, the server has no allow-list: the exclusions are Zed profile
-settings, not server-side. `web_url_read` refuses localhost, RFC1918,
+The server has no allow-list: the exclusions are Zed profile settings, not
+server-side. `web_url_read` refuses localhost, RFC1918,
 link-local and private IPv6, including names that resolve to them — checked
 2026-11-01 against `127.0.0.1:1234` and `localhost:8888`, both refused. Kept
 off anyway: an agent that can fetch any page is both an exfiltration channel
@@ -118,7 +180,7 @@ up — `docs/LAPTOP.md`.
 **Off by default.** Zed's built-in Write profile enables every context server
 (`enable_all_context_servers: true` in Zed 1.26); host settings redefine
 Write with it `false`. A server's tools are switched on only in a profile
-named for its egress (`research` for auslaw).
+named for its egress (`web` for SearXNG).
 
 **No cloud model alongside a networked tool.** Tool output re-enters the
 prompt. Host Zed has no cloud provider (D3). The Web profile's model is
@@ -134,12 +196,13 @@ By hand, after any Zed upgrade or settings change:
 
 | Check | Proves |
 |---|---|
-| Agent panel → Write profile shows no auslaw tools | the default profile cannot reach AustLII |
 | Agent panel → Write profile shows no searxng tools | the default profile cannot search via SearXNG |
-| Research profile shows exactly the 7 allowed tools | the jade.io tools stay off |
 | Web profile shows `searxng_web_search` and not `web_url_read`, and no file tools | search cannot read the repo, and the URL reader stays off |
 | Write and Ask show `fetch` and `search_web` off | the built-in web tools stay off |
-| `grep -c JADE ~/.config/zed/settings.json` is 0 | the cookie is not configured |
+
+If following the auslaw worked example, additionally check that Write and Ask
+show no auslaw tools, Research shows exactly the seven listed tools, and
+`grep -c JADE ~/.config/zed/settings.json` returns `0`.
 
 ## Adding a server
 

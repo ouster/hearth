@@ -21,7 +21,6 @@ flowchart TB
 
     laptop["Laptop<br/>SSH tunnel, own token"]
     cloud["Gemini<br/>ask-cloud only, tool's own key"]
-    austlii["AustLII<br/>Zed Research profile only"]
 
     aider --> lms
     zed --> lms
@@ -30,12 +29,11 @@ flowchart TB
     sbx -->|"only allowed egress"| lms
     laptop -->|"ssh -L, tunnel-only key"| lms
     aider -.-> cloud
-    zed -.->|"auslaw MCP"| austlii
 
     classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
     classDef leaveCls fill:#FAEEDA,stroke:#854F0B,color:#633806
     class lms localCls
-    class cloud,austlii leaveCls
+    class cloud leaveCls
 ```
 
 Everything addresses **roles**, never model names. Concrete models appear in

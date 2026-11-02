@@ -111,13 +111,14 @@ it landed*, which is knowable.
 | # | Surface | Untrusted content arrives via | If injected, it can | Risk |
 |---|---|---|---|---|
 | 1 | **aider** | files you `/add`, vendored deps, cloned repos, sample data | edit source, run commands, reach the network | **high** |
-| 2 | **Zed agents** | same, plus tool results. Write and Ask have `fetch` and `search_web` off. The `web` profile is SearXNG search only (no file tools). Research adds AustLII | edit or read in Write; in Web, send the query text out. `confirm` is the gate | **high** |
+| 2 | **Zed agents** | same, plus tool results. Write and Ask have `fetch` and `search_web` off. The `web` profile is SearXNG search only (no file tools) | edit or read in Write; in Web, send the query text out. `confirm` is the gate | **high** |
 | 3 | **untrusted MCP** | fetched docs / tools from a server not in `docs/MCP.md` | depends entirely on what the MCP exposes | unknown |
 | 4 | **SearXNG** | arbitrary web pages; the query text leaves | Open WebUI can mislead you and, when search is on, send a query. Zed's `web` profile can search and nothing else. The tunnel publishes SearXNG with no login, so any process on a laptop can send a query | medium |
 
-**Surface 3 is a server that is not in `docs/MCP.md`.** auslaw and the SearXNG
-MCP server are registered there, with the tools they expose written down.
-Anything else is still unknown.
+**Surface 3 is a server that is not registered in `docs/MCP.md`.** The live
+web-search MCP server is registered there, with the tool it exposes written
+down. The legal-research server is a worked setup example, not an installed
+server. Anything else is still unknown.
 
 **Surface 4.** Open WebUI's search is opt-in per message. The Zed `web`
 profile can search and cannot read files. `confirm` on each tool call is

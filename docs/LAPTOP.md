@@ -172,8 +172,9 @@ models show as unavailable.
 A Gemini provider **is allowed on the laptop** (D3), with the laptop's own
 key. The host has none. Keep sensitive repos on `hearth/local-main`.
 
-Copy the Write/Research profile block from `docs/IDES.md` too if the laptop
-uses auslaw: the same "Write enables every server" trap applies.
+If using the legal-research worked example from `docs/MCP.md`, install and
+review its source on the laptop too; its stdio process runs beside Zed, not on
+the host. The same "Write enables every server" trap applies.
 
 ## Open WebUI from the laptop
 

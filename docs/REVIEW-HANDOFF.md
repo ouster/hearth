@@ -55,8 +55,9 @@ Described so you don't have to look. Ask the operator before opening any of
 these, and never open the ones in the next section.
 
 - `~/.config/zed/settings.json` — `hearth` provider at `127.0.0.1:1234`,
-  every model slot `hearth/local-big`, Write profile fully redefined,
-  Research profile with only the auslaw tools.
+  every model slot `hearth/local-main`. The legal-research profile recorded
+  during phase 3 is no longer installed; `docs/MCP.md` preserves it as a
+  worked setup example.
 - `~/.aider.conf.yml` — `openai/local-big` for model and weak model.
 - `~/.zshrc` — sources `scripts/aliases.zsh`; Ollama exports removed.
 - `~/Library/LaunchAgents/com.hearth.boot.plist` — written by `install-autostart.sh`.
