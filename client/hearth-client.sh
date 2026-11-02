@@ -217,7 +217,7 @@ ai-webui() {
   fi
   _hearth_forwards_open || ai-tunnel || return 1
   _u="http://127.0.0.1:${HEARTH_WEBUI_PORT}"
-  echo "Open WebUI: ${_u}  (the host's instance — same login and history)"
+  echo "Open WebUI: ${_u}  (the host's instance — no login, same history)"
   command -v open >/dev/null 2>&1 && open "$_u" || { command -v xdg-open >/dev/null 2>&1 && xdg-open "$_u" >/dev/null 2>&1; }
   unset _u
 }

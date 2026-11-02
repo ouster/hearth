@@ -134,8 +134,7 @@ for p in $(pgrep -f '\.lmstudio/|LM Studio'); do footprint -p $p | awk '/Footpri
 ## Chat UI and visibility
 
 ```bash
-scripts/webui.sh up            # local only — there is no cloud mode
-scripts/webui.sh up --lan      # reachable from other machines (see below)
+scripts/webui.sh up            # local only — there is no cloud mode, and no login
 scripts/webui.sh down
 ```
 
@@ -159,9 +158,9 @@ SSH tunnel**, which keeps the UI localhost-only:
 ssh -N -L 3000:127.0.0.1:3000 USER@HOST     # then http://127.0.0.1:3000
 ```
 
-**Alternative:** `scripts/webui.sh up --lan`, then `http://<LAN-IP>:3000`. It
-has its own login, but it is plain HTTP and another authenticated surface.
-Either way, **do not port-forward :3000 to the internet.**
+There is no login: `WEBUI_AUTH` is off, and `webui.sh` refuses `--lan` because
+that would publish the chat UI with nothing in front of it. **Do not
+port-forward :3000 to the internet.** The tunnel is the only remote path.
 
 ### Do not enable tools in Open WebUI without thinking
 

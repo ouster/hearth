@@ -178,7 +178,7 @@ uses auslaw: the same "Write enables every server" trap applies.
 ## Open WebUI from the laptop
 
 `ai-webui` opens `http://127.0.0.1:3000` through the tunnel — the host's own
-instance, same login and history. Nothing to install on the laptop.
+instance, no login, same history. Nothing to install on the laptop.
 
 ## Web search in the laptop's Zed (optional)
 

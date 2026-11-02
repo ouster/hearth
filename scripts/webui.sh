@@ -27,11 +27,12 @@ PORT=3000
 CMD="${1:-status}"
 BIND="127.0.0.1"
 for a in "$@"; do
-  # --lan exposes the UI to the whole network. Open WebUI has its own login, so
-  # this is not wide open — but it is another authenticated surface on a machine
-  # whose other services are deliberately localhost-only. The SSH tunnel in
-  # docs/RUNBOOK.md gives laptop access without opening anything.
-  [ "$a" = "--lan" ] && BIND="0.0.0.0"
+  # Authentication is off. A LAN bind would be an open chat UI on every
+  # interface. Laptops use the SSH tunnel in docs/RUNBOOK.md.
+  if [ "$a" = "--lan" ]; then
+    echo "refusing --lan: authentication is off, so a LAN bind would be an open chat UI"
+    exit 1
+  fi
 done
 
 case "$CMD" in
@@ -86,8 +87,7 @@ case "$CMD" in
       -e OPENAI_API_BASE_URL="http://host.containers.internal:1234/v1" \
       -e ENABLE_OLLAMA_API=False \
       -e WEBUI_NAME="hearth" \
-      -e ENABLE_SIGNUP=True \
-      -e ENABLE_AUTHENTICATION=False \
+      -e WEBUI_AUTH=False \
       -e TASK_MODEL_EXTERNAL="local-main" \
       -e DEFAULT_MODELS="local-main" \
       ${SEARCH_ENV[@]+"${SEARCH_ENV[@]}"} \
@@ -122,21 +122,12 @@ case "$CMD" in
       fi
     fi
 
-    if [ "$BIND" = "0.0.0.0" ]; then
-      cat <<EOF
-
-  WARNING: Open WebUI is bound to 0.0.0.0:${PORT}.
-  That is every interface, not only this machine. It has its own login.
-  The SSH tunnel (docs/LAPTOP.md) is the way a laptop should reach it.
-EOF
-    fi
-
     cat <<EOF
 
   http://127.0.0.1:${PORT}   (published on ${BIND}:${PORT})
 
-  First visit asks you to create an account — it is local to the container,
-  nothing leaves the machine. Signup is then disabled.
+  No login. WEBUI_AUTH is off, so the page opens straight into chat.
+  The UI stays on 127.0.0.1. --lan is refused. A laptop uses the SSH tunnel.
 
   CONNECTION — like web search below, Open WebUI stores the OpenAI endpoint
   and key in its database, and the DATABASE VALUE wins over the environment.
@@ -189,5 +180,5 @@ EOF
     podman secret rm hearth-lmstudio-token >/dev/null 2>&1 || true
     echo "gone"
     ;;
-  *) echo "usage: $0 {up [--lan]|down|status|logs|destroy}"; exit 1 ;;
+  *) echo "usage: $0 {up|down|status|logs|destroy}"; exit 1 ;;
 esac
