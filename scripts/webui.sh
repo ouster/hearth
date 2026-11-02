@@ -86,7 +86,8 @@ case "$CMD" in
       -e OPENAI_API_BASE_URL="http://host.containers.internal:1234/v1" \
       -e ENABLE_OLLAMA_API=False \
       -e WEBUI_NAME="hearth" \
-      -e ENABLE_SIGNUP=False \
+      -e ENABLE_SIGNUP=True \
+      -e ENABLE_AUTHENTICATION=False \
       -e TASK_MODEL_EXTERNAL="local-main" \
       -e DEFAULT_MODELS="local-main" \
       ${SEARCH_ENV[@]+"${SEARCH_ENV[@]}"} \
