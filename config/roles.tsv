@@ -3,8 +3,9 @@
 # model_key is the modelKey from `lms ls --json`, with @variant when a model
 # has several quantisations on disk. ctx and slots are per load;
 # slots becomes `lms load --parallel` for chat models. Read by scripts/lms-load.sh.
-# weights is the path under ~/.hearth/models (served) or ~/.lmstudio/models
-# (rollback) that scripts/pin-digests.sh hashes (D4). `lms ls` reports a
+# weights is the path under ~/.hearth/models (served). The same relative
+# path under ~/.lmstudio/models is the old copy. scripts/pin-digests.sh hashes
+# whichever is present, preferring ~/.hearth/models (D4). `lms ls` reports a
 # catalogue key, not the folder on disk.
 #
 # role	backend	model_key	ctx	slots	weights	draft	load

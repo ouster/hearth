@@ -43,8 +43,8 @@ this host's name and user filled in (`--windows` for PowerShell). In short:
 
 1. **Host, LM Studio app:** Developer → Server Settings → Manage Tokens →
    create `laptop-<name>`. Leave Serve on Local Network **off**.
-   While the oMLX trial is listening (`scripts/omlx-try.sh status`), register
-   that same token on the host: `scripts/omlx-try.sh sub-key add laptop-<name>`.
+   While oMLX is listening (`scripts/omlx.sh status`), register
+   that same token on the host: `scripts/omlx.sh sub-key add laptop-<name>`.
    The prompt does not echo. LM Studio keeps only a hash, so the token has
    to be pasted. A reboot starts LM Studio, which uses its own list.
 2. **Laptop:** `ssh-keygen -t ed25519 -f ~/.ssh/hearth_tunnel`, and a `Host hearth`
@@ -106,8 +106,8 @@ Showing the person `~/.ssh/hearth_tunnel.pub` is fine — it is public.
 **3. Stop and hand over to the person** for each of these, then wait:
 
 1. *On the host*, LM Studio app → Developer → Server Settings → Manage Tokens →
-   create `laptop-<name>`. While the oMLX trial is listening, the person also
-   runs `scripts/omlx-try.sh sub-key add laptop-<name>` and pastes that token.
+   create `laptop-<name>`. While oMLX is listening, the person also
+   runs `scripts/omlx.sh sub-key add laptop-<name>` and pastes that token.
    Do not ask them to paste it into the chat.
 2. *On the host*, with the `.pub` file copied over:
    `scripts/client-setup.sh <name> --authorize hearth_tunnel.pub`.
@@ -133,7 +133,7 @@ key works, the second that it can do nothing else.
 | `ai-ask "say ok"` | a short reply from local-main |
 | `ssh hearth true; echo $?` | **non-zero**, no shell: the key is tunnel-only |
 | `ask-cloud` (optional) | aider on Gemini with the laptop's own key |
-| `ask-deep` (optional) | refuses with "not loaded on the host" unless the host ran `scripts/demand-load.sh local-deep up --evict`; the laptop cannot load it (tunnel-only key). While it is loaded the host has no `local-main`, and `local-main` requests are answered by `local-deep` |
+| `ask-deep` (optional) | refuses with "not loaded on the host" unless the host ran `scripts/demand-load.sh local-deep up`; the laptop cannot load it (tunnel-only key). `local-main` stays loaded beside it |
 
 If `ai-ping` says `BAD TOKEN`, the person re-runs the `read -rs` step with
 the right token; `NO ANSWER` means the host is asleep or LM Studio is down
@@ -219,7 +219,7 @@ is open but the listener is not this client's ssh.
 ## Revoking a laptop
 
 1. LM Studio app → Manage Tokens → delete `laptop-<name>`.
-2. While the oMLX trial is up: `scripts/omlx-try.sh sub-key revoke laptop-<name>`.
+2. While oMLX is up: `scripts/omlx.sh sub-key revoke laptop-<name>`.
 3. Host: delete the `hearth-tunnel-<name>` line from `~/.ssh/authorized_keys`.
 
 Removing the tunnel key cuts the path. Delete the token in both places so a

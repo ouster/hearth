@@ -7,8 +7,8 @@
 # What actually needs help (ADR 0026):
 #
 #   oMLX        serves local-main on 127.0.0.1 from ~/.hearth/models.
-#               scripts/omlx-try.sh up. scripts/omlx-try.sh down puts LM Studio
-#               back; login does not.
+#               scripts/omlx.sh up. scripts/omlx.sh down stops it
+#               and does not start LM Studio.
 #   Podman      the VM does not start itself; container restart policies only
 #               apply once it is up. SearXNG and Open WebUI live there.
 #
@@ -27,10 +27,10 @@ rc=0
 
 # ---------------------------------------------------------------- oMLX
 log "starting oMLX"
-if "${ROOT}/scripts/omlx-try.sh" up; then
+if "${ROOT}/scripts/omlx.sh" up; then
   log "oMLX on 127.0.0.1:${HEARTH_PORT}"
 else
-  log "FAILED: scripts/omlx-try.sh up"
+  log "FAILED: scripts/omlx.sh up"
   exit 1
 fi
 wan=$(hearth_wan_binds "$HEARTH_PORT")

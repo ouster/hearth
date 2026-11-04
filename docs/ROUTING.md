@@ -81,9 +81,9 @@ legal-research profile as a setup example; it is not installed.
 ## No fallbacks
 
 There is no router, so nothing can quietly reroute a request to a cloud
-model. If `local-main` is not loaded, LM Studio does not fail the request:
-with JIT off it answers with whatever model is loaded, under the name you
-asked for. That is a wrong local answer, not a leak. `ask-deep` and the
+model. If `local-main` is not loaded, a request for it can be answered by
+whatever model is loaded, under the name you asked for. That is a wrong
+local answer, not a leak. `ask-deep` and the
 laptop clients refuse to call `local-deep` unless it is actually loaded, for
 this reason. The earlier rule ("local roles never fall back to cloud")
 existed because the inherited gateway had `local → gemini` fallbacks; see
@@ -91,7 +91,7 @@ existed because the inherited gateway had `local → gemini` fallbacks; see
 
 ## Break-glass
 
-There is no second local server. If LM Studio is wedged: quit the app,
-reopen it, then `lms server start --bind 127.0.0.1 -p 1234; scripts/lms-load.sh`.
-Before changing anything, capture `lms log stream`, the footprint, and the
-concurrency bench at the failing settings (plan, phase 6).
+There is no second local server, and no rollback onto LM Studio (ADR 0028).
+If oMLX is wedged: `scripts/omlx.sh down`, then `scripts/omlx.sh up`.
+Before changing anything, capture `~/Library/Logs/hearth-omlx.log`, the
+footprint of the listener, and the concurrency bench at the failing settings.

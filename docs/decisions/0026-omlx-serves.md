@@ -1,7 +1,7 @@
 # ADR 0026 — oMLX serves the resident role
 
 **Date:** 2026-11-04
-**Status:** accepted
+**Status:** accepted. The rollback onto LM Studio is removed by ADR 0028.
 
 ## Context
 
@@ -14,9 +14,9 @@ same band, about 50–110 tok/s. `bench/tasks` has not been re-run on oMLX.
 
 ## Decision
 
-Login boot runs `scripts/omlx-try.sh up`. The resident weights are a copy
+Login boot runs `scripts/omlx.sh up`. The resident weights are a copy
 under `~/.hearth/models`, and that copy is what oMLX loads. The LM Studio
-copy stays on disk. `scripts/omlx-try.sh down` stops oMLX and loads the role
+copy stays on disk. `scripts/omlx.sh down` stops oMLX and loads the role
 in LM Studio again. The host token keeps its name. `local-deep` moved onto
 oMLX in ADR 0027.
 

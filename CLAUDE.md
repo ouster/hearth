@@ -1,8 +1,8 @@
 # Hearth
 
 Local-first AI serving. oMLX on `127.0.0.1:1234` serves local roles from
-`~/.hearth/models` (ADR 0026). `scripts/omlx-try.sh down` puts the LM Studio
-app back on that port. Never also run headless `llmster`. Cloud (Gemini) is
+`~/.hearth/models` (ADR 0026). `scripts/omlx.sh down` stops it and does
+not start LM Studio. Never also run headless `llmster`. Cloud (Gemini) is
 reached by each tool with its own key.
 
 ## Which machine are you on?
@@ -20,7 +20,7 @@ reached by each tool with its own key.
 
 Read `docs/ROUTING.md` before suggesting any routing change.
 
-**Serving:** login boot starts oMLX (ADR 0026). `scripts/omlx-try.sh down` is the rollback to LM Studio. `ask-deep` swaps `local-deep` in for `local-main` inside oMLX and puts `local-main` back on the way out (ADR 0027).
+**Serving:** login boot starts oMLX (ADR 0026). There is no rollback to LM Studio (ADR 0028). `ask-deep` loads `local-deep` beside `local-main` and unloads `local-deep` on the way out.
 
 **In flight:** migration to LM Studio direct — `docs/MIGRATION-LMSTUDIO.md`
 (ADR 0016, accepted 2026-10-31). Host clients are cut over, the old stack is
@@ -41,9 +41,9 @@ removed gateway — never suggest commands against it.
    Same discipline for MCP servers: client config docs (`docs/IDES.md`) and
    `docs/MCP.md`.
 
-   Live: `local-main` (oMLX identifier, resident), `local-deep` (swapped in
-   instead of `local-main` for an `ask-deep` session, ADR 0020 — never call it
-   unless loaded, never load it beside `local-main`), `cloud-cheap`
+   Live: `local-main` (oMLX identifier, resident), `local-deep` (loaded beside
+   `local-main` for an `ask-deep` session, ADR 0020 and 0028 — never call it
+   unless loaded), `cloud-cheap`
    (Gemini, `ask-cloud` only). `local-code` / `local-chat` are alias names that
    mean `local-main` (D1). Dormant: `cloud-code`, `cloud-frontier*` — no keys.
 
@@ -75,7 +75,7 @@ removed gateway — never suggest commands against it.
 7. **Check the RAM envelope.** 64 GB total. macOS's default GPU cap is ~48 GB
    (75% above 36 GB). This host sets `iogpu.wired_limit_mb` to 57344, so the
    ceiling is 56 GB (RAM minus 8), and the oMLX memory guard matches it (ADR 0027).
-   `local-main` (ADR 0024) peaks at 25.2 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-01, footprint includes the app). `local-deep` is swapped in instead of `local-main`, never beside it. Say when a suggestion will not fit, or
+   `local-main` (ADR 0024) peaks at 25.2 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-01, footprint includes the app). `local-deep` may be loaded beside it (ADR 0028). Say when a suggestion will not fit, or
    will evict something that needs to stay loaded — on this machine the resident
    set matters more than any one model's quality.
 

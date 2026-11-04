@@ -3,7 +3,8 @@
 **Date:** 2026-11-01
 **Status:** accepted 2026-11-01 by the operator. The resident role in the
 measurement below was renamed `local-main` the same day (ADR 0021).
-Consequences use that name.
+Consequences use that name. Loading it only by unloading the resident is
+superseded by ADR 0028.
 
 ## Context
 

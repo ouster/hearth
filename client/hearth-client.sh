@@ -249,12 +249,12 @@ ask-deep() {
        | curl -s -m 8 -K - "${HEARTH_URL}/models" \
        | python3 -c 'import sys, json
 sys.exit(0 if any(m.get("id") == "local-deep" for m in json.load(sys.stdin).get("data", [])) else 1)' 2>/dev/null; then
-    echo "local-deep is not loaded on the host. On the host: scripts/demand-load.sh local-deep up --evict" >&2
-    echo "(that swaps out local-main; scripts/demand-load.sh local-deep down brings it back)" >&2
+    echo "local-deep is not loaded on the host. On the host: scripts/demand-load.sh local-deep up" >&2
+    echo "(local-main stays loaded; scripts/demand-load.sh local-deep down unloads local-deep)" >&2
     unset _k; return 1
   fi
-  # weak-model is local-deep too: while this role is swapped in, local-main
-  # is not loaded, and JIT would answer that name with local-deep silently.
+  # weak-model is local-deep too: a commit step should use the same model
+  # the session just asked.
   OPENAI_API_BASE="$HEARTH_URL" OPENAI_API_KEY="$_k" \
     aider --model openai/local-deep --weak-model openai/local-deep "$@"
   _rc=$?; unset _k; return $_rc

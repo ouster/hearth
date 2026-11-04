@@ -40,6 +40,8 @@ redacted (billing/invoice substituted); figures are unchanged.
 | 2026-11-04 | oMLX trial on `:1234` with RAM and SSD prefix cache | Same 30,260-token prompt: 23.4 s then 3.0 s to the first token. A changed prefix stayed at ~25 s. Thinking parsed, tool-smoke passed. Footprint 24 GB. A pasted laptop token is a sub-key: it can call the model and cannot log in as admin. Login boot still starts LM Studio | Trial only | ADR 0025, `scripts/omlx-try.sh` |
 | 2026-11-04 | Boot oMLX; resident weights copied to `~/.hearth/models` | Repeat of the same 30,244-token prompt: 26.1 s then 4.6 s. Cold prefill matches the 2026-11-01 LM Studio run. `local-deep` still needs LM Studio and the port | Login serves oMLX. `omlx-try.sh down` is the rollback | ADR 0026, `bench/results/2026-11-04-2150-omlx-cache` |
 | 2026-11-04 | `local-deep` weights copied; GPU wired limit raised to 56 GB | `ask-deep` swaps inside oMLX. The two roles are still not loaded together. 62259 MB was left unused because it leaves ~3 GB for macOS | Kept | ADR 0027 |
+| 2026-11-04 | Drop the LM Studio rollback; load both roles together | `down` stops oMLX and leaves the port empty. `local-deep` loads beside `local-main`. The 49.9 GB peak from 2026-11-01 fits under the 56 GB cap | Kept | ADR 0028 |
+| 2026-11-04 | Rename the serving script | `scripts/omlx.sh up` and `down`. Login boot still runs `up` | Kept | — |
 
 ## Roles
 

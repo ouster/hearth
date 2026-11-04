@@ -1,8 +1,8 @@
 # Runbook
 
 Start, stop, diagnose. oMLX serves `127.0.0.1:1234` from `~/.hearth/models`
-(ADR 0026). `scripts/omlx-try.sh down` puts the LM Studio app back on that
-port. `lms` lives at `~/.lmstudio/bin/lms` (installed with
+(ADR 0026). `scripts/omlx.sh down` stops oMLX and does not start LM
+Studio (ADR 0028). `lms` lives at `~/.lmstudio/bin/lms` (installed with
 `--no-modify-path`; the aliases call it by full path as `$HEARTH_LMS`).
 
 ## Layout of the running system
@@ -10,8 +10,8 @@ port. `lms` lives at `~/.lmstudio/bin/lms` (installed with
 | Piece | Where | Notes |
 |---|---|---|
 | LM Studio app | `/Applications/LM Studio.app` | owns the daemon and `~/.lmstudio`. "Enable Local LLM Service (headless)" on. Never run llmster as well |
-| Server | `127.0.0.1:1234` | oMLX, `scripts/omlx-try.sh up`. Rollback: `scripts/omlx-try.sh down` |
-| Roles | `config/roles.tsv` | `local-main` from `~/.hearth/models`, 128K × 3. `ask-deep` swaps `local-deep` in and back (ADR 0027) |
+| Server | `127.0.0.1:1234` | oMLX, `scripts/omlx.sh up`. `down` stops it |
+| Roles | `config/roles.tsv` | `local-main` from `~/.hearth/models`, 128K × 3. `local-deep` loads beside it (ADR 0028) |
 | Token | `~/.config/hearth/env`, mode 600 | `LMSTUDIO_HOST_TOKEN`, created in the app |
 | Server settings | `~/.lmstudio/.internal/http-server-config.json` | edited through the app; auth/tokens are stored elsewhere |
 | Remote Login (sshd) | `:22` | laptops' tunnel; their keys are `restrict`ed to `-L` `:1234`/`:3000`/`:8888`, with `-R` denied (`scripts/client-setup.sh --update-keys` brings old keys up to date) |
@@ -99,16 +99,16 @@ loads only that agent. Notices also land in
 
 ### oMLX
 
-`scripts/boot.sh` runs `scripts/omlx-try.sh up`. It serves `local-main` from
+`scripts/boot.sh` runs `scripts/omlx.sh up`. It serves `local-main` from
 the copy in `~/.hearth/models` on `127.0.0.1:1234`, with the host token, a
 56 GB memory guard, an 8 GB RAM cache, and a 20 GB SSD cache. `ask-deep`
-unloads `local-main`, loads `local-deep` from the same directory, and `down`
-puts `local-main` back. The GPU wired limit is 57344 MB (56 GB), installed by
+loads `local-deep` beside `local-main` and unloads `local-deep` on the way
+out. The GPU wired limit is 57344 MB (56 GB), installed by
 `scripts/iogpu-wired.sh`.
-`scripts/omlx-try.sh bench` checks thinking, tools, and a repeated 30K prompt.
-`scripts/omlx-try.sh down` stops oMLX and loads the role in LM Studio.
-A reboot stays on oMLX.
-A laptop token is registered with `scripts/omlx-try.sh sub-key add laptop-<name>`
+`scripts/omlx.sh bench` checks thinking, tools, and a repeated 30K prompt.
+`scripts/omlx.sh down` stops oMLX and leaves the port empty.
+A reboot starts oMLX again.
+A laptop token is registered with `scripts/omlx.sh sub-key add laptop-<name>`
 (the prompt does not echo) and dropped with `sub-key revoke`. That key can
 call the model and cannot log in as admin. LM Studio keeps only a hash, so
 the token has to be pasted. `sub-key list` prints names.

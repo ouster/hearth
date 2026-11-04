@@ -2,8 +2,8 @@
 
 Reference host: Apple Silicon Mac, 64 GB unified memory, macOS. oMLX serves
 local roles on `127.0.0.1:1234` from `~/.hearth/models` (ADR 0026).
-`scripts/omlx-try.sh down` puts the LM Studio app back on that port. Do not
-also run headless `llmster`. The gateway era is in `docs/HISTORY.md`.
+`scripts/omlx.sh down` stops oMLX and does not start LM Studio (ADR 0028).
+Do not also run headless `llmster`. The gateway era is in `docs/HISTORY.md`.
 
 ## Shape
 
@@ -15,7 +15,7 @@ flowchart TB
         scripts["scripts / benches"]
         webui["Open WebUI :3000<br/>(Podman)"]
         sbx["sandboxed.sh agents"]
-        srv["oMLX 127.0.0.1:1234<br/>local-main: 128K x 3<br/>local-deep swapped in by ask-deep<br/>token required"]
+        srv["oMLX 127.0.0.1:1234<br/>local-main: 128K x 3<br/>local-deep loads beside it<br/>token required"]
     end
 
     laptop["Laptop<br/>SSH tunnel, own token"]
@@ -43,7 +43,7 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 | Role | Backend | What |
 |---|---|---|
 | `local-main` | oMLX | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0024) |
-| `local-deep` | oMLX | slower, more careful model for hard one-off questions. Swapped in **instead of** `local-main` for an `ask-deep` session, then swapped back (ADR 0020, 0027). Beside it, a long prompt starved `local-main`. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up --evict`) |
+| `local-deep` | oMLX | slower, more careful model for hard one-off questions. Loaded **beside** `local-main` (ADR 0028). `ask-deep` unloads it on the way out and leaves `local-main` loaded. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up`) |
 | `cloud-cheap` | Gemini | reached directly by `ask-cloud`; never loaded into LM Studio |
 
 `local-code` and `local-chat` were collapsed into `local-main` (D1): two heavy
@@ -94,11 +94,11 @@ are not in that file).
 ## Process supervision
 
 oMLX serves `local-main` on `127.0.0.1:1234` from `~/.hearth/models` (ADR 0026).
-`ask-deep` unloads it and loads `local-deep` from the same tree, then restores it (ADR 0027).
-Login runs `scripts/boot.sh`, which runs `scripts/omlx-try.sh up`, then starts
-Podman, SearXNG and Open WebUI. `scripts/omlx-try.sh down` is the rollback:
-it stops oMLX and loads the role with `scripts/lms-load.sh`. **Do not also run
-llmster**: whichever starts first owns `~/.lmstudio`.
+`ask-deep` loads `local-deep` from the same tree beside it (ADR 0028).
+Login runs `scripts/boot.sh`, which runs `scripts/omlx.sh up`, then starts
+Podman, SearXNG and Open WebUI. `scripts/omlx.sh down` stops oMLX and
+does not start LM Studio. **Do not also run llmster**: whichever starts first
+owns `~/.lmstudio`.
 
 ### Environment files
 

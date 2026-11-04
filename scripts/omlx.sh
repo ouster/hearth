@@ -1,12 +1,12 @@
 #!/bin/bash
-# Serve local roles from oMLX on 127.0.0.1:1234 (ADR 0026, 0027). Login boot
+# Serve local roles from oMLX on 127.0.0.1:1234 (ADR 0026, 0028). Login boot
 # runs `up`. Weights are the copies under ~/.hearth/models. `down` stops oMLX
-# and loads the resident role in LM Studio again.
+# and leaves the port empty. It does not start LM Studio.
 #
-#   scripts/omlx-try.sh up | down | status | bench
-#   scripts/omlx-try.sh sub-key list
-#   scripts/omlx-try.sh sub-key add <name>      # token on stdin, not echoed
-#   scripts/omlx-try.sh sub-key revoke <name>
+#   scripts/omlx.sh up | down | status | bench
+#   scripts/omlx.sh sub-key list
+#   scripts/omlx.sh sub-key add <name>      # token on stdin, not echoed
+#   scripts/omlx.sh sub-key revoke <name>
 #
 # Weights, context, and slots come from the resident local-main row. The API
 # key is the existing host token, written to ~/.omlx/settings.json (mode 600)
@@ -25,7 +25,7 @@ OMLX_HOME="${OMLX_HOME:-$HOME/.omlx}"
 MODEL_DIR="${OMLX_HOME}/models"
 PIDFILE="${OMLX_HOME}/hearth.pid"
 LOG="${HOME}/Library/Logs/hearth-omlx.log"
-LABEL="com.hearth.omlx-try"
+LABEL="com.hearth.omlx"
 PLIST="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 SETTINGS="${OMLX_HOME}/settings.json"
 HOT_CACHE="8GB"
@@ -33,7 +33,7 @@ SSD_CACHE="20GB"
 GUARD_GB=56
 CMD="${1:-status}"
 
-fail() { echo "omlx-try: $*" >&2; exit 1; }
+fail() { echo "omlx: $*" >&2; exit 1; }
 
 find_omlx() {
   local c
@@ -105,12 +105,6 @@ PY
   launchctl bootout "gui/$(id -u)/${LABEL}" >/dev/null 2>&1 || true
   launchctl bootstrap "gui/$(id -u)" "$PLIST"
   launchctl kickstart "gui/$(id -u)/${LABEL}"
-}
-
-restore_lms() {
-  echo "restoring LM Studio on 127.0.0.1:${HEARTH_PORT}"
-  hearth_server_start >/dev/null
-  "${ROOT}/scripts/lms-load.sh"
 }
 
 write_settings() {
@@ -223,7 +217,7 @@ link_weights() {
   link_one local-main "$WEIGHTS" || fail "weights missing: ${HOME}/.hearth/models/${WEIGHTS}"
   deep=$(awk -F'\t' '!/^[[:space:]]*(#|$)/ && $1=="local-deep" && $8=="demand" { print $6; exit }' "${ROOT}/config/roles.tsv")
   if [ -n "$deep" ]; then
-    link_one local-deep "$deep" || echo "omlx-try: local-deep weights not under ~/.hearth/models — ask-deep cannot swap until they are copied" >&2
+    link_one local-deep "$deep" || echo "omlx: local-deep weights not under ~/.hearth/models — ask-deep cannot load it until the weights are copied" >&2
   fi
 }
 
@@ -380,29 +374,26 @@ cmd_up() {
     i=$((i + 1))
   done
   if [ "$code" != "401" ]; then
-    echo "oMLX did not require a token (last status ${code}) — restoring LM Studio" >&2
+    echo "oMLX did not require a token (last status ${code})" >&2
     stop_omlx
-    restore_lms
     exit 1
   fi
   code="$(hearth_http /models "$LMSTUDIO_HOST_TOKEN" || true)"
   if [ "$code" != "200" ]; then
-    echo "host token was refused (${code}) — restoring LM Studio" >&2
+    echo "host token was refused (${code})" >&2
     stop_omlx
-    restore_lms
     exit 1
   fi
 
   if ! configure_model; then
-    echo "model setup failed — restoring LM Studio" >&2
+    echo "model setup failed" >&2
     tail -n 40 "$LOG" >&2 || true
     stop_omlx
-    restore_lms
     exit 1
   fi
   echo "http://127.0.0.1:${HEARTH_PORT}/v1"
   echo "log: ${LOG}"
-  echo "restore with: scripts/omlx-try.sh down"
+  echo "stop with: scripts/omlx.sh down"
 }
 
 cmd_down() {
@@ -417,7 +408,7 @@ cmd_down() {
     esac
     i=$((i + 1))
   done
-  restore_lms
+  echo "oMLX stopped; nothing is listening on ${HEARTH_PORT}"
 }
 
 cmd_status() {
@@ -572,7 +563,7 @@ import json, os, sys, urllib.error, urllib.request
 
 def _quiet(etype, value, tb):
     if etype is not SystemExit:
-        sys.stderr.write("omlx-try: %s\n" % etype.__name__)
+        sys.stderr.write("omlx: %s\n" % etype.__name__)
 sys.excepthook = _quiet
 
 base = "http://127.0.0.1:%s" % os.environ["OMLX_PORT"]
@@ -612,7 +603,7 @@ def call(method, path, body=None, bearer=None, timeout=30):
         fail("no answer from the server")
 
 def fail(msg):
-    raise SystemExit("omlx-try: " + redact(msg))
+    raise SystemExit("omlx: " + redact(msg))
 
 def entries(body):
     auth = body.get("auth") if isinstance(body, dict) else None

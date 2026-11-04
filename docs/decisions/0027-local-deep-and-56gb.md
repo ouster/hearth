@@ -1,7 +1,7 @@
 # ADR 0027 — local-deep swaps inside oMLX; GPU ceiling is 56 GB
 
 **Date:** 2026-11-04
-**Status:** accepted
+**Status:** accepted. The 56 GB ceiling stands. Loading `local-deep` only by unloading `local-main` is superseded by ADR 0028.
 
 ## Context
 
@@ -24,7 +24,7 @@ installs a LaunchDaemon so the wired limit survives reboot.
 
 ## Consequences
 
-- `ask-deep` no longer needs `scripts/omlx-try.sh down`.
+- `ask-deep` no longer needs `scripts/omlx.sh down`.
 - Uninstalling LM Studio no longer deletes the `local-deep` weights.
 - `local-deep` has not been re-benched on oMLX. The swap is the same policy
   as ADR 0020, not a new quality claim.

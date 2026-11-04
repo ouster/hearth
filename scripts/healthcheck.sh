@@ -50,12 +50,7 @@ hdr "1. Server"
 holder="$(lsof -nP -iTCP:"${HEARTH_PORT}" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1}')"
 case "$holder" in
   Python|python*|omlx) ok "oMLX serves ${HEARTH_URL} (ADR 0026)" ;;
-  *)
-    case "$(hearth_daemon_owner)" in
-      app)     ok "LM Studio app owns the daemon — rollback, scripts/omlx-try.sh down" ;;
-      llmster) bad "llmster owns the daemon — D6 is the app (lms daemon down, open the app)" ;;
-      *)       bad "nothing serving on :${HEARTH_PORT} (scripts/boot.sh)" ;;
-    esac ;;
+  *) bad "oMLX is not serving on :${HEARTH_PORT} (scripts/omlx.sh up)" ;;
 esac
 code=$(hearth_http /models "$TOK")
 SERVER_OK=0

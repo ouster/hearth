@@ -51,7 +51,7 @@ for role, _backend, key, ctx, _slots, *_ in rows:
     quant = (m.get("quantization") or {}).get("name", "")
     label = f'{role} · {m.get("displayName", key)}' + (f" {quant}" if quant else "")
     if role in demand:
-        label += " — load first: scripts/demand-load.sh " + role + " up --evict"
+        label += " — load first: scripts/demand-load.sh " + role + " up"
     # The entry: "name": "<role>", then its fields up to the closing brace.
     pat = re.compile(r'("name"\s*:\s*"' + re.escape(role) + r'"\s*,)(.*?)(\n\s*\})', re.S)
     hit = pat.search(new)
