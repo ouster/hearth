@@ -1,10 +1,9 @@
 # Architecture
 
-Reference host: Apple Silicon Mac, 64 GB unified memory, macOS. One local
-inference server, the LM Studio app (0.4.28), on `127.0.0.1:1234`. D6 changed
-from headless `llmster` to the app on 2026-10-31: the two cannot share
-`~/.lmstudio`, and the app keeps settings and tokens in one place. ADR
-0016; the gateway era (LiteLLM + Ollama + Postgres) is in `docs/HISTORY.md`.
+Reference host: Apple Silicon Mac, 64 GB unified memory, macOS. oMLX serves
+local roles on `127.0.0.1:1234` from `~/.hearth/models` (ADR 0026).
+`scripts/omlx-try.sh down` puts the LM Studio app back on that port. Do not
+also run headless `llmster`. The gateway era is in `docs/HISTORY.md`.
 
 ## Shape
 
@@ -16,23 +15,23 @@ flowchart TB
         scripts["scripts / benches"]
         webui["Open WebUI :3000<br/>(Podman)"]
         sbx["sandboxed.sh agents"]
-        lms["LM Studio 127.0.0.1:1234<br/>local-main: 128K x 3 parallel<br/>token required, JIT off"]
+        srv["oMLX 127.0.0.1:1234<br/>local-main: 128K x 3<br/>local-deep swapped in by ask-deep<br/>token required"]
     end
 
     laptop["Laptop<br/>SSH tunnel, own token"]
     cloud["Gemini<br/>ask-cloud only, tool's own key"]
 
-    aider --> lms
-    zed --> lms
-    scripts --> lms
-    webui -->|"host.containers.internal"| lms
-    sbx -->|"only allowed egress"| lms
-    laptop -->|"ssh -L, tunnel-only key"| lms
+    aider --> srv
+    zed --> srv
+    scripts --> srv
+    webui -->|"host.containers.internal"| srv
+    sbx -->|"only allowed egress"| srv
+    laptop -->|"ssh -L, tunnel-only key"| srv
     aider -.-> cloud
 
     classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
     classDef leaveCls fill:#FAEEDA,stroke:#854F0B,color:#633806
-    class lms localCls
+    class srv localCls
     class cloud leaveCls
 ```
 
@@ -43,8 +42,8 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 
 | Role | Backend | What |
 |---|---|---|
-| `local-main` | LM Studio | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0024) |
-| `local-deep` | LM Studio | slower, more careful model for hard one-off questions. Swapped in **instead of** `local-main` for an `ask-deep` session, then swapped back; beside it, memory passed the ceiling and `local-main` timed out. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up --evict`) (ADR 0020) |
+| `local-main` | oMLX | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0024) |
+| `local-deep` | oMLX | slower, more careful model for hard one-off questions. Swapped in **instead of** `local-main` for an `ask-deep` session, then swapped back (ADR 0020, 0027). Beside it, a long prompt starved `local-main`. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up --evict`) |
 | `cloud-cheap` | Gemini | reached directly by `ask-cloud`; never loaded into LM Studio |
 
 `local-code` and `local-chat` were collapsed into `local-main` (D1): two heavy
@@ -94,15 +93,12 @@ are not in that file).
 
 ## Process supervision
 
-The LM Studio app owns the daemon, with "Enable Local LLM Service
-(headless)" on. `lms` drives whichever daemon is running, so the server is
-still started with `lms server start --bind 127.0.0.1 -p 1234` and roles are
-loaded with `scripts/lms-load.sh`. The app's GUI costs ~1.1 GB of footprint
-over headless llmster. **Do not also run llmster**: whichever starts first owns
-`~/.lmstudio`. At login `com.hearth.boot` runs `scripts/boot.sh` (`install-autostart.sh`):
-open the app hidden, restart the server with an explicit `--bind 127.0.0.1`
-(the saved settings drifted to `0.0.0.0` + CORS once), load roles.tsv, start
-Podman, SearXNG and Open WebUI.
+oMLX serves `local-main` on `127.0.0.1:1234` from `~/.hearth/models` (ADR 0026).
+`ask-deep` unloads it and loads `local-deep` from the same tree, then restores it (ADR 0027).
+Login runs `scripts/boot.sh`, which runs `scripts/omlx-try.sh up`, then starts
+Podman, SearXNG and Open WebUI. `scripts/omlx-try.sh down` is the rollback:
+it stops oMLX and loads the role with `scripts/lms-load.sh`. **Do not also run
+llmster**: whichever starts first owns `~/.lmstudio`.
 
 ### Environment files
 

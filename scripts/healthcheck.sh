@@ -47,10 +47,15 @@ post() {
 # ---------------------------------------------------------------- 1. server
 hdr "1. Server"
 [ -n "$TOK" ] || { er "LMSTUDIO_HOST_TOKEN not set in ${HEARTH_ENV} — nothing below is meaningful"; }
-case "$(hearth_daemon_owner)" in
-  app)     ok "LM Studio app owns the daemon (D6)" ;;
-  llmster) bad "llmster owns the daemon — D6 is the app (lms daemon down, open the app)" ;;
-  *)       bad "no LM Studio daemon running (scripts/boot.sh)" ;;
+holder="$(lsof -nP -iTCP:"${HEARTH_PORT}" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1}')"
+case "$holder" in
+  Python|python*|omlx) ok "oMLX serves ${HEARTH_URL} (ADR 0026)" ;;
+  *)
+    case "$(hearth_daemon_owner)" in
+      app)     ok "LM Studio app owns the daemon — rollback, scripts/omlx-try.sh down" ;;
+      llmster) bad "llmster owns the daemon — D6 is the app (lms daemon down, open the app)" ;;
+      *)       bad "nothing serving on :${HEARTH_PORT} (scripts/boot.sh)" ;;
+    esac ;;
 esac
 code=$(hearth_http /models "$TOK")
 SERVER_OK=0
@@ -134,8 +139,14 @@ listen=$(lsof -nP -iTCP:"$HEARTH_PORT" -sTCP:LISTEN 2>/dev/null | awk '
 if [ -z "$listen" ]; then
   er "nothing listening, or lsof could not see it"
 else
-  others=$(printf '%s\n' "$listen" | cut -f1 | grep -viE '^(LM|lms|llmster)' || true)
-  [ -z "$others" ] && ok "only LM Studio listens on :${HEARTH_PORT}" || bad "something else listens on :${HEARTH_PORT}: ${others}"
+  others=$(printf '%s\n' "$listen" | cut -f1 | grep -viE '^(LM|lms|llmster|Python|python|omlx)' || true)
+  if [ -n "$others" ]; then
+    bad "something else listens on :${HEARTH_PORT}: ${others}"
+  elif printf '%s\n' "$listen" | cut -f1 | grep -qiE '^(Python|python|omlx)$'; then
+    ok "oMLX listens on :${HEARTH_PORT}"
+  else
+    ok "only LM Studio listens on :${HEARTH_PORT}"
+  fi
   bad_bind=""
   while IFS="$(printf '\t')" read -r _ addr; do
     [ -n "$addr" ] || continue

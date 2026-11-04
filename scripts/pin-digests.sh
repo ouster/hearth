@@ -5,7 +5,8 @@
 #   scripts/pin-digests.sh --check          # fast: file count, bytes, newest mtime
 #   scripts/pin-digests.sh --check --deep   # re-hash everything (~20 GB, ~30 s)
 #
-# Hashes the `weights` path from config/roles.tsv (under ~/.lmstudio/models):
+# Hashes the `weights` path from config/roles.tsv. A copy under
+# ~/.hearth/models wins; otherwise ~/.lmstudio/models.
 # sha256 of every file, then sha256 of the sorted "path sha" list. Written to
 # pins/digests.tsv, git-tracked, so drift shows in a diff. preflight.sh runs
 # the fast check.
@@ -21,6 +22,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 PINS="${ROOT}/pins/digests.tsv"
 MODELS="$HOME/.lmstudio/models"
+# Resident weights served by oMLX live under ~/.hearth/models (ADR 0026).
+weight_path() {
+  if [ -e "${HOME}/.hearth/models/${1}" ]; then
+    printf '%s\n' "${HOME}/.hearth/models/${1}"
+  else
+    printf '%s\n' "${MODELS}/${1}"
+  fi
+}
 MODE=record; DEEP=0
 for a in "$@"; do
   case "$a" in
@@ -67,8 +76,8 @@ if [ "$MODE" = record ]; then
   } > "$tmp"
   while IFS="$(printf '\t')" read -r role _ key _ _ w; do
     [ -n "$role" ] || continue
-    p="${MODELS}/${w}"
-    [ -n "$w" ] && [ "$w" != "-" ] && [ -e "$p" ] || { echo "could not run: ${role}: weights '${w}' not found under ${MODELS}"; rm -f "$tmp"; exit 2; }
+    p="$(weight_path "$w")"
+    [ -n "$w" ] && [ "$w" != "-" ] && [ -e "$p" ] || { echo "could not run: ${role}: weights '${w}' not found under ~/.hearth/models or ${MODELS}"; rm -f "$tmp"; exit 2; }
     printf 'hashing %s (%s)… ' "$role" "$w"
     q=$(quick "$p"); h=$(deep "$p")
     echo "${h:0:12}"
@@ -90,7 +99,7 @@ while IFS="$(printf '\t')" read -r role _ key _ _ w; do
   if [ "$(printf '%s' "$rec" | cut -f2,3)" != "$(printf '%s\t%s' "$key" "$w")" ]; then
     echo "DRIFT  ${role}: roles.tsv now ${key} / ${w}; recorded $(printf '%s' "$rec" | cut -f2,3 | tr '\t' ' ')"; rc=1; continue
   fi
-  p="${MODELS}/${w}"
+  p="$(weight_path "$w")"
   [ -e "$p" ] || { echo "DRIFT  ${role}: weights missing at ${p}"; rc=1; continue; }
   want_q=$(printf '%s' "$rec" | cut -f4-6); got_q=$(quick "$p")
   if [ "$want_q" != "$got_q" ]; then

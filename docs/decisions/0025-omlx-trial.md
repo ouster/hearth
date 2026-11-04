@@ -1,7 +1,7 @@
 # ADR 0025 — Try oMLX on the resident role
 
 **Date:** 2026-11-04
-**Status:** trial. Not a replacement for LM Studio until a bench says so.
+**Status:** superseded by ADR 0026. The measurements below still stand.
 
 ## Context
 

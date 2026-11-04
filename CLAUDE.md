@@ -1,7 +1,9 @@
 # Hearth
 
-Local-first AI serving. The LM Studio app on `127.0.0.1:1234` serves local
-roles (never also run headless `llmster`); cloud (Gemini) is reached by each tool with its own key.
+Local-first AI serving. oMLX on `127.0.0.1:1234` serves local roles from
+`~/.hearth/models` (ADR 0026). `scripts/omlx-try.sh down` puts the LM Studio
+app back on that port. Never also run headless `llmster`. Cloud (Gemini) is
+reached by each tool with its own key.
 
 ## Which machine are you on?
 
@@ -17,6 +19,8 @@ roles (never also run headless `llmster`); cloud (Gemini) is reached by each too
   only check their permissions with `ls -l`.
 
 Read `docs/ROUTING.md` before suggesting any routing change.
+
+**Serving:** login boot starts oMLX (ADR 0026). `scripts/omlx-try.sh down` is the rollback to LM Studio. `ask-deep` swaps `local-deep` in for `local-main` inside oMLX and puts `local-main` back on the way out (ADR 0027).
 
 **In flight:** migration to LM Studio direct — `docs/MIGRATION-LMSTUDIO.md`
 (ADR 0016, accepted 2026-10-31). Host clients are cut over, the old stack is
@@ -37,7 +41,7 @@ removed gateway — never suggest commands against it.
    Same discipline for MCP servers: client config docs (`docs/IDES.md`) and
    `docs/MCP.md`.
 
-   Live: `local-main` (LM Studio identifier, resident), `local-deep` (swapped in
+   Live: `local-main` (oMLX identifier, resident), `local-deep` (swapped in
    instead of `local-main` for an `ask-deep` session, ADR 0020 — never call it
    unless loaded, never load it beside `local-main`), `cloud-cheap`
    (Gemini, `ask-cloud` only). `local-code` / `local-chat` are alias names that
@@ -68,8 +72,10 @@ removed gateway — never suggest commands against it.
    still loads whatever is on disk; say so rather than implying roles are
    immutable. Re-record only after re-benching.
 
-7. **Check the RAM envelope.** 64 GB total, but macOS caps GPU-accessible memory at ~48 GB
-   (75% above 36 GB) — that is the real ceiling. `local-main` (ADR 0024) peaks at 25.2 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-01, footprint includes the app). Say when a suggestion will not fit, or
+7. **Check the RAM envelope.** 64 GB total. macOS's default GPU cap is ~48 GB
+   (75% above 36 GB). This host sets `iogpu.wired_limit_mb` to 57344, so the
+   ceiling is 56 GB (RAM minus 8), and the oMLX memory guard matches it (ADR 0027).
+   `local-main` (ADR 0024) peaks at 25.2 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-01, footprint includes the app). `local-deep` is swapped in instead of `local-main`, never beside it. Say when a suggestion will not fit, or
    will evict something that needs to stay loaded — on this machine the resident
    set matters more than any one model's quality.
 

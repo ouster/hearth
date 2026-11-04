@@ -6,8 +6,9 @@ copies: Zed `display_name` labels (`scripts/zed-sync.sh`) and the key plus
 weights path in `pins/digests.tsv` (`scripts/pin-digests.sh`). (Before ADR 0016
 the second file was `litellm/config.yaml`.)
 
-**Hardware envelope:** 64 GB unified. macOS caps GPU-accessible memory at ~75% above 36 GB,
-so the real ceiling is **~48 GB**, not the full 64. The resident set matters more than any single
+**Hardware envelope:** 64 GB unified. macOS's default GPU cap is ~75% above 36 GB
+(~48 GB). This host sets `iogpu.wired_limit_mb` to 57344, so the ceiling is **56 GB**
+(RAM minus 8) and the oMLX guard matches it (ADR 0027). The resident set matters more than any single
 model's size — see the measurement below.
 
 ## Live — LM Studio (ADR 0016)

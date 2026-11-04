@@ -1,0 +1,13 @@
+thinking probe
+thinking: 200 ok
+tool smoke
+=== tool-smoke openai model=local-main ===
+turn1: tool_calls=1 content_len=0
+  read_file
+turn2: tool_calls=1 content_len=0
+  write_file
+  has_lt=True head='# hearth tool smoke\n#!/bin/bash\n\nhealthcheck() {\n  if [[ $x < 1 ]]; then echo hi'
+PASS — write/edit tool in turn 2
+two identical ~30k prompts (second turn is the cache)
+turn 1 ttft=26.094 prompt=30244
+turn 2 ttft=4.625 prompt=30244

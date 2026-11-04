@@ -1,8 +1,7 @@
 #!/bin/bash
-# Trial: serve local-main from oMLX on 127.0.0.1:1234 so its RAM+SSD KV cache
-# can be measured. LM Studio is stopped for the trial. `down` starts it again
-# and reloads config/roles.tsv. A reboot runs scripts/boot.sh, which takes the
-# port back. This does not change the role.
+# Serve local roles from oMLX on 127.0.0.1:1234 (ADR 0026, 0027). Login boot
+# runs `up`. Weights are the copies under ~/.hearth/models. `down` stops oMLX
+# and loads the resident role in LM Studio again.
 #
 #   scripts/omlx-try.sh up | down | status | bench
 #   scripts/omlx-try.sh sub-key list
@@ -24,7 +23,6 @@ ai_load_env
 
 OMLX_HOME="${OMLX_HOME:-$HOME/.omlx}"
 MODEL_DIR="${OMLX_HOME}/models"
-MODEL_LINK="${MODEL_DIR}/local-main"
 PIDFILE="${OMLX_HOME}/hearth.pid"
 LOG="${HOME}/Library/Logs/hearth-omlx.log"
 LABEL="com.hearth.omlx-try"
@@ -32,7 +30,7 @@ PLIST="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 SETTINGS="${OMLX_HOME}/settings.json"
 HOT_CACHE="8GB"
 SSD_CACHE="20GB"
-GUARD_GB=48
+GUARD_GB=56
 CMD="${1:-status}"
 
 fail() { echo "omlx-try: $*" >&2; exit 1; }
@@ -209,20 +207,31 @@ os.chmod(path, 0o600)
 PY
 }
 
-link_weights() {
-  src="${HOME}/.lmstudio/models/${WEIGHTS}"
-  [ -d "$src" ] || fail "weights missing: ${src}"
-  mkdir -p "$MODEL_DIR"
-  if [ -e "$MODEL_LINK" ] && [ ! -L "$MODEL_LINK" ]; then
-    fail "${MODEL_LINK} exists and is not a symlink"
+link_one() {
+  role="$1"
+  src="${HOME}/.hearth/models/${2}"
+  dest="${MODEL_DIR}/${role}"
+  [ -d "$src" ] || return 1
+  if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+    fail "${dest} exists and is not a symlink"
   fi
-  ln -sfn "$src" "$MODEL_LINK"
+  ln -sfn "$src" "$dest"
+}
+
+link_weights() {
+  mkdir -p "$MODEL_DIR"
+  link_one local-main "$WEIGHTS" || fail "weights missing: ${HOME}/.hearth/models/${WEIGHTS}"
+  deep=$(awk -F'\t' '!/^[[:space:]]*(#|$)/ && $1=="local-deep" && $8=="demand" { print $6; exit }' "${ROOT}/config/roles.tsv")
+  if [ -n "$deep" ]; then
+    link_one local-deep "$deep" || echo "omlx-try: local-deep weights not under ~/.hearth/models — ask-deep cannot swap until they are copied" >&2
+  fi
 }
 
 configure_model() {
   OMLX_API_KEY="$LMSTUDIO_HOST_TOKEN" \
   OMLX_PORT="$HEARTH_PORT" \
   OMLX_CTX="$CTX" \
+  OMLX_ROLES="${ROOT}/config/roles.tsv" \
   /usr/bin/python3 -I - <<'PY'
 import json, os, time, urllib.error, urllib.request, http.cookiejar
 base = "http://127.0.0.1:%s" % os.environ["OMLX_PORT"]
@@ -252,40 +261,61 @@ code, _ = call("POST", "/admin/api/login", {"api_key": key})
 if code != 200:
     raise SystemExit("admin login failed (%s)" % code)
 
+roles = {}
+with open(os.environ["OMLX_ROLES"]) as fh:
+    for line in fh:
+        if not line.strip() or line.startswith("#"):
+            continue
+        f = line.rstrip("\n").split("\t")
+        if len(f) < 8 or f[1] != "lmstudio" or f[5] in ("", "-"):
+            continue
+        roles[f[0]] = {"ctx": int(f[3]), "load": f[7]}
+
 code, listing = call("GET", "/v1/models")
 if code != 200:
     raise SystemExit("/v1/models failed (%s)" % code)
 ids = [m.get("id") for m in listing.get("data") or [] if m.get("id")]
-if not ids:
-    raise SystemExit("no models discovered")
-if len(ids) != 1 and "local-main" not in ids:
-    raise SystemExit("expected one model, found %s" % len(ids))
-mid = "local-main" if "local-main" in ids else ids[0]
-if mid != "local-main":
-    code, body = call("PUT", "/admin/api/models/%s/settings" % mid, {"model_alias": "local-main"})
-    if code != 200:
-        raise SystemExit("alias failed (%s): %s" % (code, body.get("detail", "")[:200]))
-    mid = "local-main"
+if "local-main" not in ids:
+    raise SystemExit("local-main was not discovered")
 
-settings = {
+def apply(mid, settings):
+    code, body = call("PUT", "/admin/api/models/%s/settings" % mid, settings)
+    if code != 200:
+        raise SystemExit("model settings failed for %s (%s): %s" % (mid, code, str(body.get("detail", ""))[:300]))
+
+common = {
     "enable_thinking": True,
     "chat_template_kwargs": {"enable_thinking": True},
-    "reasoning_parser": "gemma",
     "temperature": 1.0,
     "top_p": 0.95,
     "top_k": 64,
     "repetition_penalty": 1.0,
+}
+main = dict(common)
+main.update({
+    "reasoning_parser": "gemma",
     "max_context_window": ctx,
     "max_tokens": 65536,
     "is_pinned": True,
-}
-code, body = call("PUT", "/admin/api/models/%s/settings" % mid, settings)
-if code != 200:
-    raise SystemExit("model settings failed (%s): %s" % (code, str(body.get("detail", ""))[:300]))
+    "is_default": True,
+})
+apply("local-main", main)
+if "local-deep" in ids and "local-deep" in roles:
+    deep = dict(common)
+    deep.update({
+        "max_context_window": roles["local-deep"]["ctx"],
+        "max_tokens": 32768,
+        "is_pinned": False,
+        "is_default": False,
+    })
+    apply("local-deep", deep)
 
-code, body = call("POST", "/admin/api/models/%s/load" % mid, None, timeout=600)
-if code != 200:
-    raise SystemExit("load failed (%s): %s" % (code, str(body.get("detail", ""))[:300]))
+code, body = call("POST", "/admin/api/models/local-main/load", None, timeout=600)
+detail = str(body.get("detail", ""))
+if code not in (200, 409):
+    raise SystemExit("load failed (%s): %s" % (code, detail[:300]))
+if code == 409 and "already loading" not in detail and "already loaded" not in detail and "Already loaded" not in detail:
+    raise SystemExit("load failed (%s): %s" % (code, detail[:300]))
 
 deadline = time.time() + 300
 loaded = False
@@ -293,7 +323,7 @@ while time.time() < deadline:
     code, body = call("GET", "/admin/api/models")
     if code == 200:
         for m in body.get("models") or []:
-            if m.get("id") in (mid, "local-main") and m.get("loaded"):
+            if m.get("id") == "local-main" and m.get("loaded"):
                 loaded = True
                 break
     if loaded:

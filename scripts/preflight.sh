@@ -100,7 +100,11 @@ for m in json.load(sys.stdin):
     else
       bad "${role}: ${key} not in lms ls"
     fi
-    [ -e "$HOME/.lmstudio/models/${w}" ] || bad "${role}: weights path ${w} missing under ~/.lmstudio/models"
+    if [ -e "$HOME/.hearth/models/${w}" ] || [ -e "$HOME/.lmstudio/models/${w}" ]; then
+      ok "${role}: weights on disk"
+    else
+      bad "${role}: weights path ${w} missing under ~/.hearth/models and ~/.lmstudio/models"
+    fi
   done <<EOF
 $(hearth_roles lmstudio)
 EOF
