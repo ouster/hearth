@@ -138,8 +138,8 @@ ai-webui           # open host's Open WebUI (http://127.0.0.1:3000)
 ```
 
 Editors (aider + Zed): [`docs/IDES.md`](docs/IDES.md). Zed compacts an
-agent thread at 80,000 tokens, before the 128K window fills and LM Studio
-drops the middle of the prompt. `/compact` does it by hand.
+agent thread at 110,000 tokens, under the 128K window. A longer prompt is
+refused. `/compact` does it by hand.
 
 Zed MCP tools are `context_servers`: Zed starts them as a stdio child on
 the machine where it is running. A networked server is enabled only

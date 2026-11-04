@@ -96,6 +96,18 @@ were dropped. The turn still runs. `scripts/install-autostart.sh --watch`
 loads only that agent. Notices also land in
 `~/Library/Logs/hearth-context-watch.log`.
 
+### oMLX trial
+
+`scripts/omlx-try.sh up` stops the LM Studio server and serves `local-main`
+from oMLX on `127.0.0.1:1234`, with the host token, a 48 GB memory guard, an
+8 GB RAM cache, and a 20 GB SSD cache. `scripts/omlx-try.sh bench` checks
+thinking, tools, and a repeated 30K prompt. `scripts/omlx-try.sh down` puts
+LM Studio back. A reboot runs `scripts/boot.sh`, which takes the port back.
+A laptop token is registered with `scripts/omlx-try.sh sub-key add laptop-<name>`
+(the prompt does not echo) and dropped with `sub-key revoke`. That key can
+call the model and cannot log in as admin. LM Studio keeps only a hash, so
+the token has to be pasted. `sub-key list` prints names.
+
 ### Sleep
 
 A sleeping host means every laptop loses inference. These are printed, not

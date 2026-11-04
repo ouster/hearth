@@ -13,7 +13,9 @@
 # The host stays bound to 127.0.0.1 (ADR 0016, phase 4 decision: tunnel only).
 # Each laptop gets:
 #   - its own LM Studio token, laptop-<name>, created in the app — revoke one
-#     machine without touching the others;
+#     machine without touching the others. While the oMLX trial is listening,
+#     the same token is also registered with scripts/omlx-try.sh sub-key add.
+#     A reboot starts LM Studio, which uses its own list;
 #   - its own SSH key, authorized here with `restrict` + permitopen + a
 #     permitlisten that matches nothing, so that key can forward to
 #     127.0.0.1:1234 (LM Studio), :3000 (Open WebUI) and :8888 (SearXNG, for a
@@ -222,6 +224,11 @@ Laptop setup: ${NAME}   (host ${USER_NAME}@${HOSTNAME_LOCAL}, tunnel only)
 1. ON THIS HOST — LM Studio app → Developer tab → Server Settings → Manage
    Tokens → Create Token "laptop-${NAME}". Copy it. Leave Serve on Local
    Network OFF: the tunnel needs nothing exposed.
+   While the oMLX trial is listening (scripts/omlx-try.sh status), register
+   that same token here. The prompt does not echo. LM Studio keeps only a
+   hash, so this paste is the copy the trial accepts:
+     scripts/omlx-try.sh sub-key add laptop-${NAME}
+   A reboot starts LM Studio again, which uses its own token list.
 
 EOF
 if [ "$WINDOWS" -eq 0 ]; then cat <<EOF
@@ -271,6 +278,7 @@ cat <<EOF
 5. Zed on the laptop: docs/LAPTOP.md (api_url http://127.0.0.1:1234/v1 through
    the tunnel; token via the UI; a Gemini provider is allowed on the laptop, D3).
 
-Revoke a laptop: delete its token in LM Studio, and its hearth-tunnel-${NAME}
-line in ${AK}.
+Revoke a laptop: delete its token in LM Studio, run
+  scripts/omlx-try.sh sub-key revoke laptop-${NAME}
+while the trial is up, and delete its hearth-tunnel-${NAME} line in ${AK}.
 EOF

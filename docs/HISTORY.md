@@ -37,6 +37,7 @@ redacted (billing/invoice substituted); figures are unchanged.
 | 2026-11-01 | Drop `local-embed` | Nothing requested embeddings except healthcheck. Weights stay on disk, unloaded | Removed | ADR 0018 |
 | 2026-11-01 | `local-big` c3 re-run at 128K; then 1 slot vs 3 | 128K costs nothing over 64K at ~30K prompts (29.7 GB peak). 1 slot: median finish 48 s vs 63 s, but p95 72 s vs 66 s and 12% less throughput | Kept 3 slots | `2026-11-01-128k` |
 | 2026-11-01 | Notify when a prompt is trimmed to fit the context window | The server drops the middle and still returns a normal reply, so an agent thread repeats work it can no longer see | Notification names the role, prompt size, and tokens dropped. The turn still runs | `scripts/context-watch.sh` |
+| 2026-11-04 | oMLX trial on `:1234` with RAM and SSD prefix cache | Same 30,260-token prompt: 23.4 s then 3.0 s to the first token. A changed prefix stayed at ~25 s. Thinking parsed, tool-smoke passed. Footprint 24 GB. A pasted laptop token is a sub-key: it can call the model and cannot log in as admin. Login boot still starts LM Studio | Trial only | ADR 0025, `scripts/omlx-try.sh` |
 
 ## Roles
 
