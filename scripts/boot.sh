@@ -8,7 +8,7 @@
 #
 #   oMLX        serves local-main on 127.0.0.1 from ~/.hearth/models.
 #               scripts/omlx.sh up. scripts/omlx.sh down stops it
-#               and does not start LM Studio.
+#               and leaves the port empty.
 #   Podman      the VM does not start itself; container restart policies only
 #               apply once it is up. SearXNG and Open WebUI live there.
 #

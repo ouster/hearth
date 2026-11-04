@@ -196,11 +196,13 @@ npm install --ignore-scripts --save-exact --prefix ~/.local/share/hearth/mcp-sea
 ```
 
 Then a `searxng` stdio context server in Zed with
-`SEARXNG_URL=http://127.0.0.1:8888` (or your `HEARTH_SEARXNG_PORT`), tools
-enabled only in a `web` profile with just `searxng_web_search`, no file
-tools, and `default_model` `hearth/local-main`. Do not switch that profile
-to Gemini. Run `ai-tunnel` before searching. Search queries go to public
-search engines via the host, so never on client work.
+`SEARXNG_URL=http://127.0.0.1:8888` (or your `HEARTH_SEARXNG_PORT`). Enable
+`searxng_web_search` only, in `web` (no file tools, `default_model`
+`hearth/local-main`) and, for a coding thread, `write-web` (Write's tools,
+no pinned model). Do not switch either profile to Gemini. Run `ai-tunnel`
+before searching. Search queries go to public search engines via the host.
+An agent that can read files can put personal information from them into
+that query.
 
 SearXNG has no login. Once the tunnel is up, any process on the laptop can
 POST a query to `127.0.0.1:8888` and the host will send it to the public

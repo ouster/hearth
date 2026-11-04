@@ -3,7 +3,7 @@
 #
 # Two restrictions, in order of how much they matter:
 #
-#   1. EGRESS. The process may reach LM Studio on 127.0.0.1:1234 (ADR 0016)
+#   1. EGRESS. The process may reach oMLX on 127.0.0.1:1234 (ADR 0016)
 #      and nothing else. This is the control that stops exfiltration. curl to an
 #      attacker, git push, pip install, DNS -- all fail.
 #
@@ -29,7 +29,7 @@ SELF_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$SELF_DIR/.." && pwd)
 
 WORKDIR=$(pwd)
-GATEWAY_PORT=1234   # LM Studio. Flag name kept from the gateway era.
+GATEWAY_PORT=1234   # oMLX. Flag name kept from the gateway era.
 PRINT_ONLY=0
 EXTRA_WRITE=""
 
@@ -127,7 +127,7 @@ SBPL
 ;; ---------------------------------------------------------------
 ;; Network. THIS IS THE CONTROL THAT MATTERS.
 ;;
-;; LM Studio and nothing else. No DNS, so hostnames do not resolve;
+;; oMLX and nothing else. No DNS, so hostnames do not resolve;
 ;; no outbound TCP, so curl and git push fail. An injected agent that
 ;; reads a secret has no channel to send it.
 ;; ---------------------------------------------------------------

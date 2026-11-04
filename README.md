@@ -76,7 +76,7 @@ git clone <this-repo> hearth && cd hearth
 scripts/omlx.sh up
 
 # 2. Token — the oMLX API key, stored mode 600
-#    ~/.config/hearth/env:  LMSTUDIO_HOST_TOKEN=...
+#    ~/.config/hearth/env:  OMLX_HOST_TOKEN=...
 
 # 3. Shell aliases
 echo "source $PWD/scripts/aliases.zsh" >> ~/.zshrc
@@ -138,14 +138,14 @@ refused. `/compact` does it by hand.
 Zed MCP tools are `context_servers`: Zed starts them as a stdio child on
 the machine where it is running. A networked server is enabled only
 in an agent profile named for where its traffic goes, and never in Write.
-The query text leaves, the same rule as web search. What is registered, and
-how to add one, is in [`docs/MCP.md`](docs/MCP.md) and
-[`docs/IDES.md`](docs/IDES.md).
+Coding threads that need search use Write + search. The query text leaves,
+the same rule as web search. What is registered, and how to add one, is in
+[`docs/MCP.md`](docs/MCP.md) and [`docs/IDES.md`](docs/IDES.md).
 
 ## Laptops
 
 SSH tunnel only — the server never listens on the LAN. Each laptop gets its
-own LM Studio token and an SSH key that can forward to `:1234` / `:3000` / `:8888` and
+own host token and an SSH key that can forward to `:1234` / `:3000` / `:8888` and
 nothing else. `scripts/client-setup.sh <laptop-name>` prints the steps;
 details in [`docs/LAPTOP.md`](docs/LAPTOP.md). Never port-forward `:22`,
 `:1234`, `:3000` or `:8888`.
@@ -201,7 +201,7 @@ removed gateway (`:4000`, `:11434`, LiteLLM); never read
 
 ```
 CLAUDE.md / AGENTS.md   rules for coding agents in this repo
-config/roles.tsv        role → LM Studio model key, context, slots
+config/roles.tsv        role → model key, context, slots
 docs/                   architecture, routing, models, runbook, history, ADRs
 scripts/                omlx, benches, sandbox, client setup, …
 client/                 laptop shims (bash/zsh + PowerShell), SSH-tunnel based

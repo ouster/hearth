@@ -2,7 +2,7 @@
 """Concurrency bench: N simultaneous agent turns against one role.
 
 Stdlib only. Run with `python3 -I`. Normally invoked by
-scripts/concurrency-bench.sh — see docs/MIGRATION-LMSTUDIO.md phase 0.
+scripts/concurrency-bench.sh. See docs/ARCHITECTURE.md.
 
 Each request is a realistic Zed-style agent turn: system prompt, six tool
 schemas, an earlier tool result padded with real repo files to ~T prompt

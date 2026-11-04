@@ -1,7 +1,7 @@
 # ADR 0022 — Web search for the Zed agent through the local SearXNG
 
 **Date:** 2026-11-01
-**Status:** accepted 2026-11-01 by the operator.
+**Status:** accepted 2026-11-01 by the operator. Amended 2026-11-05 by ADR 0029: coding threads that need search use `write-web`. This profile is unchanged.
 
 ## Context
 
@@ -29,7 +29,8 @@ maintainer, frequent releases, and no server-side tool allow-list.
 ## Consequences
 
 - Query text from the `web` profile reaches public search engines (via
-  SearXNG, so not tied to the host's IP or a profile). Never for client work.
+  SearXNG, so not tied to the host's IP or a profile). The query can carry
+  personal information the agent has read; see ADR 0029 and `docs/ROUTING.md`.
 - Upgrades are deliberate: re-vet, bump the pinned version, re-run
   `scripts/snyk-monitor.sh mcp-searxng`.
 - It depends on Homebrew's Node (`/opt/homebrew/bin/node`, ≥ 22), installed as

@@ -42,6 +42,24 @@ ai_boot_label() {
   printf '%s' "${v:-com.hearth.boot}"
 }
 
+# User-defined bridge. The default "podman" network does not resolve
+# container names, and a port published on the Mac's 127.0.0.1 is not
+# reachable from a container via host.containers.internal.
+hearth_podman_net() {
+  command -v podman >/dev/null 2>&1 || return 0
+  podman network exists hearth || podman network create hearth >/dev/null
+}
+
+hearth_podman_connect() {
+  local name="$1" nets
+  hearth_podman_net
+  nets=$(podman inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{println $k}}{{end}}' "$name" 2>/dev/null || true)
+  case "$nets" in
+    *hearth*) return 0 ;;
+  esac
+  podman network connect hearth "$name"
+}
+
 # Podman container name for a logical service. Prefers an already-running
 # legacy ai-stack-* container so a rename does not orphan data.
 ai_container() {
@@ -73,7 +91,7 @@ ai_volume() {
 ai_load_env() {
   local line name val
   [ -f "$HEARTH_ENV" ] || return 0
-  for name in LMSTUDIO_HOST_TOKEN GOOGLE_API_KEY; do
+  for name in OMLX_HOST_TOKEN GOOGLE_API_KEY; do
     line=$(grep -E "^[[:space:]]*(export[[:space:]]+)?${name}=" "$HEARTH_ENV" | tail -1 || true)
     if [ -z "$line" ]; then
       unset "$name"

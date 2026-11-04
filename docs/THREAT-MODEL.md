@@ -1,7 +1,8 @@
 # Prompt injection threat model
 
-Last updated: 2026-11-01. Controls in §4 verified on macOS 26.4 by
-`scripts/sandbox-probe.sh` (10 passed, 0 failed).
+Last updated: 2026-11-05. Controls in §4 verified on macOS 26.4 by
+`scripts/sandbox-probe.sh` (10 passed, 0 failed). Write + search (ADR 0029)
+is listed in §2 and §3; it is outside that sandbox.
 
 ## 1. The claim this document rests on
 
@@ -25,9 +26,9 @@ Anything in this repo that looks like injection *detection* is a bug.
 
 This is the important structural point, and it is easy to get wrong.
 
-Model placement is the control for **where data goes on purpose**. LM Studio
+Model placement is the control for **where data goes on purpose**. oMLX
 on `:1234` holds only local models, and only `ask-cloud` carries a cloud key, so
-a prompt sent to a local role cannot route client data to Google. That boundary
+a prompt sent to a local role cannot route personal information to Google. That boundary
 is real and it works (ADR 0016; before that it was gateway key scope).
 
 Injection attacks do not use that path at all.
@@ -47,7 +48,7 @@ flowchart TB
 
     secrets["~/.ssh, .env, keychain<br/>readable - accepted"]
 
-    gw{{"LM Studio app 127.0.0.1:1234<br/>local models only, token required"}}
+    gw{{"oMLX 127.0.0.1:1234<br/>local models only, token required"}}
     localm["local models"]
     cloudm["cloud models"]
     outside["blocked: github / pypi / attacker"]
@@ -62,7 +63,7 @@ flowchart TB
     agent -.->|"blocked by sandbox"| outside
 
     gw --> localm
-    cloudm -.-|"not loaded in LM Studio"| gw
+    cloudm -.-|"not served by oMLX"| gw
 
     classDef okCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
     classDef badCls fill:#FBE9E7,stroke:#A32B18,color:#7A1F11
@@ -79,7 +80,7 @@ Two boundaries, doing different jobs:
 
 - **`sandbox-exec`** wraps the agent. One arrow leaves it, to `127.0.0.1:1234`.
   Everything else — `github`, `pypi`, an attacker's host, DNS itself — is cut.
-- **LM Studio** is the only thing at the end of that arrow, and it holds only
+- **oMLX** is the only thing at the end of that arrow, and it holds only
   local models, so even intended traffic cannot reach a cloud model.
 
 An injection that lands still reads whatever it likes (the dashed arrow from
@@ -96,8 +97,9 @@ substitutes for the other.
 
 | Threat | Model placement | Sandbox |
 |---|---|---|
-| A prompt sends client data to a cloud model | **caught** (unless you run `ask-cloud`) | not caught |
-| An injected agent exfiltrates a key via curl | not caught | **caught** |
+| A prompt sends personal information to a cloud model | **caught** (unless you run `ask-cloud`) | not caught |
+| An injected agent exfiltrates a key via curl | not caught | **caught**, if the agent was started with `scripts/sandboxed.sh` |
+| Write + search puts file text into a SearXNG query | not caught | not caught. Zed is not sandboxed. `confirm` shows the query before it leaves |
 | An injected agent reads a file it shouldn't | not caught | not caught |
 | An injected agent rewrites source in the repo | not caught | not caught |
 
@@ -111,9 +113,9 @@ it landed*, which is knowable.
 | # | Surface | Untrusted content arrives via | If injected, it can | Risk |
 |---|---|---|---|---|
 | 1 | **aider** | files you `/add`, vendored deps, cloned repos, sample data | edit source, run commands, reach the network | **high** |
-| 2 | **Zed agents** | same, plus tool results. Write and Ask have `fetch` and `search_web` off. The `web` profile is SearXNG search only (no file tools) | edit or read in Write; in Web, send the query text out. `confirm` is the gate | **high** |
+| 2 | **Zed agents** | same, plus tool results. Write and Ask have `fetch` and `search_web` off. **Web** is search only. **Write + search** has Write's tools and `searxng_web_search` (ADR 0029) | edit or read in Write; send the query out from Web or Write + search. Write + search can put file text into that query. `confirm` is the gate | **high** |
 | 3 | **untrusted MCP** | fetched docs / tools from a server not in `docs/MCP.md` | depends entirely on what the MCP exposes | unknown |
-| 4 | **SearXNG** | arbitrary web pages; the query text leaves | Open WebUI can mislead you and, when search is on, send a query. Zed's `web` profile can search and nothing else. The tunnel publishes SearXNG with no login, so any process on a laptop can send a query | medium |
+| 4 | **SearXNG** | arbitrary web pages; the query text leaves | Open WebUI can mislead you and, when search is on, send a query. Zed's `web` profile can search and cannot read files. **Write + search** can read files and search in one thread. The tunnel publishes SearXNG with no login, so any process on a laptop can send a query | medium |
 
 **Surface 3 is a server that is not registered in `docs/MCP.md`.** The live
 web-search MCP server is registered there, with the tool it exposes written
@@ -121,8 +123,11 @@ down. The legal-research server is a worked setup example, not an installed
 server. Anything else is still unknown.
 
 **Surface 4.** Open WebUI's search is opt-in per message. The Zed `web`
-profile can search and cannot read files. `confirm` on each tool call is
-the gate. **The moment Open WebUI gains tools, functions, or code
+profile can search and cannot read files. **Write + search** can do both,
+so a file the agent reads can leave as the query. `confirm` on each tool
+call is the gate: the query text is on screen before it is sent. SearXNG
+does not keep a log of successful queries. `podman logs hearth-searxng`
+shows a query only when an upstream engine logs an error. **The moment Open WebUI gains tools, functions, or code
 execution, that UI becomes surface 1 with a web feed attached.** Treat
 enabling them as a decision requiring an ADR, not a settings toggle.
 
@@ -157,8 +162,10 @@ happened deliberately rather than by being breached.
 Restricting reads breaks dylib loading and every language runtime, and read
 confinement is not what stops the attack. An agent under this profile **can
 still read your SSH keys, `.env` files, and browser cookies.** It cannot send
-them anywhere. Exfiltration needs a channel, and there is exactly one open
-channel — LM Studio on `:1234`, which holds only local models.
+them anywhere. Inside this profile, exfiltration needs a channel, and there
+is exactly one open channel — oMLX on `:1234`, which holds only local models.
+Zed is not started under this profile. Write + search is a second channel,
+and this sandbox does not cover it.
 
 This is a deliberate trade, not a limitation we failed to notice. Anyone
 reading this document should be able to state it back: *the sandbox protects
@@ -213,7 +220,7 @@ In order of value per effort:
    in `RUNBOOK.md`.
 4. Known vulnerabilities in the Open WebUI and SearXNG images are monitored by
    Snyk (`scripts/snyk-monitor.sh`, RUNBOOK). That covers published CVEs in
-   their packages, not their configuration or LM Studio itself.
+   their packages, not their configuration or oMLX itself.
 
 ## Sources
 

@@ -107,10 +107,10 @@ PY
 }
 
 write_settings() {
-  [ -n "${LMSTUDIO_HOST_TOKEN:-}" ] || fail "LMSTUDIO_HOST_TOKEN is not set"
+  [ -n "${OMLX_HOST_TOKEN:-}" ] || fail "OMLX_HOST_TOKEN is not set"
   mkdir -p "$OMLX_HOME" "$MODEL_DIR" "${OMLX_HOME}/cache" "$(dirname "$LOG")"
   chmod 700 "$OMLX_HOME" "${OMLX_HOME}/cache" 2>/dev/null || true
-  OMLX_API_KEY="$LMSTUDIO_HOST_TOKEN" \
+  OMLX_API_KEY="$OMLX_HOST_TOKEN" \
   OMLX_SETTINGS="$SETTINGS" \
   OMLX_MODEL_DIR="$MODEL_DIR" \
   OMLX_CACHE_DIR="${OMLX_HOME}/cache" \
@@ -221,7 +221,7 @@ link_weights() {
 }
 
 configure_model() {
-  OMLX_API_KEY="$LMSTUDIO_HOST_TOKEN" \
+  OMLX_API_KEY="$OMLX_HOST_TOKEN" \
   OMLX_PORT="$HEARTH_PORT" \
   OMLX_CTX="$CTX" \
   OMLX_ROLES="${ROOT}/config/roles.tsv" \
@@ -364,7 +364,7 @@ cmd_up() {
     stop_omlx
     exit 1
   fi
-  code="$(hearth_http /models "$LMSTUDIO_HOST_TOKEN" || true)"
+  code="$(hearth_http /models "$OMLX_HOST_TOKEN" || true)"
   if [ "$code" != "200" ]; then
     echo "host token was refused (${code})" >&2
     stop_omlx
@@ -418,7 +418,7 @@ cmd_bench() {
   TMPD="$(mktemp -d)"
   trap 'rm -rf "$TMPD"' EXIT
   body='{"model":"local-main","max_tokens":3000,"messages":[{"role":"user","content":"Pens are 3 for $2.10 and notebooks $1.35 each. 7 pens and 4 notebooks, paid with $20. Change? Amount only."}]}'
-  code="$(printf 'header = "Authorization: Bearer %s"\n' "$LMSTUDIO_HOST_TOKEN" \
+  code="$(printf 'header = "Authorization: Bearer %s"\n' "$OMLX_HOST_TOKEN" \
     | curl -s -m 300 -o "$TMPD/out" -w '%{http_code}' -K - \
         -H 'Content-Type: application/json' -d "$body" \
         "http://127.0.0.1:${HEARTH_PORT}/v1/chat/completions")"
@@ -439,7 +439,7 @@ else: print("ok")
   # The concurrency bench stamps a fresh session id at the front of every
   # prompt, so it never reuses a prefix. This sends one body twice.
   echo "two identical ~30k prompts (second turn is the cache)"
-  ROOT="$ROOT" LMSTUDIO_HOST_TOKEN="$LMSTUDIO_HOST_TOKEN" \
+  ROOT="$ROOT" OMLX_HOST_TOKEN="$OMLX_HOST_TOKEN" \
   HEARTH_PORT="$HEARTH_PORT" /usr/bin/python3 -I - <<'PY'
 import json, os, time, urllib.request
 root = os.environ["ROOT"]
@@ -474,7 +474,7 @@ body = json.dumps({
     ],
 }).encode()
 url = "http://127.0.0.1:%s/v1/chat/completions" % os.environ["HEARTH_PORT"]
-key = os.environ["LMSTUDIO_HOST_TOKEN"]
+key = os.environ["OMLX_HOST_TOKEN"]
 
 def once(n):
     req = urllib.request.Request(url, data=body, method="POST")
@@ -525,7 +525,7 @@ cmd_subkey() {
     *) fail "usage: $0 sub-key {list|add|revoke}" ;;
   esac
   omlx_running || fail "oMLX is not running"
-  [ -n "${LMSTUDIO_HOST_TOKEN:-}" ] || fail "LMSTUDIO_HOST_TOKEN is not set"
+  [ -n "${OMLX_HOST_TOKEN:-}" ] || fail "OMLX_HOST_TOKEN is not set"
   token=""
   if [ "$action" = "add" ]; then
     if [ -t 0 ]; then
@@ -538,7 +538,7 @@ cmd_subkey() {
     token="${token%$'\r'}"
     [ -n "$token" ] || fail "empty token"
   fi
-  OMLX_API_KEY="$LMSTUDIO_HOST_TOKEN" \
+  OMLX_API_KEY="$OMLX_HOST_TOKEN" \
   OMLX_SUB_ACTION="$action" \
   OMLX_SUB_NAME="$name" \
   OMLX_SUB_KEY="$token" \

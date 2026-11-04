@@ -1,9 +1,9 @@
 #!/bin/bash
 # Concurrency bench — N simultaneous agent turns against one role.
-# See docs/MIGRATION-LMSTUDIO.md phase 0 and bench/concurrency.py.
+# See bench/concurrency.py and docs/ARCHITECTURE.md.
 #
 #   scripts/concurrency-bench.sh --base-url http://127.0.0.1:1234/v1 \
-#       --token-env LMSTUDIO_HOST_TOKEN --model local-main --concurrency 3
+#       --token-env OMLX_HOST_TOKEN --model local-main --concurrency 3
 #
 # Options (defaults): --concurrency 3, --rounds 10, --prompt-tokens 30000,
 #   --timeout 180, --proc-match '\.omlx/', --out <auto>,
@@ -43,6 +43,6 @@ done
 
 # The bench process needs the API key. Nothing else in the env file
 # goes with it — GOOGLE_API_KEY stays unexported (ai_load_env).
-export LMSTUDIO_HOST_TOKEN
+export OMLX_HOST_TOKEN
 exec "$PY" -I "${ROOT}/bench/concurrency.py" --root "$ROOT" --out "$OUT" \
   ${ARGS[@]+"${ARGS[@]}"}

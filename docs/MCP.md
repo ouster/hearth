@@ -15,7 +15,7 @@ for that egress.
 
 | Server | Transport | Egress | Tools | Clients |
 |---|---|---|---|---|
-| `searxng` | stdio | local SearXNG `127.0.0.1:8888` → public search engines | 1 of 4 | host Zed, `web` profile only (ADR 0022) |
+| `searxng` | stdio | local SearXNG `127.0.0.1:8888` → public search engines | 1 of 4 | host Zed, `web` and `write-web` (ADR 0022, 0029) |
 
 ## Worked example: auslaw (not installed)
 
@@ -128,8 +128,8 @@ belonged to another home directory and no longer exists here.
 
 Switching to Research is the deliberate act of saying that the query may go
 to AustLII. Keep the profile on `hearth/local-main`; host Zed has no cloud
-provider. Do not use it on client work unless sending that query to AustLII is
-permitted.
+provider. The query can carry personal information the agent has just read.
+Send it only when that is intended.
 
 ## searxng
 
@@ -163,29 +163,32 @@ and a prompt-injection feed.
 
 ### Who may reach it
 
-Host Zed, `web` profile only. The profile's built-in tool map is empty, so
-a search result cannot read a file. The query text still leaves. `confirm`
-on each tool call is the other gate. Not for client work: rule 3, and
-`docs/ROUTING.md` (web search punctures the boundary).
+Host Zed, two profiles (ADR 0022, 0029). **Web** has an empty built-in tool
+map and `default_model` `hearth/local-main`, so a search result cannot read
+a file. **Write + search** (`write-web`) has Write's tools and no pinned
+model, so a coding thread on `local-main` or `local-deep` can search. The
+query text still leaves, and that profile can put file contents into the
+query. `confirm` on each tool call is the other gate. Write and Ask have
+neither. An agent on Write + search can exfiltrate personal information by
+searching with text it read from a file. See `docs/ROUTING.md`.
 
 Laptops may run the same pinned server against the host's SearXNG through
 the tunnel (`127.0.0.1:8888` on the laptop; tunnel keys allow `:8888` since
-2026-11-01). Same profile: no file tools, `default_model` `hearth/local-main`,
-and do not switch it to Gemini. SearXNG has no authentication, so any
-process on the laptop can send queries through the host once the tunnel is
-up — `docs/LAPTOP.md`.
+2026-11-01). Same two profiles. Do not switch either to Gemini. SearXNG has
+no authentication, so any process on the laptop can send queries through the
+host once the tunnel is up — `docs/LAPTOP.md`.
 
 ## Rules these enforce
 
 **Off by default.** Zed's built-in Write profile enables every context server
 (`enable_all_context_servers: true` in Zed 1.26); host settings redefine
-Write with it `false`. A server's tools are switched on only in a profile
-named for its egress (`web` for SearXNG).
+Write with it `false`. SearXNG is on in `web` and `write-web` only.
 
 **No cloud model alongside a networked tool.** Tool output re-enters the
-prompt. Host Zed has no cloud provider (D3). The Web profile's model is
-`hearth/local-main`. A laptop may have a Gemini provider for other work;
-that profile stays on `local-main`.
+prompt. Host Zed has no cloud provider (D3). Web stays on `hearth/local-main`.
+Write + search sets no model, so the thread stays on `local-main` or
+`local-deep`. A laptop may have a Gemini provider for other work; neither
+search profile is switched to it.
 
 **Ask before each call.** `agent.tool_permissions.default` is `confirm`.
 
@@ -197,7 +200,8 @@ By hand, after any Zed upgrade or settings change:
 | Check | Proves |
 |---|---|
 | Agent panel → Write profile shows no searxng tools | the default profile cannot search via SearXNG |
-| Web profile shows `searxng_web_search` and not `web_url_read`, and no file tools | search cannot read the repo, and the URL reader stays off |
+| Web profile shows `searxng_web_search` and not `web_url_read`, and no file tools | a search-only thread cannot read the repo, and the URL reader stays off |
+| Write + search shows `searxng_web_search`, file and edit tools, and not `web_url_read` | a coding thread can search, and the URL reader stays off |
 | Write and Ask show `fetch` and `search_web` off | the built-in web tools stay off |
 
 If following the auslaw worked example, additionally check that Write and Ask

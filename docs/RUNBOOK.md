@@ -11,7 +11,7 @@ Start, stop, diagnose. oMLX serves `127.0.0.1:1234` from `~/.hearth/models`
 | Server | `127.0.0.1:1234` | oMLX, `scripts/omlx.sh up`. `down` stops it |
 | Weights | `~/.hearth/models` | the directories named in `config/roles.tsv` |
 | Roles | `config/roles.tsv` | `local-main` resident, 128K × 3. `local-deep` loads beside it (ADR 0028) |
-| Token | `~/.config/hearth/env`, mode 600 | `LMSTUDIO_HOST_TOKEN`, the oMLX API key. The name stayed |
+| Token | `~/.config/hearth/env`, mode 600 | `OMLX_HOST_TOKEN`. Scripts pass it to the server as `OMLX_API_KEY` |
 | Server settings | `~/.omlx/settings.json` (mode 600) | written by `scripts/omlx.sh up`: loopback, CORS off, no model fallback |
 | Remote Login (sshd) | `:22` | laptops' tunnel; their keys are `restrict`ed to `-L` `:1234`/`:3000`/`:8888`, with `-R` denied (`scripts/client-setup.sh --update-keys` brings old keys up to date) |
 | Open WebUI | Podman, `127.0.0.1:3000` | `scripts/webui.sh` |
@@ -27,10 +27,10 @@ launchd agents. Ports 4000, 5433 and 11434 should be free.
 2. Store the API key without echoing:
    ```bash
    mkdir -p ~/.config/hearth && umask 077 && \
-     printf 'LMSTUDIO_HOST_TOKEN=%s\n' "$(pbpaste)" >> ~/.config/hearth/env && \
+     printf 'OMLX_HOST_TOKEN=%s\n' "$(pbpaste)" >> ~/.config/hearth/env && \
      chmod 600 ~/.config/hearth/env && pbcopy </dev/null
    ```
-   The variable name is the old one. The value is the oMLX API key.
+   The value is the oMLX API key.
 3. `scripts/omlx.sh up` writes `~/.omlx/settings.json` (loopback, CORS off,
    no model fallback), serves `local-main`, and refuses to start if something
    else holds `:1234`.
@@ -114,7 +114,11 @@ scripts/webui.sh down
 
 The container reaches the host's `127.0.0.1:1234` via
 `host.containers.internal` with "serve on local network" off. `webui.sh up`
-refuses to start unless the host token gets a 200.
+refuses to start unless the host token gets a 200. SearXNG stays published
+on `127.0.0.1:8888` for Zed and laptop tunnels. The WebUI container does not
+use that bind: both containers join the `hearth` Podman network and WebUI
+calls SearXNG by container name on port 8080. `up` writes that URL into the
+WebUI database, which is the value the search toggle actually uses.
 
 **The connection lives in WebUI's database.** Environment variables only seed
 a fresh database. `up` does not rewrite the saved OpenAI URL, and the
@@ -212,14 +216,14 @@ Bench any change the same way as the baseline:
 
 ```bash
 scripts/concurrency-bench.sh --base-url http://127.0.0.1:1234/v1 \
-  --token-env LMSTUDIO_HOST_TOKEN --model local-main --concurrency 3
+  --token-env OMLX_HOST_TOKEN --model local-main --concurrency 3
 ```
 
 ## Rollback
 
 There is no old stack to roll back to: it was removed on 2026-10-31 (ADR
 0016, Rollback). Backups are in `~/hearth-backups/` (mode 700). Client config
-backups end in `.pre-lmstudio-2026-10-31`.
+backups from 2026-10-31 sit beside the live files with a dated suffix.
 
 ## Laptop access
 

@@ -43,7 +43,7 @@ _hearth_var() {
 }
 
 _aider_local() {
-  local tok; tok="$(_hearth_var LMSTUDIO_HOST_TOKEN)" || return 1
+  local tok; tok="$(_hearth_var OMLX_HOST_TOKEN)" || return 1
   OPENAI_API_BASE="$HEARTH_LOCAL" \
   OPENAI_API_KEY="$tok" \
   aider --model openai/local-main "$@"
@@ -76,7 +76,7 @@ _hearth_ask_deep_restore() {
 ask-deep() {
   setopt localoptions localtraps
   local tok rc
-  tok="$(_hearth_var LMSTUDIO_HOST_TOKEN)" || return 1
+  tok="$(_hearth_var OMLX_HOST_TOKEN)" || return 1
   _hearth_ask_deep_state=$("${HEARTH_ROOT}/scripts/demand-load.sh" local-deep up) || return 1
   # already: a manual `up`, or a session this shell did not start. Leave it
   # loaded. loaded: this call brought it in, so the trap unloads it on the

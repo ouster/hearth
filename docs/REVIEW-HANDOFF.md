@@ -1,4 +1,6 @@
-# Review handoff: the LM Studio migration
+# Review handoff: the 2026-10-31 server cut
+
+> **Historical.** Do not follow this as current setup. Serving is oMLX: `docs/ARCHITECTURE.md` and `docs/RUNBOOK.md`.
 
 For an AI reviewer (Cursor, Zed, Claude Code) working in a clone of this repo.
 Written 2026-10-31. **Review only: change nothing, run nothing that mutates

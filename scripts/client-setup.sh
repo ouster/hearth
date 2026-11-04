@@ -12,13 +12,13 @@
 #
 # The host stays bound to 127.0.0.1 (ADR 0016, phase 4 decision: tunnel only).
 # Each laptop gets:
-#   - its own LM Studio token, laptop-<name>, created in the app — revoke one
-#     machine without touching the others. While oMLX is listening,
-#     the same token is also registered with scripts/omlx.sh sub-key add.
-#     A reboot runs scripts/omlx.sh up, which keeps sub-keys already registered;
+#   - its own host token, laptop-<name>, registered with
+#     scripts/omlx.sh sub-key add — revoke one machine without touching
+#     the others. A reboot runs scripts/omlx.sh up, which keeps sub-keys
+#     already registered.
 #   - its own SSH key, authorized here with `restrict` + permitopen + a
 #     permitlisten that matches nothing, so that key can forward to
-#     127.0.0.1:1234 (LM Studio), :3000 (Open WebUI) and :8888 (SearXNG, for a
+#     127.0.0.1:1234 (oMLX), :3000 (Open WebUI) and :8888 (SearXNG, for a
 #     laptop's SearXNG MCP — ADR 0022) and do nothing else — no shell, no -R,
 #     no other ports. --update-keys brings an older restriction up to date and
 #     keeps only options that narrow access (from=, expiry-time=, no-*);

@@ -23,10 +23,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
 ai_load_env
 AI_PY=/usr/bin/python3
-[ -n "${LMSTUDIO_HOST_TOKEN:-}" ] || { echo "could not run: LMSTUDIO_HOST_TOKEN not set"; exit 2; }
+[ -n "${OMLX_HOST_TOKEN:-}" ] || { echo "could not run: OMLX_HOST_TOKEN not set"; exit 2; }
 code=$(hearth_http /models || true)
 [ "$code" != "000" ] || { echo "could not run: oMLX is not answering (scripts/omlx.sh up)"; exit 2; }
-export LMSTUDIO_HOST_TOKEN
+export OMLX_HOST_TOKEN
 
 TASKDIR="${ROOT}/bench/tasks"
 STAMP="$(date +%Y-%m-%d-%H%M)"
@@ -85,7 +85,7 @@ payload = json.dumps({
 }).encode()
 req = urllib.request.Request(base + "/chat/completions", data=payload, headers={
     "Content-Type": "application/json",
-    "Authorization": "Bearer " + os.environ["LMSTUDIO_HOST_TOKEN"]})
+    "Authorization": "Bearer " + os.environ["OMLX_HOST_TOKEN"]})
 t0 = time.monotonic()
 try:
     with urllib.request.urlopen(req, timeout=1800) as r:

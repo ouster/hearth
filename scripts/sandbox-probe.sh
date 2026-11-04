@@ -19,7 +19,7 @@ set -u
 
 SELF_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_ROOT=$(cd "$SELF_DIR/.." && pwd)
-GATEWAY_PORT=${GATEWAY_PORT:-1234}   # LM Studio (ADR 0016)
+GATEWAY_PORT=${GATEWAY_PORT:-1234}   # oMLX (ADR 0016)
 OLD_PORT=4000                        # retired LiteLLM gateway: must now be denied
 
 PASS=0; FAIL=0; ERRS=0

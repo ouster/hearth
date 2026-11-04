@@ -1,0 +1,7 @@
+1. Not in the file.
+2. The dormant roles are `cloud-code`, `cloud-frontier*`, `cloud-frontier-direct`, and `cloud-frontier-fast`. They are blocked on:
+    * `cloud-code`: Anthropic API key (deliberately unset).
+    * `cloud-frontier*`: OpenRouter key.
+    * `cloud-frontier-direct`: Moonshot key.
+    * `cloud-frontier-fast`: Fireworks.
+3. Postgres is bound to port `:5433`, but the reason why that specific port was chosen is not in the file.

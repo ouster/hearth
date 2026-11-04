@@ -147,28 +147,34 @@ in `docs/MCP.md`; do not infer a command from this document.
 
 Write and Ask set `fetch` and `search_web` to false. Zed's built-in Ask
 profile includes both, so Ask is overridden here the same way Write is.
-Web search is the Web profile.
+Search is the Web profile, or Write + search when the thread also edits.
 
-### MCP: searxng, Web profile only
+### MCP: searxng
 
 `searxng` is a `context_servers` stdio entry for the pinned SearXNG MCP
-server (`docs/MCP.md`, ADR 0022). Its search tool sends the query text through
-the host's SearXNG to public engines, so it is enabled **only** in the `web`
-agent profile, and only `searxng_web_search` — `web_url_read` (any URL) and
-the other two tools stay off. The profile's built-in `tools` map is empty:
-no file reads, no edit, no terminal. Its `default_model` is
-`hearth/local-main`. Each tool call asks first.
+server (`docs/MCP.md`, ADR 0022, 0029). Its search tool sends the query text
+through the host's SearXNG to public engines. Only `searxng_web_search` is
+on. `web_url_read` (any URL) and the other two tools stay off. Each tool
+call asks first.
 
-Switching to Web is the act of saying "this query goes to the search engines".
-Never on client work.
+**Web** has an empty built-in tool map and `default_model` `hearth/local-main`.
+A search result cannot read a file.
+
+**Write + search** (`write-web`) has Write's tools and no pinned model, so
+the thread stays on `local-main` or `local-deep`. It can read files and put
+them into the query. It is not the default profile.
+
+Switching to either profile is the act of saying "this query goes to the
+search engines". Write + search can read a file and put personal information
+from it into that query.
 
 ### On a laptop
 
 Through an SSH tunnel to the host — `docs/LAPTOP.md`. Zed points at
 `http://127.0.0.1:1234/v1` exactly as on the host (the tunnel's local end),
 with the **laptop's own** token. Run `ai-tunnel` before opening Zed. A Gemini
-provider is allowed on the laptop (D3). The Web profile stays on
-`hearth/local-main`; do not switch that profile to Gemini.
+provider is allowed on the laptop (D3). Web stays on `hearth/local-main`.
+Write + search has no pinned model. Do not switch either profile to Gemini.
 
 Zed's SSH remote projects also work: edit files on the host over SSH while
 the model call goes through the tunnel. That needs a normal SSH key, not the

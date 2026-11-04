@@ -16,7 +16,8 @@
 #
 # The container reaches the host's 127.0.0.1:1234 via host.containers.internal
 # (Podman's host forwarding) with "serve on local network" off — checked
-# 2026-10-31.
+# 2026-10-31. SearXNG is reached by container name on the hearth network
+# (internal port 8080). The host's 127.0.0.1:8888 is for Zed and tunnels.
 #
 # Bound to 127.0.0.1 like everything else — this is a browser tab on this
 # machine, not a service for the LAN.
@@ -52,8 +53,9 @@ wait_webui() {
 # the process reloads. oMLX models have no access-grant row, so a non-admin
 # would see an empty list without BYPASS_MODEL_ACCESS_CONTROL.
 lock_anon_chats() {
-  podman exec -i "$NAME" python3 - <<'PY'
+  podman exec -e HEARTH_SEARXNG_URL="${HEARTH_SEARXNG_URL:-}" -i "$NAME" python3 - <<'PY'
 import json
+import os
 import sqlite3
 import time
 import urllib.error
@@ -100,6 +102,25 @@ db.execute(
     "update config set value=?, updated_at=? where key=?",
     ("false", now, "ui.enable_community_sharing"),
 )
+search_url = os.environ.get("HEARTH_SEARXNG_URL", "")
+if search_url:
+    # The database wins over the container env. Stored values are JSON.
+    for key, val in (
+        ("web.search.enable", "true"),
+        ("web.search.engine", json.dumps("searxng")),
+        ("web.search.searxng_query_url", json.dumps(search_url)),
+    ):
+        n = db.execute("select count(*) from config where key=?", (key,)).fetchone()[0]
+        if n:
+            db.execute(
+                "update config set value=?, updated_at=? where key=?",
+                (val, now, key),
+            )
+        else:
+            db.execute(
+                "insert into config (key, value, updated_at) values (?,?,?)",
+                (key, val, now),
+            )
 found = db.execute(
     "select count(*) from user where lower(email)=?",
     ("admin@localhost",),
@@ -217,7 +238,7 @@ done
 
 case "$CMD" in
   up)
-    KEY="${LMSTUDIO_HOST_TOKEN:?LMSTUDIO_HOST_TOKEN not set in ~/.config/hearth/env}"
+    KEY="${OMLX_HOST_TOKEN:?OMLX_HOST_TOKEN not set in ~/.config/hearth/env}"
 
     podman info >/dev/null 2>&1 || { echo "podman VM not running: podman machine start"; exit 1; }
     # 200 with the token, not just "answering": a 401 here means the UI would
@@ -225,7 +246,7 @@ case "$CMD" in
     code=$(hearth_http /models "$KEY")
     case "$code" in
       200) : ;;
-      401) echo "oMLX refused the host token (401) — check LMSTUDIO_HOST_TOKEN"; exit 1 ;;
+      401) echo "oMLX refused the host token (401) — check OMLX_HOST_TOKEN"; exit 1 ;;
       000) echo "oMLX not answering on :1234 — scripts/omlx.sh up"; exit 1 ;;
       *)   echo "oMLX answered ${code} on /v1/models"; exit 1 ;;
     esac
@@ -238,19 +259,25 @@ case "$CMD" in
     fi
 
     # Web search is wired up only if SearXNG is actually running. It is opt-in
-    # per conversation in the UI even then — see docs/ROUTING.md for why it
-    # must never be used on client work.
-    SEARCH_HOST="${SEARXNG_HOST:-host.containers.internal}"
+    # per conversation. The query leaves, and an agent can put personal
+    # information it has just read into that query. See docs/ROUTING.md.
     SEARCH_ENV=()
-    if curl -s -m 3 -o /dev/null "http://127.0.0.1:8888/" 2>/dev/null; then
+    HEARTH_SEARXNG_URL=""
+    SEARXNG_NAME="$(ai_container searxng)"
+    if curl -s -m 3 -o /dev/null "http://127.0.0.1:8888/" 2>/dev/null \
+       && podman container exists "$SEARXNG_NAME" 2>/dev/null; then
+      hearth_podman_connect "$SEARXNG_NAME"
+      # 8080 is the container port. 8888 is only the host's loopback publish.
+      HEARTH_SEARXNG_URL="http://${SEARXNG_NAME}:8080/search?q=<query>"
       SEARCH_ENV=(
         -e ENABLE_WEB_SEARCH=True
         -e ENABLE_RAG_WEB_SEARCH=True
         -e WEB_SEARCH_ENGINE=searxng
         -e RAG_WEB_SEARCH_ENGINE=searxng
-        -e SEARXNG_QUERY_URL="http://${SEARCH_HOST}:8888/search?q=<query>"
+        -e SEARXNG_QUERY_URL="$HEARTH_SEARXNG_URL"
       )
-      echo "search: SearXNG detected — env vars set (see the note after startup)"
+      export HEARTH_SEARXNG_URL
+      echo "search: ${SEARXNG_NAME}:8080 on the hearth network"
     else
       echo "search: none (start it with scripts/searxng.sh up)"
     fi
@@ -258,12 +285,14 @@ case "$CMD" in
     # Secret on stdin, then into the container as an env var. Not -e, so the
     # token is not on podman's command line or in the container's Config.Env.
     # (printf's argv is the short-lived pipe; same pattern as hearth_http.)
-    printf '%s' "$KEY" | podman secret create --replace hearth-lmstudio-token - >/dev/null
+    printf '%s' "$KEY" | podman secret create --replace hearth-omlx-token - >/dev/null
+    hearth_podman_net
     podman run -d \
       --name "$NAME" \
       --restart unless-stopped \
+      --network hearth \
       -p "${BIND}:${PORT}:8080" \
-      --secret hearth-lmstudio-token,type=env,target=OPENAI_API_KEY \
+      --secret hearth-omlx-token,type=env,target=OPENAI_API_KEY \
       -e OPENAI_API_BASE_URL="http://host.containers.internal:1234/v1" \
       -e ENABLE_OLLAMA_API=False \
       -e WEBUI_NAME="hearth" \
@@ -288,21 +317,18 @@ case "$CMD" in
     # Reachability must be checked from INSIDE the container. Curling :8888
     # from the host proves the service is up, not that host.containers.internal
     # resolves within Podman's VM — and only the latter matters.
-    if [ "${#SEARCH_ENV[@]}" -gt 0 ]; then
+    if [ -n "$HEARTH_SEARXNG_URL" ]; then
       printf 'verifying the container can reach SearXNG... '
       if podman exec "$NAME" curl -s -m 8 \
-           "http://host.containers.internal:8888/search?q=test&format=json" 2>/dev/null \
+           "http://${SEARXNG_NAME}:8080/search?q=test&format=json" 2>/dev/null \
            | head -c 1 | grep -q '{'; then
         echo "ok"
       else
         echo "FAILED"
-        echo "  The container cannot reach SearXNG at host.containers.internal:8888."
+        echo "  The container cannot reach ${SEARXNG_NAME}:8080 on the hearth network."
         echo "  Search is enabled in the UI but every query will fail."
-        echo
-        echo "  Find the address Podman's VM uses for the host:"
-        echo "    podman exec ${NAME} sh -c 'ip route | awk \"/default/ {print \\\$3}\"'"
-        echo "  then re-run with that address:"
-        echo "    SEARXNG_HOST=<addr> scripts/webui.sh up"
+        echo "  Re-run scripts/searxng.sh up, then scripts/webui.sh up."
+        exit 1
       fi
     fi
 
@@ -328,16 +354,10 @@ case "$CMD" in
       Native tool calling makes small local models invent tool calls instead
       of answering. That is what produced query_knowledge_files loops.
 
-  WEB SEARCH — the env vars above are NOT sufficient on their own.
-    Open WebUI stores these as config values in its database, and the DATABASE
-    VALUE TAKES PRECEDENCE over the environment. The env vars only seed a fresh
-    database. This container reuses the hearth-webui-data volume, so whatever
-    was written on first run wins — which is why the toggle can be missing even
-    though 'podman exec hearth-webui env' shows it enabled.
-
-    The anonymous session cannot open the admin panel, so a value already
-    stored in the volume is the one the toggle follows. The toggle appears
-    in the chat input, per message.
+  WEB SEARCH — up writes the SearXNG URL into the database, which is what
+    the toggle uses. The toggle is still per message, in the chat input.
+    The query text leaves. Leave it off on anything you would not type into
+    a search engine.
 
     To start genuinely fresh instead: scripts/webui.sh destroy (deletes the
     volume, including the saved connection).
@@ -356,7 +376,7 @@ EOF
     [ "$c" = "destroy" ] || exit 1
     podman rm -f "$NAME" >/dev/null 2>&1 || true
     podman volume rm "$VOLUME" >/dev/null 2>&1 || true
-    podman secret rm hearth-lmstudio-token >/dev/null 2>&1 || true
+    podman secret rm hearth-omlx-token >/dev/null 2>&1 || true
     echo "gone"
     ;;
   *) echo "usage: $0 {up|down|status|logs|destroy}"; exit 1 ;;

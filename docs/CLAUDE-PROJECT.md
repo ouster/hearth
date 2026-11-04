@@ -14,7 +14,7 @@ Hearth — Local + Cloud
 ## Description
 
 ```
-Private-first local inference on a Mac Studio. The LM Studio app serves local
+Private-first local inference on a Mac Studio. oMLX serves local
 roles on 127.0.0.1:1234. One cloud path, ask-cloud, calls Gemini with its own
 key. Routing rules, the model registry, and the clients (Zed, Open WebUI,
 shell aliases). Roles are re-pointed without rewriting clients.
@@ -36,7 +36,7 @@ Source of truth is the hearth repo. Current design: docs/ARCHITECTURE.md.
 
 # Architecture (assume this unless I say otherwise)
 
-The LM Studio app serves on 127.0.0.1:1234. Clients talk OpenAI-compatible
+oMLX serves on 127.0.0.1:1234. Clients talk OpenAI-compatible
 to that port and name a role. There is no gateway and no LAN bind. ask-cloud
 is the only path that calls a cloud API, and it calls Gemini directly.
 
@@ -62,7 +62,7 @@ config/roles.tsv and docs/MODELS.md. Nowhere else. Generated copies
 
 2. Privacy is structural, not advisory. Sensitive private data, PII, any repo I have
    flagged as holding real data, and anything else I mark sensitive: local
-   roles only. LM Studio holds only local models, and only ask-cloud carries
+   roles only. oMLX holds only local models, and only ask-cloud carries
    a cloud key. If you are writing code or config that could send that class
    of data to a cloud endpoint, refuse and say why. Never add a cloud provider
    to host Zed.

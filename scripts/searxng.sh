@@ -13,9 +13,10 @@
 # reaches upstream engines. The conversation, your documents and the model stay
 # local; the search terms do not.
 #
-# So: never enable web search on a conversation involving sensitive data, PII,
-# or any flagged-sensitive repo. "Summarise this document" is safe; "search for
-# <client name> <address>" is a disclosure. See docs/ROUTING.md.
+# So: leave web search off on a conversation that holds personal information.
+# An agent can read a file and place a name or address into the next query.
+# "Summarise this document" stays local; "search for <person> <address>"
+# sends those terms out. See docs/ROUTING.md.
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -95,6 +96,10 @@ search:
       done
       echo
     fi
+
+    # Open WebUI reaches this container by name. The published 127.0.0.1:8888
+    # stays for Zed and laptop tunnels; the Podman VM cannot use that bind.
+    hearth_podman_connect "$NAME"
 
     printf 'waiting'
     for _ in $(seq 1 20); do

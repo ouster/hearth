@@ -20,7 +20,7 @@ case "$who" in
   "")                   r "not listening — scripts/omlx.sh up" ;;
   *)                    r "port ${HEARTH_PORT} is held by ${who}" ;;
 esac
-code=$(hearth_http /models "${LMSTUDIO_HOST_TOKEN:-}")
+code=$(hearth_http /models "${OMLX_HOST_TOKEN:-}")
 case "$code" in
   200) g "server answering on ${HEARTH_URL}" ;;
   401) r "server refuses the host token" ;;

@@ -18,8 +18,8 @@ oMLX serves these from `~/.hearth/models`. Machine-read copy:
 
 | Role | Model key | Source | Size | Load | Set | Why |
 |---|---|---|---|---|---|---|
-| `local-main` | `gemma-4-26b-a4b-it-qat-mlx` | `lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit` @ `aa5e2e5` | 15.6 GB | 128K × 3 parallel, no draft, **thinking on (app setting, below)** | 2026-11-01 | MoE, ~4B active, Google QAT 4-bit. Beat the Qwen3.6 build on `bench/tasks` 03 and matched it on 01/02/04 in fewer tokens; 40/40 valid tool calls under concurrency; ~15% slower prefill, 3–4.5 GB less memory. Restored after the looping thread turned out to be context trim, on both models (ADR 0024). Native window 262,144 |
-| `local-deep` | `qwen3.8-27b-mlx` | `lmstudio-community/Qwen3.8-27B-MLX-4bit` @ `6067b15` | 16.1 GB | 64K × 1, **on demand**: `ask-deep` loads it beside `local-main` and unloads it on the way out | 2026-11-01 | Dense 27B. Best `bench/tasks` 03 answer of the three benched; ~26 tok/s and 2.5–5.5× the tokens of the 26B-A4B, so 10–24× slower. For hard one-off questions, never agent loops. Thinks by default (its template), no app setting needed. Beside the resident, both peaked at 49.9 GB on 2026-11-01, over the old ~48 GB cap, and the resident's requests timed out during a long prefill. The cap is now 56 GB, so the two may be loaded together (ADR 0028). ADR 0020 |
+| `local-main` | `gemma-4-26b-a4b-it-qat-mlx` | `lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit` @ `aa5e2e5` | 15.6 GB | 128K × 3 parallel, no draft, **thinking on (set by `scripts/omlx.sh`)** | 2026-11-01 | MoE, ~4B active, Google QAT 4-bit. Beat the Qwen3.6 build on `bench/tasks` 03 and matched it on 01/02/04 in fewer tokens; 40/40 valid tool calls under concurrency; ~15% slower prefill, 3–4.5 GB less memory. Restored after the looping thread turned out to be context trim, on both models (ADR 0024). Native window 262,144 |
+| `local-deep` | `qwen3.8-27b-mlx` | `lmstudio-community/Qwen3.8-27B-MLX-4bit` @ `6067b15` | 16.1 GB | 64K × 1, **on demand**: `ask-deep` loads it beside `local-main` and unloads it on the way out | 2026-11-01 | Dense 27B. Best `bench/tasks` 03 answer of the three benched; ~26 tok/s and 2.5–5.5× the tokens of the 26B-A4B, so 10–24× slower. For hard one-off questions, never agent loops. Thinks by default (its template). Beside the resident, both peaked at 49.9 GB on 2026-11-01, over the old ~48 GB cap, and the resident's requests timed out during a long prefill. The cap is now 56 GB, so the two may be loaded together (ADR 0028). ADR 0020 |
 | `cloud-cheap` | `gemini-3.6-flash` | Google, `ask-cloud` only | — | — | 2026-10-22 | 1M ctx, 65K output. ADR 0014 |
 
 **Resident set:** concurrency-3 peak 25.2 GB at 128K × 3, ~30K-token prompts
@@ -51,7 +51,7 @@ stack.
 No keys. In the gateway era these were commented-out blocks in `config.yaml`;
 after ADR 0016 a cloud role would be a `gemini` (or other explicit cloud
 backend) row in `config/roles.tsv` plus an alias that passes its own key —
-never a model loaded into LM Studio.
+never an `omlx` row. A remote model on `:1234` would break the boundary.
 
 | Role | Model | Blocked on |
 |---|---|---|
@@ -70,10 +70,10 @@ Frontier is cloud-only by necessity, which is what these roles are for.
 | Model | Was | Removed | Why |
 |---|---|---|---|
 | `qwen/qwen3.6-35b-a3b` (`lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a`) | `local-main` | 2026-11-01 | Held the role for part of the day after a misdiagnosed loop (ADR 0023). Weaker on `bench/tasks` 03; c3 peak 29.7 GB. Weights kept. ADR 0024 |
-| `qwen3.6:35b-mlx` (Ollama) | `local-big` | 2026-10-31 | Same base model now served by LM Studio (lmstudio-community MLX 4-bit). ADR 0016 |
+| `qwen3.6:35b-mlx` (Ollama) | `local-big` | 2026-10-31 | Same base model as the MLX 4-bit weights in the row above. ADR 0016 |
 | `qwen3-coder:30b` | `local-code` | 2026-10-31 | Role collapsed into `local-big` (D1). ADR 0016 |
 | `qwen3:8b` | `local-chat` | 2026-10-31 | Role collapsed into `local-big` (D1). ADR 0016 |
-| `nomic-embed-text` (Ollama, then LM Studio f16 GGUF) | `local-embed` | 2026-11-01 | Nothing called it. Healthcheck was the only request. ADR 0018 |
+| `nomic-embed-text` (Ollama, then an f16 GGUF) | `local-embed` | 2026-11-01 | Nothing called it. Healthcheck was the only request. ADR 0018 |
 | `gpt-oss:20b` | `local-big` | 2026-09-06 | Slower tool-smoke than the Qwen3.6 agent. ADR 0012, then 0013 |
 | `llama3.3:70b` | `local-big` | 2026-08-02 | 42 GB, could not stay resident. 440 s to first reply. ADR 0004 |
 | `qwen2.5-coder:32b` | `local-code` | 2026-08-02 | Superseded by the 30B MoE at the same size |

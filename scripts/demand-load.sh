@@ -27,14 +27,14 @@ holder="$(lsof -nP -iTCP:"${HEARTH_PORT}" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 
 case "$holder" in
   Python|python*|omlx)
     ai_load_env
-    [ -n "${LMSTUDIO_HOST_TOKEN:-}" ] || { echo "could not run: host token missing" >&2; exit 2; }
-    export LMSTUDIO_HOST_TOKEN
+    [ -n "${OMLX_HOST_TOKEN:-}" ] || { echo "could not run: host token missing" >&2; exit 2; }
+    export OMLX_HOST_TOKEN
     HEARTH_ROLE="$ROLE" HEARTH_ACTION="$ACTION" HEARTH_EVICT="$EVICT" \
       HEARTH_PORT="$HEARTH_PORT" HEARTH_ROLES="${ROOT}/config/roles.tsv" \
       /usr/bin/python3 -I - <<'PY'
 import json, os, sys, time, urllib.error, urllib.request, http.cookiejar
 base = "http://127.0.0.1:%s" % os.environ["HEARTH_PORT"]
-key = os.environ["LMSTUDIO_HOST_TOKEN"]
+key = os.environ["OMLX_HOST_TOKEN"]
 role = os.environ["HEARTH_ROLE"]
 action = os.environ["HEARTH_ACTION"]
 evict = os.environ["HEARTH_EVICT"] == "1"

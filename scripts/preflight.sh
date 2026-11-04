@@ -141,13 +141,13 @@ if [ -f "$HEARTH_ENV" ]; then
   mode=$(stat -f '%Lp' "$HEARTH_ENV")
   [ "$mode" = "600" ] && ok "${HEARTH_ENV} is mode 600" || bad "${HEARTH_ENV} is mode ${mode}, want 600"
   # Same parse as ai_load_env: optional whitespace and export, one layer of quotes.
-  tokline=$(grep -E '^[[:space:]]*(export[[:space:]]+)?LMSTUDIO_HOST_TOKEN=' "$HEARTH_ENV" | tail -1 || true)
+  tokline=$(grep -E '^[[:space:]]*(export[[:space:]]+)?OMLX_HOST_TOKEN=' "$HEARTH_ENV" | tail -1 || true)
   tok="${tokline#*=}"
   tok="${tok%\"}"; tok="${tok#\"}"; tok="${tok%\'}"; tok="${tok#\'}"
   case "$tok" in
-    '') bad "LMSTUDIO_HOST_TOKEN not set" ;;
-    *...|*CHANGEME*) bad "LMSTUDIO_HOST_TOKEN is a placeholder" ;;
-    *) ok "LMSTUDIO_HOST_TOKEN set" ;;
+    '') bad "OMLX_HOST_TOKEN not set" ;;
+    *...|*CHANGEME*) bad "OMLX_HOST_TOKEN is a placeholder" ;;
+    *) ok "OMLX_HOST_TOKEN set" ;;
   esac
 else
   bad "${HEARTH_ENV} missing"
@@ -155,10 +155,10 @@ fi
 exported=""
 for f in "$HOME/.zshenv" "$HOME/.zshenv.local" "$HOME/.zprofile" "$HOME/.zshrc" "$HOME/.bash_profile" "$HOME/.profile"; do
   [ -f "$f" ] || continue
-  grep -qE '^[[:space:]]*export[[:space:]]+(GOOGLE_API_KEY|GEMINI_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY|OPENROUTER_API_KEY|LMSTUDIO_[A-Z_]*TOKEN)=' "$f" \
+  grep -qE '^[[:space:]]*export[[:space:]]+(GOOGLE_API_KEY|GEMINI_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY|OPENROUTER_API_KEY|OMLX_HOST_TOKEN|LMSTUDIO_[A-Z_]*TOKEN)=' "$f" \
     && exported="${exported} ${f/#$HOME/~}"
 done
-[ -z "$exported" ] && ok "no provider key or LM Studio token exported from shell startup files" \
+[ -z "$exported" ] && ok "no provider key or host token exported from shell startup files" \
                    || bad "provider key exported into every shell by:${exported} — move it to ${HEARTH_ENV}"
 tracked=$(git -C "$ROOT" ls-files 2>/dev/null | grep -E '(^|/)\.env$|\.key$|\.pem$|(^|/)env$' || true)
 [ -z "$tracked" ] && ok "no env/key files tracked in git" || bad "tracked secret-looking files: ${tracked}"

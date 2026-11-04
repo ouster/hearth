@@ -33,7 +33,7 @@ wrn() { printf '  \033[33mWARN\033[0m  %s\n' "$1"; warn=$((warn+1)); }
 er()  { printf '  \033[35mERROR\033[0m %s\n' "$1"; err=$((err+1)); }
 hdr() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-TOK="${LMSTUDIO_HOST_TOKEN:-}"
+TOK="${OMLX_HOST_TOKEN:-}"
 TMPD=$(mktemp -d); trap 'rm -rf "$TMPD"' EXIT
 
 # POST JSON with the token; body → $TMPD/out, prints HTTP code.
@@ -45,7 +45,7 @@ post() {
 
 # ---------------------------------------------------------------- 1. server
 hdr "1. Server"
-[ -n "$TOK" ] || { er "LMSTUDIO_HOST_TOKEN not set in ${HEARTH_ENV} — nothing below is meaningful"; }
+[ -n "$TOK" ] || { er "OMLX_HOST_TOKEN not set in ${HEARTH_ENV} — nothing below is meaningful"; }
 holder="$(lsof -nP -iTCP:"${HEARTH_PORT}" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1}')"
 case "$holder" in
   Python|python*|omlx) ok "oMLX serves ${HEARTH_URL} (ADR 0026)" ;;

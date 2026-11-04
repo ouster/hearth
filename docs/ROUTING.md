@@ -38,7 +38,7 @@ in a different way:
 | Path | Can it leave the host? | Why |
 |---|---|---|
 | Anything to `127.0.0.1:1234` | **no** | oMLX holds only local models |
-| Zed on this host | **no** model egress | no cloud provider configured (D3). Tool egress: SearXNG in the `web` profile. Write and Ask have `fetch` and `search_web` off |
+| Zed on this host | **no** model egress | no cloud provider configured (D3). Tool egress: SearXNG in the `web` and `write-web` profiles. Write and Ask have `fetch` and `search_web` off |
 | `ask`, `ask-*` except `ask-cloud` | **no** | point at `:1234` with the host token |
 | `ask-cloud` | **yes** | the only alias with a provider key; it is explicit by name |
 | Sandboxed agents | **no** | egress allowed to `127.0.0.1:1234` only |
@@ -65,18 +65,21 @@ directly. It is not privacy. The search terms still leave.
 | Safe with web search on | Never with web search on |
 |---|---|
 | "How does framework X handle refresh tokens?" | "Search for <person name> <address>" |
-| "What changed in the 2026 API spec?" | Anything quoting a customer, party, or account figure |
+| "What changed in the 2026 API spec?" | Anything quoting a name, address, or account figure |
 | Framework and API questions | Anything you would not type into Google |
 
-Web search is opt-in per conversation. Leave it off by default. A conversation
-that started with a client document should never have it enabled — earlier
-context can be pulled into a generated search query.
+Web search is opt-in per conversation. Leave it off by default. An agent that
+can read files can place personal information from those files into the next
+query, and that query leaves. A thread that already holds names, addresses,
+or documents should not have search on.
 
-Zed's `web` profile follows the same rule: `searxng_web_search` sends the
-query text to public engines. That profile has no file tools. Its model is
-`local-main`. Each tool call asks first (`confirm`). Write and Ask do not
-include Zed's built-in `fetch` or `search_web`. `docs/MCP.md` uses the former
-legal-research profile as a setup example; it is not installed.
+Zed follows the same rule on two profiles (ADR 0022, 0029). **Web** sends
+`searxng_web_search` to public engines, has no file tools, and stays on
+`local-main`. **Write + search** has Write's tools and no pinned model, so
+a thread on `local-main` or `local-deep` can search and can read files into
+the query. Each tool call asks first (`confirm`). Write and Ask do not
+include SearXNG, or Zed's built-in `fetch` and `search_web`. `docs/MCP.md`
+uses the former legal-research profile as a setup example; it is not installed.
 
 ## No fallbacks
 
@@ -91,7 +94,7 @@ existed because the inherited gateway had `local → gemini` fallbacks; see
 
 ## Break-glass
 
-There is no second local server, and no rollback onto LM Studio (ADR 0028).
+There is no second local server (ADR 0028).
 If oMLX is wedged: `scripts/omlx.sh down`, then `scripts/omlx.sh up`.
 Before changing anything, capture `~/Library/Logs/hearth-omlx.log`, the
 footprint of the listener, and the concurrency bench at the failing settings.

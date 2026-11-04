@@ -2,7 +2,7 @@
 
 Reference host: Apple Silicon Mac, 64 GB unified memory, macOS. oMLX serves
 local roles on `127.0.0.1:1234` from `~/.hearth/models` (ADR 0026).
-`scripts/omlx.sh down` stops oMLX and does not start LM Studio (ADR 0028).
+`scripts/omlx.sh down` stops oMLX and leaves the port empty (ADR 0028).
 Do not also run headless `llmster`. The gateway era is in `docs/HISTORY.md`.
 
 ## Shape
@@ -95,7 +95,7 @@ leaves the port empty.
 
 | File | Read by | Contains |
 |---|---|---|
-| `~/.config/hearth/env` (mode 600) | aliases (`_hearth_var`), scripts | `LMSTUDIO_HOST_TOKEN`, `GOOGLE_API_KEY` (moved from `~/.zshenv.local` 2026-10-31, where it was exported into every shell) |
+| `~/.config/hearth/env` (mode 600) | aliases (`_hearth_var`), scripts | `OMLX_HOST_TOKEN`, `GOOGLE_API_KEY` (moved from `~/.zshenv.local` 2026-10-31, where it was exported into every shell) |
 
 The aliases read single values from these files and inject them per command;
 they never `source` them into the interactive shell. Do not export a provider

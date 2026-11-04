@@ -1,13 +1,12 @@
 # Build status
 
-> **Historical (gateway era).** Superseded by ADR 0016. Current status: `docs/MIGRATION-LMSTUDIO.md`; what was tried: `docs/HISTORY.md`.
+> **Historical (gateway era).** Current design: `docs/ARCHITECTURE.md`. What was tried: `docs/HISTORY.md`.
 
 Last updated: 2026-08-02
 
-**Not the source of truth.** Current design: `docs/ARCHITECTURE.md`, then
-`docs/MIGRATION-LMSTUDIO.md` and `docs/MODELS.md`. This file is the
-gateway-era plan. The original plan is preserved in
-`docs/decisions/0001-inherited-state.md`.
+**Not the source of truth.** Current design: `docs/ARCHITECTURE.md` and
+`docs/MODELS.md`. This file is the gateway-era plan. The original plan is
+preserved in `docs/decisions/0001-inherited-state.md`.
 
 ## Where things stand
 
