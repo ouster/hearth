@@ -6,7 +6,7 @@
 #       --token-env LMSTUDIO_HOST_TOKEN --model local-main --concurrency 3
 #
 # Options (defaults): --concurrency 3, --rounds 10, --prompt-tokens 30000,
-#   --timeout 180, --proc-match '(\.lmstudio/|LM Studio)', --out <auto>,
+#   --timeout 180, --proc-match '\.omlx/', --out <auto>,
 #   --label TEXT, --note-log FILE (repeatable).
 #
 # The token is read from the named env var (after loading the hearth env
@@ -41,7 +41,7 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$OUT" ] || OUT="${ROOT}/bench/results/$(date +%Y-%m-%d-%H%M)-concurrency-c${CONC}"
 
-# The bench process needs the LM Studio token. Nothing else in the env file
+# The bench process needs the API key. Nothing else in the env file
 # goes with it — GOOGLE_API_KEY stays unexported (ai_load_env).
 export LMSTUDIO_HOST_TOKEN
 exec "$PY" -I "${ROOT}/bench/concurrency.py" --root "$ROOT" --out "$OUT" \

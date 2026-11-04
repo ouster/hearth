@@ -1,18 +1,16 @@
 # Hearth
 
 Local-first AI serving. oMLX on `127.0.0.1:1234` serves local roles from
-`~/.hearth/models` (ADR 0026). `scripts/omlx.sh down` stops it and does
-not start LM Studio. Never also run headless `llmster`. Cloud (Gemini) is
-reached by each tool with its own key.
+`~/.hearth/models` (ADR 0026). `scripts/omlx.sh down` stops it and leaves
+the port empty. Cloud (Gemini) is reached by each tool with its own key.
 
 ## Which machine are you on?
 
-- **The host** (runs LM Studio; `~/.lmstudio/bin/lms` exists): everything
-  below applies.
-- **A laptop** (no LM Studio; someone cloned this repo to set up access):
+- **The host** (runs oMLX; `~/.omlx` exists): everything below applies.
+- **A laptop** (no `~/.omlx`; someone cloned this repo to set up access):
   follow `docs/LAPTOP.md` → *AI-assisted setup* and nothing else. Do not run
-  anything in `scripts/` — those are host scripts and touch the host's LM
-  Studio, launchd and `authorized_keys`. Host-side steps are ones you tell the
+  anything in `scripts/` — those are host scripts and touch the host's
+  oMLX, launchd and `authorized_keys`. Host-side steps are ones you tell the
   person to do on the host. You are likely a cloud model, so **never read,
   print, grep, copy or edit** `~/.hearth-key`, `~/.hearth-gemini-key` or
   `~/.ssh/hearth_tunnel`; the person types secrets in themselves, and you may
@@ -20,14 +18,9 @@ reached by each tool with its own key.
 
 Read `docs/ROUTING.md` before suggesting any routing change.
 
-**Serving:** login boot starts oMLX (ADR 0026). There is no rollback to LM Studio (ADR 0028). `ask-deep` loads `local-deep` beside `local-main` and unloads `local-deep` on the way out.
+**Serving:** login boot starts oMLX (ADR 0026, 0028). `ask-deep` loads `local-deep` beside `local-main` and unloads `local-deep` on the way out.
 
-**In flight:** migration to LM Studio direct — `docs/MIGRATION-LMSTUDIO.md`
-(ADR 0016, accepted 2026-10-31). Host clients are cut over, the old stack is
-deleted and the scripts are rewritten; LAN (phase 4) is pending. Work one phase at a time, only when
-the operator says to start it, and stop at every DECISION. Any doc or
-script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgres is the
-removed gateway — never suggest commands against it.
+Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgres is the removed gateway — never suggest commands against it. `docs/MIGRATION-LMSTUDIO.md` is the record of the earlier cut onto LM Studio, which oMLX replaced.
 
 ## Hard rules
 
@@ -36,7 +29,7 @@ removed gateway — never suggest commands against it.
    If you are about to write a model tag into a shell alias, stop.
    Two generated copies, both written from `roles.tsv` so they cannot drift:
    the `display_name` labels in Zed's settings (`scripts/zed-sync.sh`, from
-   `roles.tsv` + `lms ls`), and the model key plus weights path in
+   `roles.tsv`), and the model key plus weights path in
    `pins/digests.tsv` (`scripts/pin-digests.sh`). Clients always *call* the role.
    Same discipline for MCP servers: client config docs (`docs/IDES.md`) and
    `docs/MCP.md`.
@@ -47,7 +40,7 @@ removed gateway — never suggest commands against it.
    (Gemini, `ask-cloud` only). `local-code` / `local-chat` are alias names that
    mean `local-main` (D1). Dormant: `cloud-code`, `cloud-frontier*` — no keys.
 
-2. **LM Studio never holds a cloud model.** There is no router, so there are no
+2. **oMLX never holds a cloud model.** There is no router, so there are no
    fallbacks; if `local-main` is down, fail loudly. No script adds a remote backend
    to `config/roles.tsv` except as an explicit cloud row (`gemini` or another named
    cloud backend). A change that would let `:1234` reach a remote model is a bug.
@@ -68,7 +61,7 @@ removed gateway — never suggest commands against it.
 
 6. **Weights are hashed and drift is detected — not enforced.** `docs/MODELS.md`
    records each role's source repo and revision; `scripts/pin-digests.sh` hashes
-   the files into `pins/digests.tsv` and `preflight.sh` fails on drift. LM Studio
+   the files into `pins/digests.tsv` and `preflight.sh` fails on drift. oMLX
    still loads whatever is on disk; say so rather than implying roles are
    immutable. Re-record only after re-benching.
 
@@ -92,7 +85,7 @@ removed gateway — never suggest commands against it.
     with the prose the way an exported image does. If a diagram cannot be
     expressed in Mermaid, use a Markdown table instead.
 
-11. **Never commit keys.** LM Studio tokens, provider keys, and `.env` files stay
+11. **Never commit keys.** API keys, provider keys, and `.env` files stay
     out of git. Tokens live in `~/.config/hearth/env` (mode 600) and Zed's keychain.
     Never read or print that file's contents yourself — scripts source it;
     check it with `ls -l` only.
@@ -120,6 +113,6 @@ docs/
   CLAUDE-PROJECT.md  the claude.ai Project spec
   decisions/         ADRs
 config/roles.tsv     role → model key, context, slots (names models)
-scripts/             lms-load, benches, sandbox, aliases
+scripts/             omlx, benches, sandbox, aliases
 bench/tasks/         fixed prompts for model comparison
 ```

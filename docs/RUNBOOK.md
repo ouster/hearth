@@ -1,19 +1,18 @@
 # Runbook
 
 Start, stop, diagnose. oMLX serves `127.0.0.1:1234` from `~/.hearth/models`
-(ADR 0026). `scripts/omlx.sh down` stops oMLX and does not start LM
-Studio (ADR 0028). `lms` lives at `~/.lmstudio/bin/lms` (installed with
-`--no-modify-path`; the aliases call it by full path as `$HEARTH_LMS`).
+(ADR 0026). `scripts/omlx.sh down` stops oMLX and leaves the port empty
+(ADR 0028).
 
 ## Layout of the running system
 
 | Piece | Where | Notes |
 |---|---|---|
-| LM Studio app | `/Applications/LM Studio.app` | owns the daemon and `~/.lmstudio`. "Enable Local LLM Service (headless)" on. Never run llmster as well |
 | Server | `127.0.0.1:1234` | oMLX, `scripts/omlx.sh up`. `down` stops it |
-| Roles | `config/roles.tsv` | `local-main` from `~/.hearth/models`, 128K × 3. `local-deep` loads beside it (ADR 0028) |
-| Token | `~/.config/hearth/env`, mode 600 | `LMSTUDIO_HOST_TOKEN`, created in the app |
-| Server settings | `~/.lmstudio/.internal/http-server-config.json` | edited through the app; auth/tokens are stored elsewhere |
+| Weights | `~/.hearth/models` | the directories named in `config/roles.tsv` |
+| Roles | `config/roles.tsv` | `local-main` resident, 128K × 3. `local-deep` loads beside it (ADR 0028) |
+| Token | `~/.config/hearth/env`, mode 600 | `LMSTUDIO_HOST_TOKEN`, the oMLX API key. The name stayed |
+| Server settings | `~/.omlx/settings.json` (mode 600) | written by `scripts/omlx.sh up`: loopback, CORS off, no model fallback |
 | Remote Login (sshd) | `:22` | laptops' tunnel; their keys are `restrict`ed to `-L` `:1234`/`:3000`/`:8888`, with `-R` denied (`scripts/client-setup.sh --update-keys` brings old keys up to date) |
 | Open WebUI | Podman, `127.0.0.1:3000` | `scripts/webui.sh` |
 | SearXNG | Podman, `:8888` | `scripts/searxng.sh` |
@@ -23,65 +22,27 @@ launchd agents. Ports 4000, 5433 and 11434 should be free.
 
 ## First-time setup
 
-1. Read, then run, the installer: `curl -fsSL https://lmstudio.ai/install.sh
-   -o install.sh && less install.sh && sh install.sh --no-modify-path`.
-2. Runtimes: `lms runtime get mlx-llm -y` and `lms runtime get llama.cpp -y`
-   (the embedding model is GGUF).
-3. Weights: `lms get <hugging face URL> -y` for each row in `config/roles.tsv`
-   (exact sources in `docs/MODELS.md`). A bare staff-pick name with `-y` can
-   choose a different quantisation. If `lms get` dies with "WebSocket
-   connection closed", download the file from Hugging Face into
-   `~/.lmstudio/models/<publisher>/<repo>/` and check its sha256.
-4. **Server settings, once, in the LM Studio app** — llmster has no CLI for
-   auth or tokens (lmstudio-ai/lms#489). Mode switch at the bottom → Developer;
-   then the **Developer tab** in the left sidebar (not Settings) → Server
-   Settings:
-
-   | Setting | Value |
-   |---|---|
-   | Port | 1234 |
-   | Require Authentication | **on** |
-   | Serve on Local Network | off — laptops use an SSH tunnel |
-   | Enable CORS | off |
-   | Allow per-request MCPs | off |
-   | Allow calling servers from mcp.json | off |
-   | Just-in-Time Model Loading | off |
-   | Log sensitive data | off — it writes prompts to the server logs |
-
-   Manage Tokens → Create Token `host`. Store it without echoing:
+1. Put each role's weights at `~/.hearth/models/<weights>` using the path in
+   `config/roles.tsv`. Sources are in `docs/MODELS.md`.
+2. Store the API key without echoing:
    ```bash
    mkdir -p ~/.config/hearth && umask 077 && \
      printf 'LMSTUDIO_HOST_TOKEN=%s\n' "$(pbpaste)" >> ~/.config/hearth/env && \
      chmod 600 ~/.config/hearth/env && pbcopy </dev/null
    ```
-   In Settings → Developer turn **"Enable Local LLM Service (headless)" on**.
-   If llmster was installed, stop it first (`lms daemon down` while the app is
-   closed) — the two cannot share `~/.lmstudio`.
-5. Start and load (app open):
-   ```bash
-   lms server start --bind 127.0.0.1 -p 1234
-   scripts/lms-load.sh
-   ```
-6. Prove auth holds — a positive control first:
-   ```bash
-   . ~/.config/hearth/env
-   curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $LMSTUDIO_HOST_TOKEN" http://127.0.0.1:1234/v1/models   # 200
-   curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:1234/v1/models                                                    # 401
-   ```
-7. `echo "source $PWD/scripts/aliases.zsh" >> ~/.zshrc`
+   The variable name is the old one. The value is the oMLX API key.
+3. `scripts/omlx.sh up` writes `~/.omlx/settings.json` (loopback, CORS off,
+   no model fallback), serves `local-main`, and refuses to start if something
+   else holds `:1234`.
+4. Prove auth holds — a positive control first. Do not `source` the env file
+   into a shell you keep; `scripts/healthcheck.sh` reads it itself.
+5. `echo "source $PWD/scripts/aliases.zsh" >> ~/.zshrc`
 
 ## Surviving a reboot
 
 `scripts/install-autostart.sh --apply` installs `com.hearth.boot`, a launchd
-agent that runs `scripts/boot.sh` once at login:
-
-1. opens LM Studio hidden (stops llmster first if it grabbed the daemon);
-2. **restarts the server with an explicit `--bind 127.0.0.1`** — the app's
-   saved settings were found at `0.0.0.0` + CORS on (2026-10-31), and
-   `lms server start --bind` rewrites them;
-3. checks a no-token request gets 401;
-4. runs `scripts/lms-load.sh`;
-5. starts the Podman VM, SearXNG and Open WebUI.
+agent that runs `scripts/boot.sh` once at login. `boot.sh` runs
+`scripts/omlx.sh up`, then starts the Podman VM, SearXNG and Open WebUI.
 
 The plist sets `AbandonProcessGroup`: without it launchd kills every process
 `boot.sh` leaves behind when it exits — which is the Podman VM, so WebUI and
@@ -91,10 +52,9 @@ Log: `~/Library/Logs/hearth-boot.log`. Check it with
 `scripts/install-autostart.sh --check`. By hand: `scripts/boot.sh`.
 
 The same install loads `com.hearth.context-watch` (`scripts/context-watch.sh`,
-KeepAlive). When LM Studio trims the middle of a prompt to fit the context
-window, a notification names the role, the prompt size, and how many tokens
-were dropped. The turn still runs. `scripts/install-autostart.sh --watch`
-loads only that agent. Notices also land in
+KeepAlive). It watches `~/Library/Logs/hearth-omlx.log` and notifies if a
+trim line appears. oMLX does not emit that line today, so it stays quiet.
+`scripts/install-autostart.sh --watch` loads only that agent. Notices land in
 `~/Library/Logs/hearth-context-watch.log`.
 
 ### oMLX
@@ -110,8 +70,8 @@ out. The GPU wired limit is 57344 MB (56 GB), installed by
 A reboot starts oMLX again.
 A laptop token is registered with `scripts/omlx.sh sub-key add laptop-<name>`
 (the prompt does not echo) and dropped with `sub-key revoke`. That key can
-call the model and cannot log in as admin. LM Studio keeps only a hash, so
-the token has to be pasted. `sub-key list` prints names.
+call the model and cannot log in as admin. The operator pastes the token.
+`sub-key list` prints names.
 
 ### Sleep
 
@@ -129,23 +89,20 @@ sudo pmset -c displaysleep 10   # displays can still sleep, that is free
 ## Everyday
 
 ```bash
-ai-status                      # one glance: app, server, bind, roles, containers, autostart
+ai-status                      # one glance: server, bind, roles, containers, autostart
 ai-health                      # scripts/healthcheck.sh — the real verdict (exit 0/1/2)
-scripts/preflight.sh           # static checks: roles.tsv, rule 1, saved settings, secrets, drift
-ai-loaded                      # lms ps — identifiers, context, parallel
-scripts/lms-load.sh --check    # drift against roles.tsv; changes nothing
-scripts/lms-load.sh            # fix drift
-ai-restart                     # server stop + start on 127.0.0.1:1234
-ai-log                         # lms log stream — live requests
-lms server status
-lms daemon status
+scripts/preflight.sh           # static checks: roles.tsv, rule 1, oMLX settings, secrets, drift
+ai-loaded                      # scripts/omlx.sh status
+ai-load                        # scripts/omlx.sh up
+ai-restart                     # oMLX down, then up, on 127.0.0.1:1234
+ai-log                         # tail -f ~/Library/Logs/hearth-omlx.log
 ```
 
 Footprint of the model worker (the number that matters against the 56 GB
 GPU ceiling — RSS understates it):
 
 ```bash
-for p in $(pgrep -f '\.lmstudio/|LM Studio'); do footprint -p $p | awk '/Footprint:/'; done
+footprint -p "$(cat ~/.omlx/hearth.pid)" | awk '/Footprint:/'
 ```
 
 ## Chat UI and visibility
@@ -160,11 +117,9 @@ The container reaches the host's `127.0.0.1:1234` via
 refuses to start unless the host token gets a 200.
 
 **The connection lives in WebUI's database.** Environment variables only seed
-a fresh database, so after the cutover the saved OpenAI connection may still
-point at `:4000`. If the model list is empty: Admin Panel → Settings →
-Connections → OpenAI API, URL `http://host.containers.internal:1234/v1`, key
-= the host token, and delete any `:4000` / `:11434` entry. Default and task
-model are `local-main`.
+a fresh database. `up` does not rewrite the saved OpenAI URL, and the
+anonymous session cannot open the admin panel. Default and task model are
+`local-main`.
 
 ### Using the chat UI from a laptop
 
@@ -179,6 +134,13 @@ There is no login: `WEBUI_AUTH` is off, and `webui.sh` refuses `--lan` because
 that would publish the chat UI with nothing in front of it. **Do not
 port-forward :3000 to the internet.** The tunnel is the only remote path.
 
+The anonymous session does not keep chats. Open WebUI creates that user as
+admin, and this image skips temporary-chat enforcement for admins, so
+`webui.sh up` demotes the user, turns chat sharing off, deletes saved chats,
+and refuses new chat rows. A refresh starts empty. The admin panel is not
+available in that session. `up` does not rewrite the saved OpenAI connection;
+that row in the WebUI database is what the model list uses.
+
 ### Do not enable tools in Open WebUI without thinking
 
 Web search feeds arbitrary attacker-controlled page text straight into the
@@ -192,15 +154,9 @@ enabling them as an ADR-worthy decision. See `docs/THREAT-MODEL.md` §3.
 
 ### Web search: the env vars are not enough
 
-Same database-wins trap. Enable it where it counts:
-
-```
-Admin Panel -> Settings -> Web Search -> Enable Web Search
-  Engine:    searxng
-  Query URL: http://host.containers.internal:8888/search?q=<query>
-```
-
-The toggle then appears per message. If it vanishes, sign out and back in.
+Same database-wins trap. The anonymous session cannot open the admin panel,
+so the value already stored in the volume is the one the toggle follows.
+The toggle then appears per message.
 
 ### Vulnerability monitoring (Snyk)
 
@@ -246,11 +202,9 @@ repo it was invited into. Commit first; `git diff` before accepting.
 | Symptom | Check | Fix |
 |---|---|---|
 | Every client 401s | `curl` with the host token | token wrong or missing in `~/.config/hearth/env`; Zed keeps its own copy in the keychain |
-| Wrong model answers | `scripts/lms-load.sh --check` | LM Studio answers an **unknown model name with the loaded LLM** instead of refusing (JIT off; nothing loads). Check the client's model id is a role |
-| `lms daemon status` says "llmster … is running" | llmster took the daemon | `lms daemon down`, then open the app |
-| Stuck "Local inference is changing ownership" | app and llmster both installed (lmstudio-bug-tracker#2485) | quit both; `lms daemon down; lms daemon up` |
-| Slow under load | `concurrency-bench.sh` at the failing settings | prefill is serialised at any `--parallel`; see `docs/ARCHITECTURE.md` |
-| Zed agent stalls | `scripts/diagnose.sh`, `ai-log`, bench | capture all three **before** changing anything |
+| Wrong model answers | `scripts/healthcheck.sh` | An unknown model name can be answered by the loaded role. Check the client's model id is a role |
+| Slow under load | `concurrency-bench.sh` at the failing settings | prefill is serialised; see `docs/ARCHITECTURE.md` |
+| Zed agent stalls | `ai-log`, `scripts/status.sh`, bench | capture them **before** changing anything |
 | Server LAN-visible or CORS on | `ai-status`, `ai-health` | `scripts/boot.sh` restarts it on 127.0.0.1 without CORS |
 | aider errors naming `ollama_chat/…` or `local-code` | an old `.aider.conf.yml` in the repo dir | roles are `openai/local-main` now |
 
@@ -258,8 +212,7 @@ Bench any change the same way as the baseline:
 
 ```bash
 scripts/concurrency-bench.sh --base-url http://127.0.0.1:1234/v1 \
-  --token-env LMSTUDIO_HOST_TOKEN --model local-main --concurrency 3 \
-  --proc-match '(\.lmstudio/|LM Studio)'
+  --token-env LMSTUDIO_HOST_TOKEN --model local-main --concurrency 3
 ```
 
 ## Rollback
@@ -279,6 +232,7 @@ scripts/client-setup.sh <laptop-name> --authorize key.pub   # tunnel-only key
 ```
 
 `healthcheck.sh` section 5 should say "LAN: no answer" — a LAN answer means
-someone turned on Serve on Local Network. Revoke a laptop: delete its token in
-LM Studio and its `hearth-tunnel-<name>` line in `~/.ssh/authorized_keys`.
+the server is not bound to loopback. Revoke a laptop with
+`scripts/omlx.sh sub-key revoke laptop-<name>` and delete its
+`hearth-tunnel-<name>` line in `~/.ssh/authorized_keys`.
 **Never port-forward `:22`, `:1234` or `:3000`.**

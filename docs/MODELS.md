@@ -11,10 +11,10 @@ the second file was `litellm/config.yaml`.)
 (RAM minus 8) and the oMLX guard matches it (ADR 0027). The resident set matters more than any single
 model's size — see the measurement below.
 
-## Live — LM Studio (ADR 0016)
+## Live — oMLX (ADR 0026)
 
-The LM Studio app 0.4.28 owns the server (D6). Machine-read copy:
-`config/roles.tsv`.
+oMLX serves these from `~/.hearth/models`. Machine-read copy:
+`config/roles.tsv`. The `weights` directory names are the source repos.
 
 | Role | Model key | Source | Size | Load | Set | Why |
 |---|---|---|---|---|---|---|
@@ -27,25 +27,15 @@ The LM Studio app 0.4.28 owns the server (D6). Machine-read copy:
 The Qwen3.6 build that held this role for part of the same day peaked at
 29.7 GB (`bench/results/2026-11-01-128k`).
 
-**Thinking is an LM Studio app setting, not repo state.** This build's chat
-template thinks only when `enable_thinking` is true, and nothing sets it: it
-was downloaded by URL, so it has no catalogue `model.yaml` and no in-app
-toggle, and the API ignores `chat_template_kwargs` (tested 2026-11-01). Set
-in the app, My Models → this model → settings → Inference:
+**Thinking is set by `scripts/omlx.sh`.** `local-main` gets `enable_thinking`
+and the gemma reasoning parser; sampling is temperature 1.0, top-k 64, top-p
+0.95, repetition penalty 1.0. Lower temperature or a repeat penalty makes its
+thinking loop (seen in Zed agent turns, 2026-11-01). Zed also pins
+`temperature: 1.0` for `local-main` in `agent.model_parameters`.
 
-- Prompt Template: first line `{%- set enable_thinking = true -%}`
-- Reasoning Section Parsing: on, start `<|channel>thought`, end `<channel|>`
-- Sampling, from the model's own `generation_config.json`: Temperature 1.0,
-  Top K 64, Top P 0.95, Min P 0, Repeat Penalty off (1.0). Lower temperature
-  or a repeat penalty makes its thinking loop and second-guess itself (seen in
-  Zed agent turns, 2026-11-01). Zed also pins `temperature: 1.0` for
-  `local-main` in `agent.model_parameters`; it cannot set Top K or Top P.
-
-A reinstall or settings reset loses all of these. `scripts/healthcheck.sh` fails if
-`local-main` returns no `reasoning_content` or leaks those markers into the
+`scripts/omlx.sh up` writes those settings again. `scripts/healthcheck.sh` fails if
+`local-main` returns no `reasoning_content` or leaks thought markers into the
 answer. Without thinking it answered a simple change sum wrongly three times.
-A thread that has outgrown the window is a different failure: LM Studio trims
-the middle and the turn still runs (`scripts/context-watch.sh`, ADR 0024).
 
 `local-code` and `local-chat` were collapsed into `local-big` (now `local-main`, ADR 0021) on 2026-10-31
 (D1). The Ollama weights were deleted the same day with the rest of the old
@@ -156,7 +146,7 @@ decisions and does **not** update itself. Re-check before relying on it.
 ## Weight pinning (D4)
 
 `scripts/pin-digests.sh` hashes each role's `weights` path (column 6 of
-`config/roles.tsv`, under `~/.lmstudio/models`) into `pins/digests.tsv`:
+`config/roles.tsv`, under `~/.hearth/models`) into `pins/digests.tsv`:
 file count, bytes, newest mtime, and a sha256 over every file. Git-tracked,
 so drift shows in a diff.
 
@@ -166,23 +156,21 @@ scripts/pin-digests.sh --check          # fast; preflight runs this
 scripts/pin-digests.sh --check --deep   # re-hash everything
 ```
 
-Recorded 2026-10-31. This detects, it does not enforce — LM Studio loads
+Recorded 2026-10-31. This detects, it does not enforce — oMLX loads
 whatever is on disk. The embedding pin was removed with the role (ADR 0018).
 
 ## Changing a role
 
-1. Download the candidate with an exact source: `lms get <hugging face URL> -y`
+1. Put the candidate weights under `~/.hearth/models` at the source path in
+   this file
 2. Bench it against the incumbent: `scripts/concurrency-bench.sh` and
    `bench/tasks/` (rule 5). Same settings as the last baseline
-3. Check the footprint fits under the ~48 GB ceiling with `local-main` already resident
-4. Update this table and `config/roles.tsv` together, then `scripts/lms-load.sh`
-   (which also refreshes Zed's labels via `scripts/zed-sync.sh`)
+3. Check the footprint fits under the 56 GB ceiling with `local-main` already resident
+4. Update this table and `config/roles.tsv` together, then `scripts/omlx.sh up`
+   and `scripts/zed-sync.sh`
 5. `scripts/tool-smoke.sh openai http://127.0.0.1:1234/v1 local-main`
 6. Write an ADR in `docs/decisions/` and a row in `docs/HISTORY.md`
 7. Delete the old weights only once the replacement has proven itself
 
-`scripts/swap-role.sh <role> <model key> <weights path> [ctx] [slots]` does
-steps 4–5 and reverts on failure; `scripts/bench.sh <model key>` loads a
-candidate as `bench-candidate` (`--evict` if it will not fit beside
-`local-main`); `scripts/pull-candidates.sh <url> …` sizes downloads against
-disk and the GPU ceiling.
+`scripts/bench.sh` runs `bench/tasks` against a resident role. It does not
+load a candidate by itself.

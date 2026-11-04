@@ -290,7 +290,7 @@ def main():
     ap.add_argument("--rounds", type=int, default=10)
     ap.add_argument("--prompt-tokens", type=int, default=30000)
     ap.add_argument("--timeout", type=int, default=180)
-    ap.add_argument("--proc-match", default=r"(\.lmstudio/|LM Studio)",
+    ap.add_argument("--proc-match", default=r"\.omlx/",
                     help="pgrep -f regex for the inference process(es) to footprint")
     ap.add_argument("--sample-interval", type=float, default=2.0)
     ap.add_argument("--note-log", action="append", default=[],

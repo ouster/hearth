@@ -1,6 +1,6 @@
 # Laptop access
 
-ADR 0016, phase 4 decision: **SSH tunnel only.** The host's LM Studio stays
+**SSH tunnel only.** The host's oMLX stays
 bound to `127.0.0.1:1234`; a laptop forwards a local port to it over SSH. Same
 setup on the LAN and away from it, traffic encrypted, nothing on the host
 exposed to the network.
@@ -13,13 +13,13 @@ flowchart LR
     end
     subgraph host["Host"]
         sshd["sshd :22<br/>tunnel-only key"]
-        lms["LM Studio 127.0.0.1:1234<br/>token per machine"]
+        srv["oMLX 127.0.0.1:1234<br/>token per machine"]
         webui["Open WebUI 127.0.0.1:3000<br/>SearXNG 127.0.0.1:8888"]
     end
     gem["Gemini<br/>laptop's own key"]
     lz --> lp
     lp -->|"ssh -L"| sshd
-    sshd --> lms
+    sshd --> srv
     sshd --> webui
     lz -.->|"ask-cloud only"| gem
 ```
@@ -28,7 +28,7 @@ flowchart LR
 
 | Thing | Where | Why |
 |---|---|---|
-| LM Studio token `laptop-<name>` | laptop `~/.hearth-key` (mode 600) | revoke one machine without touching the others |
+| API key `laptop-<name>` | laptop `~/.hearth-key` (mode 600) | revoke one machine without touching the others |
 | SSH key `hearth_tunnel` | laptop `~/.ssh/hearth_tunnel`; host `authorized_keys` with `command="/usr/bin/false",restrict,port-forwarding,permitopen=…,permitlisten="none:1"` | the key can `-L` to `127.0.0.1:1234`, `:3000` and `:8888` only — no shell, no commands, no `-R`, no other ports |
 | Google API key (optional) | laptop `~/.hearth-gemini-key` (mode 600) | `ask-cloud` with the laptop's own key; the host's key never leaves |
 | `client/hearth-client.sh` / `.ps1` | laptop `~/.hearth-client.sh` | `ai-tunnel`, `ai-ping`, `ai-models`, `ai-ask`, `ai-webui`, `ask*`, `ask-deep`, `ask-cloud` |
@@ -41,12 +41,10 @@ laptop's shell. A world-readable key file is refused.
 On the host, `scripts/client-setup.sh <laptop-name>` prints every step with
 this host's name and user filled in (`--windows` for PowerShell). In short:
 
-1. **Host, LM Studio app:** Developer → Server Settings → Manage Tokens →
-   create `laptop-<name>`. Leave Serve on Local Network **off**.
-   While oMLX is listening (`scripts/omlx.sh status`), register
-   that same token on the host: `scripts/omlx.sh sub-key add laptop-<name>`.
-   The prompt does not echo. LM Studio keeps only a hash, so the token has
-   to be pasted. A reboot starts LM Studio, which uses its own list.
+1. **Host:** with oMLX listening (`scripts/omlx.sh status`), register a
+   laptop key. The prompt does not echo. A reboot runs `scripts/omlx.sh up`,
+   which keeps sub-keys already registered.
+   `scripts/omlx.sh sub-key add laptop-<name>`
 2. **Laptop:** `ssh-keygen -t ed25519 -f ~/.ssh/hearth_tunnel`, and a `Host hearth`
    entry in `~/.ssh/config` pointing at the host with `IdentitiesOnly yes`.
 3. **Host:** `scripts/client-setup.sh <name> --authorize hearth_tunnel.pub`.
@@ -58,7 +56,7 @@ this host's name and user filled in (`--windows` for PowerShell). In short:
 5. **Laptop:** `ai-tunnel && ai-ping && ai-models`.
 
 `ai-ping` answers: `up`, `BAD TOKEN` (revoked or wrong token), `NO ANSWER`
-(tunnel up but host asleep or LM Studio down — on the host, `scripts/boot.sh`),
+(tunnel up but host asleep or oMLX down — on the host, `scripts/boot.sh`),
 or `DOWN` (no tunnel — `ai-tunnel`).
 If something else is already listening on `127.0.0.1:1234`, the client refuses and does not send the token.
 
@@ -105,9 +103,8 @@ Showing the person `~/.ssh/hearth_tunnel.pub` is fine — it is public.
 
 **3. Stop and hand over to the person** for each of these, then wait:
 
-1. *On the host*, LM Studio app → Developer → Server Settings → Manage Tokens →
-   create `laptop-<name>`. While oMLX is listening, the person also
-   runs `scripts/omlx.sh sub-key add laptop-<name>` and pastes that token.
+1. *On the host*, while oMLX is listening, the person runs
+   `scripts/omlx.sh sub-key add laptop-<name>` and types the token.
    Do not ask them to paste it into the chat.
 2. *On the host*, with the `.pub` file copied over:
    `scripts/client-setup.sh <name> --authorize hearth_tunnel.pub`.
@@ -136,7 +133,7 @@ key works, the second that it can do nothing else.
 | `ask-deep` (optional) | refuses with "not loaded on the host" unless the host ran `scripts/demand-load.sh local-deep up`; the laptop cannot load it (tunnel-only key). `local-main` stays loaded beside it |
 
 If `ai-ping` says `BAD TOKEN`, the person re-runs the `read -rs` step with
-the right token; `NO ANSWER` means the host is asleep or LM Studio is down
+the right token; `NO ANSWER` means the host is asleep or oMLX is down
 (fix on the host); `DOWN` means no tunnel. If `ssh hearth true` **succeeds**,
 stop: the key was authorized without restrictions — tell the person, and do
 not continue.
@@ -218,12 +215,11 @@ is open but the listener is not this client's ssh.
 
 ## Revoking a laptop
 
-1. LM Studio app → Manage Tokens → delete `laptop-<name>`.
-2. While oMLX is up: `scripts/omlx.sh sub-key revoke laptop-<name>`.
-3. Host: delete the `hearth-tunnel-<name>` line from `~/.ssh/authorized_keys`.
+1. While oMLX is up: `scripts/omlx.sh sub-key revoke laptop-<name>`.
+2. Host: delete the `hearth-tunnel-<name>` line from `~/.ssh/authorized_keys`.
 
-Removing the tunnel key cuts the path. Delete the token in both places so a
-reboot does not let it back in.
+Removing the tunnel key cuts the path. Revoke the sub-key so a reboot does
+not let it back in.
 
 ## Never
 

@@ -26,7 +26,7 @@ order:
 
 | # | Area | Files | Questions |
 |---|---|---|---|
-| 1 | **Privacy by placement** | `config/roles.tsv`, `scripts/lms-load.sh`, `scripts/aliases.zsh`, `client/*`, `scripts/webui.sh`, `scripts/sandboxed.sh` | Can anything sent to `:1234` reach a cloud model? Does any path other than `ask-cloud` carry a cloud key? Can a sandboxed agent reach anything but `127.0.0.1:1234`? |
+| 1 | **Privacy by placement** | `config/roles.tsv`, `scripts/omlx.sh`, `scripts/aliases.zsh`, `client/*`, `scripts/webui.sh`, `scripts/sandboxed.sh` | Can anything sent to `:1234` reach a cloud model? Does any path other than `ask-cloud` carry a cloud key? Can a sandboxed agent reach anything but `127.0.0.1:1234`? |
 | 2 | **Secrets** | `scripts/lib.sh` (`ai_load_env`, `hearth_http`), `client/hearth-client.sh` / `.ps1`, `scripts/aliases.zsh`, `scripts/preflight.sh` | Is a token or key ever exported, put on a command line (visible in `ps`), logged, or written somewhere other than a mode-600 file? `hearth_http` passes it via `curl -K -` for this reason. The `.ps1` sets `$env:` vars for the child — is the cleanup sound? |
 | 3 | **Laptop access (D8)** | `scripts/client-setup.sh`, `docs/LAPTOP.md`, the `CLAUDE.md` "Which machine" block | The `authorized_keys` line is `command="/usr/bin/false",restrict,port-forwarding,permitopen=...`. Is the key really tunnel-only? Does `--authorize` refuse and back up correctly? Are the AI-assisted setup instructions safe for a cloud assistant (never sees a secret)? |
 | 4 | **Server exposure** | `scripts/boot.sh`, `scripts/healthcheck.sh` | LM Studio rewrites its saved settings on `lms server start`. Is `127.0.0.1` + no CORS enforced on every start path, and checked? Does each negative test (401, no LAN, no CORS, JIT off) have a positive control? |
@@ -82,17 +82,17 @@ Read-only, on the host only, all safe to repeat (exit codes as above):
 scripts/preflight.sh
 scripts/healthcheck.sh
 scripts/install-autostart.sh --check
-scripts/lms-load.sh --check
+scripts/omlx.sh status
 scripts/pin-digests.sh --check
 scripts/zed-sync.sh --check
 bash -n scripts/*.sh client/hearth-client.sh
 ```
 
-**Don't run:** `boot.sh`, `lms-load.sh` (without `--check`),
+**Don't run:** `boot.sh`, `omlx.sh up`,
 `install-autostart.sh --apply/--remove`, `client-setup.sh --authorize/--install`,
-`swap-role.sh`, `bench.sh`, `concurrency-bench.sh`, `pull-candidates.sh`,
+`bench.sh`, `concurrency-bench.sh`,
 `pin-digests.sh` (without `--check`), `zed-sync.sh` (without `--check`),
-anything with `lms load/unload/server`, `podman`, `launchctl` or `sudo`.
+`podman`, `launchctl` or `sudo`.
 On a laptop, run none of `scripts/`.
 
 If you're Zed on `local-big` (128K context, ADR 0017), review one area from the table

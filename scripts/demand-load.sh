@@ -67,7 +67,7 @@ with open(os.environ["HEARTH_ROLES"]) as fh:
         if not line.strip() or line.startswith("#"):
             continue
         f = line.rstrip("\n").split("\t")
-        if len(f) >= 8 and f[1] == "lmstudio" and f[7] == "resident":
+        if len(f) >= 8 and f[1] == "omlx" and f[7] == "resident":
             residents.append(f[0])
 
 def listing():

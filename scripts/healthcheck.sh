@@ -9,14 +9,13 @@
 #
 #   1. server answers; the host token works (positive control)
 #   2. no token → 401, wrong token → 401
-#   3. each resident lmstudio role in config/roles.tsv answers a real request, and each
+#   3. each resident omlx role in config/roles.tsv answers a real request, and each
 #      chat role thinks with its reasoning parsed out of the answer
-#   4. what is actually listening on :1234, and only LM Studio
+#   4. what is actually listening on :1234, and that it is oMLX
 #   5. LAN: no answer — laptops use the SSH tunnel (D8). Any LAN answer fails.
 #   6. CORS: no Access-Control-Allow-Origin for a foreign Origin
-#   7. JIT off: a model on disk but not in roles.tsv is never loaded. (LM Studio
-#      answers an unknown model name with the loaded LLM rather than refusing —
-#      reported as a warning.)
+#   7. An unknown model name is refused. A 200 that names some other model
+#      is a warning: a typo would silently get that role.
 #   8. Open WebUI and SearXNG answer (warning only)
 #
 # Exit 0 healthy, 1 a real problem, 2 a check could not run.
@@ -89,7 +88,7 @@ if [ "$SERVER_OK" -eq 1 ]; then
         c=$(post /chat/completions "{\"model\":\"${role}\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the word ok.\"}]}" 120)
         if [ "$c" = "200" ] && /usr/bin/python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); m=d["choices"][0]["message"]; assert (m.get("content") or m.get("reasoning_content"))' "$TMPD/out" 2>/dev/null; then
           ok "${role}: chat completion returned"
-          # Thinking can depend on settings held in the LM Studio app, not the
+          # Thinking is set by scripts/omlx.sh, not by the request, so a miss
           # repo (docs/MODELS.md). A reset turns it off silently, so prove it.
           c=$(post /chat/completions "{\"model\":\"${role}\",\"max_tokens\":3000,\"messages\":[{\"role\":\"user\",\"content\":\"Pens are 3 for \$2.10 and notebooks \$1.35 each. 7 pens and 4 notebooks, paid with \$20. Change? Amount only.\"}]}" 300)
           why=$(/usr/bin/python3 -I -c '
@@ -102,7 +101,7 @@ elif any(t in c for t in ("<think>", "</think>", "<|channel>", "<channel|>")): p
           if [ "$c" != "200" ]; then
             bad "${role}: thinking probe → ${c}"
           elif [ -n "$why" ]; then
-            bad "${role}: thinking off or unparsed (${why}) — LM Studio per-model settings, docs/MODELS.md"
+            bad "${role}: thinking off or unparsed (${why}) — oMLX model settings, scripts/omlx.sh"
           else
             ok "${role}: thinks, and reasoning is parsed out of the answer"
           fi
@@ -134,13 +133,11 @@ listen=$(lsof -nP -iTCP:"$HEARTH_PORT" -sTCP:LISTEN 2>/dev/null | awk '
 if [ -z "$listen" ]; then
   er "nothing listening, or lsof could not see it"
 else
-  others=$(printf '%s\n' "$listen" | cut -f1 | grep -viE '^(LM|lms|llmster|Python|python|omlx)' || true)
+  others=$(printf '%s\n' "$listen" | cut -f1 | grep -viE '^(Python|python|omlx)$' || true)
   if [ -n "$others" ]; then
     bad "something else listens on :${HEARTH_PORT}: ${others}"
-  elif printf '%s\n' "$listen" | cut -f1 | grep -qiE '^(Python|python|omlx)$'; then
-    ok "oMLX listens on :${HEARTH_PORT}"
   else
-    ok "only LM Studio listens on :${HEARTH_PORT}"
+    ok "oMLX listens on :${HEARTH_PORT}"
   fi
   bad_bind=""
   while IFS="$(printf '\t')" read -r _ addr; do
@@ -198,34 +195,15 @@ else
 fi
 
 # ---------------------------------------------------------------- 7. JIT
-hdr "7. JIT loading off"
+hdr "7. Unknown model name"
 if [ "$SERVER_OK" -eq 1 ]; then
-  listed=$(hearth_roles lmstudio | cut -f3 | tr '\n' '|')
-  probe=$("$HEARTH_LMS" ls --json 2>/dev/null | /usr/bin/python3 -I -c '
-import json, sys
-listed = set(sys.argv[1].strip("|").split("|"))
-for m in json.load(sys.stdin):
-    k = m.get("modelKey", "")
-    if m.get("type") == "llm" and k not in listed and not any(k == l.split("@")[0] for l in listed):
-        print(k); break
-' "$listed")
-  if [ -z "$probe" ]; then
-    er "no unlisted LLM on disk to probe JIT with"
+  probe="hearth-unknown-model"
+  c=$(post /chat/completions "{\"model\":\"${probe}\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"x\"}]}" 30)
+  served=$(/usr/bin/python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("model",""))' "$TMPD/out" 2>/dev/null)
+  if [ "$c" = "200" ]; then
+    wrn "unknown model name answered as '${served}' — a typo silently gets that role (local, so not a leak)"
   else
-    before=$("$HEARTH_LMS" ps --json 2>/dev/null | grep -c "\"modelKey\":\"${probe}\"" || true)
-    c=$(post /chat/completions "{\"model\":\"${probe}\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"x\"}]}" 30)
-    sleep 1
-    after=$("$HEARTH_LMS" ps --json 2>/dev/null | grep -c "\"modelKey\":\"${probe}\"" || true)
-    served=$(/usr/bin/python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1])).get("model",""))' "$TMPD/out" 2>/dev/null)
-    if [ "$after" -gt "$before" ]; then
-      bad "unlisted model (${probe}) was LOADED — JIT loading is ON; reloading roles.tsv"
-      "$HEARTH_LMS" unload --all >/dev/null 2>&1; "${ROOT}/scripts/lms-load.sh" >/dev/null 2>&1
-    elif [ "$c" = "200" ]; then
-      ok "unlisted model (${probe}) not loaded (JIT off)"
-      wrn "LM Studio answers an unknown model name with '${served}' instead of refusing — a typo silently gets that role (local, so not a leak)"
-    else
-      ok "unlisted model (${probe}) refused with ${c}, not loaded"
-    fi
+    ok "unknown model name refused with ${c}"
   fi
 else
   er "skipped: server not answering"

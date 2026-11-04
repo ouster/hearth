@@ -1,5 +1,5 @@
 #!/bin/bash
-# Set up a laptop to use this host's LM Studio over an SSH tunnel (phase 4).
+# Set up a laptop to use this host's oMLX over an SSH tunnel.
 #
 #   scripts/client-setup.sh <laptop-name>                    # print the steps
 #   scripts/client-setup.sh <laptop-name> --windows          # PowerShell steps
@@ -221,13 +221,11 @@ fi
 cat <<EOF
 Laptop setup: ${NAME}   (host ${USER_NAME}@${HOSTNAME_LOCAL}, tunnel only)
 
-1. ON THIS HOST — LM Studio app → Developer tab → Server Settings → Manage
-   Tokens → Create Token "laptop-${NAME}". Copy it. Leave Serve on Local
-   Network OFF: the tunnel needs nothing exposed.
-   While oMLX is listening (scripts/omlx.sh status), register
-   that same token here. The prompt does not echo. LM Studio keeps only a
-   hash, so this paste is the copy oMLX accepts:
+1. ON THIS HOST — oMLX is listening (scripts/omlx.sh status). Generate a
+   token for laptop-${NAME} and register it. The prompt does not echo:
      scripts/omlx.sh sub-key add laptop-${NAME}
+   Put that same token on the laptop as ~/.hearth-key. Leave the server on
+   127.0.0.1: the tunnel needs nothing exposed.
    A reboot runs scripts/omlx.sh up, which keeps sub-keys already registered.
 
 EOF
@@ -278,7 +276,7 @@ cat <<EOF
 5. Zed on the laptop: docs/LAPTOP.md (api_url http://127.0.0.1:1234/v1 through
    the tunnel; token via the UI; a Gemini provider is allowed on the laptop, D3).
 
-Revoke a laptop: delete its token in LM Studio, run
+Revoke a laptop: run
   scripts/omlx.sh sub-key revoke laptop-${NAME}
-while the trial is up, and delete its hearth-tunnel-${NAME} line in ${AK}.
+and delete its hearth-tunnel-${NAME} line in ${AK}.
 EOF

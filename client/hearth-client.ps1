@@ -5,14 +5,14 @@
 #
 # PowerShell 5.1 and 7+. Needs the built-in OpenSSH client (ssh.exe).
 #
-# The host's LM Studio listens on 127.0.0.1:1234 only; this machine reaches it
+# The host's oMLX listens on 127.0.0.1:1234 only; this machine reaches it
 # through an SSH tunnel, on and off the LAN.
 #
 # Set before dot-sourcing (scripts/client-setup.sh --windows prints these):
 #   $env:HEARTH_SSH          user@host, e.g. colin@Colins-Mac-Studio.local
 #   $env:HEARTH_CLOUD_MODEL  Gemini model id for ask-cloud (from the host's roles.tsv)
 # Secrets (files, never put in environment variables):
-#   $HOME\.hearth-key         this machine's LM Studio token (laptop-<name>)
+#   $HOME\.hearth-key         this machine's API key (laptop-<name>)
 #   $HOME\.hearth-gemini-key  this machine's own Google API key, ask-cloud only
 
 if ($env:HEARTH_GATEWAY -or $env:AI_STACK_GATEWAY) {
@@ -154,7 +154,7 @@ function ai-tunnel {
     }
     $sx = ""
     if ($script:HearthSearxngPort -ne "0") { $sx = ", SearXNG → 127.0.0.1:$($script:HearthSearxngPort)" }
-    Write-Host "tunnel: up (LM Studio → 127.0.0.1:$($script:HearthLocalPort), WebUI → 127.0.0.1:$($script:HearthWebuiPort)$sx)"
+    Write-Host "tunnel: up (oMLX → 127.0.0.1:$($script:HearthLocalPort), WebUI → 127.0.0.1:$($script:HearthWebuiPort)$sx)"
     return $true
 }
 
@@ -174,7 +174,7 @@ function ai-ping {
     } catch {
         $code = $_.Exception.Response.StatusCode.value__
         if ($code -eq 401) { Write-Host "BAD TOKEN — $HOME\.hearth-key was refused" -ForegroundColor Red }
-        else { Write-Host "NO ANSWER — host asleep or LM Studio down (on the host: scripts/boot.sh)" -ForegroundColor Red }
+        else { Write-Host "NO ANSWER — host asleep or oMLX down (on the host: scripts/boot.sh)" -ForegroundColor Red }
     }
 }
 

@@ -44,22 +44,20 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 |---|---|---|
 | `local-main` | oMLX | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0024) |
 | `local-deep` | oMLX | slower, more careful model for hard one-off questions. Loaded **beside** `local-main` (ADR 0028). `ask-deep` unloads it on the way out and leaves `local-main` loaded. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up`) |
-| `cloud-cheap` | Gemini | reached directly by `ask-cloud`; never loaded into LM Studio |
+| `cloud-cheap` | Gemini | reached directly by `ask-cloud`; never loaded into oMLX |
 
 `local-code` and `local-chat` were collapsed into `local-main` (D1): two heavy
 models cannot both stay resident with 3 × 128K slots, and evicting the agent
 model was failure F2. The old alias names still work and mean `local-main`.
 
-`scripts/lms-load.sh` makes the loaded set match `config/roles.tsv`: it
-unloads anything unlisted, loads each `lmstudio` row with
-`--identifier <role> -c <ctx> --gpu max --parallel <slots>`, then re-reads
-`lms ps` to confirm. No `--ttl`, so a role never auto-unloads.
+`scripts/omlx.sh up` loads the resident role from `~/.hearth/models`. A
+demand role stays unloaded until `scripts/demand-load.sh` or `ask-deep`.
 
 ## The privacy boundary
 
 There is no router and no key scope. The boundary is where models live:
 
-- **LM Studio holds only local models.** Anything sent to `:1234` stays on
+- **oMLX holds only local models.** Anything sent to `:1234` stays on
   the host by construction. Rule: no script adds a cloud backend to
   `config/roles.tsv` except as an explicit cloud row (`gemini`).
 - **Cloud needs a provider key in the calling tool.** Only `ask-cloud` passes
@@ -74,22 +72,16 @@ console is the cap.
 
 ## Server settings
 
-Set once in the LM Studio app (llmster has no CLI for auth or tokens) and
-honoured by llmster — verified 2026-10-31: no token → 401, wrong token → 401,
-host token → 200.
+`scripts/omlx.sh up` writes `~/.omlx/settings.json` (mode 600). No token →
+401, wrong token → 401, host token → 200.
 
 | Setting | Value |
 |---|---|
-| Port | 1234 |
-| Require Authentication | on |
-| Serve on Local Network | off — laptops use an SSH tunnel (phase 4 decision) |
+| Bind | `127.0.0.1:1234` — laptops use an SSH tunnel |
+| Authentication | on |
 | CORS | off |
-| Just-in-Time model loading | off |
-| Allow per-request MCPs / calling servers from mcp.json | off |
-| Log sensitive data | off |
-
-Stored in `~/.lmstudio/.internal/http-server-config.json` (auth and tokens
-are not in that file).
+| Model fallback | off |
+| MCP | off |
 
 ## Process supervision
 
@@ -97,8 +89,7 @@ oMLX serves `local-main` on `127.0.0.1:1234` from `~/.hearth/models` (ADR 0026).
 `ask-deep` loads `local-deep` from the same tree beside it (ADR 0028).
 Login runs `scripts/boot.sh`, which runs `scripts/omlx.sh up`, then starts
 Podman, SearXNG and Open WebUI. `scripts/omlx.sh down` stops oMLX and
-does not start LM Studio. **Do not also run llmster**: whichever starts first
-owns `~/.lmstudio`.
+leaves the port empty.
 
 ### Environment files
 
@@ -115,11 +106,10 @@ anything an agent spawns, would then hold it.
 
 | Script | Answers | Exit |
 |---|---|---|
-| `healthcheck.sh` | host token 200 (positive control), no/wrong token 401, each role answers, only LM Studio on :1234, LAN silent or token-only, no CORS, an unlisted model never loads | 0 / 1 / 2 |
-| `preflight.sh` | roles.tsv well-formed and local-only on lmstudio, keys downloaded and in MODELS.md, rule 1, saved server settings, secrets placement, weight drift, autostart, bash 3.2 / CRLF | 0 / 1 / 2 |
+| `healthcheck.sh` | host token 200 (positive control), no/wrong token 401, each role answers, oMLX on :1234, LAN silent, no CORS, an unknown model name is refused or warned | 0 / 1 / 2 |
+| `preflight.sh` | roles.tsv well-formed and local-only on omlx, weights on disk and in MODELS.md, rule 1, oMLX settings, secrets placement, weight drift, autostart, bash 3.2 / CRLF | 0 / 1 / 2 |
 | `status.sh` | one glance, no model calls | — |
-| `diagnose.sh` | evidence dump — run before restarting anything | — |
-| `lms-load.sh --check` | exactly roles.tsv loaded, right context and slots | 0 / 1 / 2 |
+| `omlx.sh status` | whether oMLX is listening and which roles it reports | 0 / 1 |
 | `pin-digests.sh --check [--deep]` | weights unchanged since recorded (D4) | 0 / 1 / 2 |
 | `tool-smoke.sh` | Zed-like read → write tool loop | 0 / 1 |
 | `concurrency-bench.sh`, `bench.sh` | load behaviour; quality tasks | — |
@@ -127,10 +117,9 @@ anything an agent spawns, would then hold it.
 
 Exit 2 always means "could not run", never "found a problem".
 
-Known behaviour: with JIT off, LM Studio answers a request for an **unknown
-model name with the loaded LLM** rather than refusing. Nothing new loads (so
-nothing is evicted), but a typo'd model id silently gets `local-main`.
-`healthcheck.sh` reports it as a warning.
+An unknown model name can be answered by the loaded role. Nothing new loads,
+but a typo'd model id silently gets `local-main`. `healthcheck.sh` reports
+it as a warning.
 
 ## Measured (2026-10-31)
 
@@ -172,9 +161,8 @@ deliberately unrestricted; see `docs/THREAT-MODEL.md` and ADR 0007.
 
 - **Host SSH accepts passwords** (macOS default). `docs/LAPTOP.md` gives the
   key-only override; not applied automatically.
-- **LM Studio's saved settings can change under you** (bind and CORS did
-  once). `boot.sh` resets them at login; `healthcheck.sh` checks the live
-  listener and CORS header, not the file.
+- **`scripts/omlx.sh up` rewrites `~/.omlx/settings.json`.** `healthcheck.sh`
+  checks the live listener and CORS header.
 - **Untrusted MCP servers are unaudited** — `docs/THREAT-MODEL.md` §3.
 - **Zed's built-in `fetch` and `search_web` tools** reach the internet in the
   Write and Ask profiles; that predates this migration.

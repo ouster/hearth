@@ -1,10 +1,10 @@
 #!/bin/bash
-# Tell the operator when LM Studio trims a prompt to fit the context window.
+# Tell the operator when the server trims a prompt to fit the context window.
 # The request still runs. This only notifies.
 #
-# The server log line is "TruncateMiddle policy activated, pre-processing the
-# 'N' token prompt by removing 'M' tokens". The role is the identifier on the
-# preceding "Running chat completion" line. Neither line contains the prompt.
+# Watches ~/Library/Logs/hearth-omlx.log. It notifies on a trim line of the
+# form "pre-processing the 'N' token prompt by removing 'M' tokens". oMLX does
+# not emit that line today, so the watcher stays quiet until the log does.
 #
 #   scripts/context-watch.sh
 #
@@ -17,21 +17,14 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
 
-LOG_DIR="${HEARTH_LMS_LOG_DIR:-$HOME/.lmstudio/server-logs}"
+LOG_FILE="${HEARTH_SERVER_LOG:-$HOME/Library/Logs/hearth-omlx.log}"
 POLL="${HEARTH_CONTEXT_WATCH_POLL:-1}"
 SINK="${HEARTH_CONTEXT_WATCH_LOG:-$HOME/Library/Logs/hearth-context-watch.log}"
 ROLE=""
 MSGS=""
 
 newest_log() {
-  local f best=""
-  for f in "$LOG_DIR"/*/*.log; do
-    [ -f "$f" ] || continue
-    if [ -z "$best" ] || [ "$f" -nt "$best" ]; then
-      best=$f
-    fi
-  done
-  printf '%s' "$best"
+  [ -f "$LOG_FILE" ] && printf '%s' "$LOG_FILE"
 }
 
 notify() {

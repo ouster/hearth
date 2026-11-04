@@ -1,18 +1,14 @@
-# Role registry for LM Studio (ADR 0016). Tab-separated. One of the two files
-# allowed to name concrete models (the other is docs/MODELS.md).
-# model_key is the modelKey from `lms ls --json`, with @variant when a model
-# has several quantisations on disk. ctx and slots are per load;
-# slots becomes `lms load --parallel` for chat models. Read by scripts/lms-load.sh.
-# weights is the path under ~/.hearth/models (served). The same relative
-# path under ~/.lmstudio/models is the old copy. scripts/pin-digests.sh hashes
-# whichever is present, preferring ~/.hearth/models (D4). `lms ls` reports a
-# catalogue key, not the folder on disk.
+# Role registry. Tab-separated. One of the two files allowed to name concrete
+# models (the other is docs/MODELS.md).
+# model_key identifies the weights. ctx and slots are per load.
+# weights is the directory under ~/.hearth/models that oMLX serves.
+# scripts/pin-digests.sh hashes that directory (D4).
 #
 # role	backend	model_key	ctx	slots	weights	draft	load
-# draft: mtp → lms load --speculative-draft-mtp; "-" leaves it off.
-# Same weights, so the tokens are still the model's. Speeds decode, not prefill.
-# load: resident → scripts/lms-load.sh keeps it loaded; demand → loaded only
+# backend: omlx for a local role, or an explicit cloud backend (gemini).
+# draft is "-" . The column remains so a row stays eight fields.
+# load: resident → scripts/omlx.sh up keeps it loaded; demand → loaded only
 # by ask-deep or scripts/demand-load.sh (ADR 0020); skipped by healthcheck and bench.
-local-main	lmstudio	gemma-4-26b-a4b-it-qat-mlx	131072	3	lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit	-	resident
-local-deep	lmstudio	qwen3.8-27b-mlx	65536	1	lmstudio-community/Qwen3.8-27B-MLX-4bit	-	demand
+local-main	omlx	gemma-4-26b-a4b-it-qat-mlx	131072	3	lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit	-	resident
+local-deep	omlx	qwen3.8-27b-mlx	65536	1	lmstudio-community/Qwen3.8-27B-MLX-4bit	-	demand
 cloud-cheap	gemini	gemini-3.6-flash	-	-	-	-	-

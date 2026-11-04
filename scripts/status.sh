@@ -13,11 +13,12 @@ g() { printf '  \033[32m●\033[0m %s\n' "$1"; }
 r() { printf '  \033[31m●\033[0m %s\n' "$1"; }
 y() { printf '  \033[33m●\033[0m %s\n' "$1"; }
 
-echo "LM Studio"
-case "$(hearth_daemon_owner)" in
-  app)     g "app owns the daemon" ;;
-  llmster) y "llmster owns the daemon (D6 is the app)" ;;
-  *)       r "not running — scripts/boot.sh" ;;
+echo "oMLX"
+who=$(lsof -nP -iTCP:"$HEARTH_PORT" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1}')
+case "$who" in
+  Python|python*|omlx) g "listening on ${HEARTH_URL} (${who})" ;;
+  "")                   r "not listening — scripts/omlx.sh up" ;;
+  *)                    r "port ${HEARTH_PORT} is held by ${who}" ;;
 esac
 code=$(hearth_http /models "${LMSTUDIO_HOST_TOKEN:-}")
 case "$code" in
@@ -30,15 +31,12 @@ bound=$(lsof -nP -iTCP:"$HEARTH_PORT" -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {prin
 case "$bound" in
   "127.0.0.1:${HEARTH_PORT} ") g "bound to 127.0.0.1 only" ;;
   "")                          : ;;
-  *)                           y "bound to: ${bound}(not loopback-only — run scripts/boot.sh)" ;;
+  *)                           y "bound to: ${bound}(not loopback-only — run scripts/omlx.sh up)" ;;
 esac
 
 echo
 echo "Roles"
-if hearth_lms_ok; then
-  "${ROOT}/scripts/lms-load.sh" --check 2>/dev/null | sed 's/^/  /'
-  "$HEARTH_LMS" ps 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | awk 'NR>1 && NF' | sed 's/^/  /'
-fi
+"${ROOT}/scripts/omlx.sh" status 2>/dev/null | sed 's/^/  /' || y "omlx status failed"
 
 echo
 echo "Containers"

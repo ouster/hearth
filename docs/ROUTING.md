@@ -4,7 +4,7 @@ The decision table. When in doubt, local.
 
 ## What must stay local
 
-Route to `local-*` roles (LM Studio, `:1234`), always:
+Route to `local-*` roles (oMLX, `:1234`), always:
 
 - Any repo or path you have flagged as holding sensitive or private data
 - Names, addresses, contact details, financial figures, ID documents
@@ -24,7 +24,7 @@ Route to `local-*` roles (LM Studio, `:1234`), always:
 
 | Role | Use for | Reached by | State |
 |---|---|---|---|
-| `local-main` | everything local: code, agent, chat, long context | LM Studio `:1234` | live |
+| `local-main` | everything local: code, agent, chat, long context | oMLX `:1234` | live |
 | `cloud-cheap` | bulk non-sensitive work, big context | `ask-cloud` → Gemini directly | live |
 | `local-embed` | — | — | removed 2026-11-01, nothing called it (ADR 0018) |
 | `local-code`, `local-chat` | — | alias names only; mean `local-main` (D1) | collapsed |
@@ -37,7 +37,7 @@ in a different way:
 
 | Path | Can it leave the host? | Why |
 |---|---|---|
-| Anything to `127.0.0.1:1234` | **no** | LM Studio holds only local models |
+| Anything to `127.0.0.1:1234` | **no** | oMLX holds only local models |
 | Zed on this host | **no** model egress | no cloud provider configured (D3). Tool egress: SearXNG in the `web` profile. Write and Ask have `fetch` and `search_web` off |
 | `ask`, `ask-*` except `ask-cloud` | **no** | point at `:1234` with the host token |
 | `ask-cloud` | **yes** | the only alias with a provider key; it is explicit by name |
@@ -48,8 +48,8 @@ What is lost against the gateway: nothing refuses a cloud request you make
 on purpose. Choosing `ask-cloud` on sensitive work is no longer stopped — it
 is only made explicit.
 
-**Never add a cloud model to LM Studio**, and never give a remote backend a
-`lmstudio` row in `config/roles.tsv`. That single rule is what makes `:1234`
+**Never add a cloud model to oMLX**, and never give a remote backend an
+`omlx` row in `config/roles.tsv`. That single rule is what makes `:1234`
 safe for anything.
 
 ## Web search punctures the boundary

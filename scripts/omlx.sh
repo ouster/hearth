@@ -1,7 +1,7 @@
 #!/bin/bash
 # Serve local roles from oMLX on 127.0.0.1:1234 (ADR 0026, 0028). Login boot
 # runs `up`. Weights are the copies under ~/.hearth/models. `down` stops oMLX
-# and leaves the port empty. It does not start LM Studio.
+# and leaves the port empty.
 #
 #   scripts/omlx.sh up | down | status | bench
 #   scripts/omlx.sh sub-key list
@@ -12,8 +12,7 @@
 # key is the existing host token, written to ~/.omlx/settings.json (mode 600)
 # and never printed. Clients that already send that token keep working.
 # A laptop token is a different key. `sub-key add` registers one the operator
-# pastes; it can call the model and cannot log in as admin. LM Studio stores
-# only a hash, so the script cannot copy the token itself. `up` keeps
+# pastes; it can call the model and cannot log in as admin. `up` keeps
 # sub-keys already in the settings file.
 
 set -euo pipefail
@@ -46,7 +45,7 @@ find_omlx() {
 }
 
 role_fields() {
-  awk -F'\t' '!/^[[:space:]]*(#|$)/ && $1=="local-main" && $2=="lmstudio" && $8=="resident" {
+  awk -F'\t' '!/^[[:space:]]*(#|$)/ && $1=="local-main" && $2=="omlx" && $8=="resident" {
     print $4 "\t" $5 "\t" $6; exit
   }' "${ROOT}/config/roles.tsv"
 }
@@ -261,7 +260,7 @@ with open(os.environ["OMLX_ROLES"]) as fh:
         if not line.strip() or line.startswith("#"):
             continue
         f = line.rstrip("\n").split("\t")
-        if len(f) < 8 or f[1] != "lmstudio" or f[5] in ("", "-"):
+        if len(f) < 8 or f[1] != "omlx" or f[5] in ("", "-"):
             continue
         roles[f[0]] = {"ctx": int(f[3]), "load": f[7]}
 
@@ -343,24 +342,11 @@ cmd_up() {
   case "$who" in
     "" ) ;;
     omlx|Python|python* ) echo "oMLX already listening on ${HEARTH_PORT}"; exit 0 ;;
-    LM*|lms ) ;;
-    * ) fail "port ${HEARTH_PORT} is held by ${who}" ;;
+    * ) fail "port ${HEARTH_PORT} is held by ${who}. Stop that process, then re-run." ;;
   esac
 
   write_settings
   link_weights
-
-  if [ -n "$who" ]; then
-    echo "stopping LM Studio server (the app stays open)"
-    "$HEARTH_LMS" unload local-main >/dev/null 2>&1 || true
-    "$HEARTH_LMS" server stop >/dev/null 2>&1 || true
-    i=0
-    while [ "$i" -lt 30 ] && [ -n "$(listener || true)" ]; do
-      sleep 1
-      i=$((i + 1))
-    done
-    [ -z "$(listener || true)" ] || fail "port ${HEARTH_PORT} still busy after stopping LM Studio"
-  fi
 
   echo "starting oMLX on 127.0.0.1:${HEARTH_PORT} (memory guard ${GUARD_GB} GB, hot cache ${HOT_CACHE}, SSD cache ${SSD_CACHE})"
   start_omlx

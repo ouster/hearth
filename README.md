@@ -3,11 +3,10 @@
 Local-first LLM serving for a single developer (or a small LAN).
 Inference that still works when vendors get expensive, overloaded, or unavailable.
 
-LM Studio serves local models on `127.0.0.1:1234` with a token required. The
-LM Studio app owns the server (D6, changed 2026-10-31 from headless `llmster`). Cloud (Gemini) is reached by each tool directly with its own
-key, never through the local server — so nothing sent to `:1234` can leave the
-machine. ADR 0016 replaced the earlier LiteLLM + Ollama gateway; what was tried
-before is in [`docs/HISTORY.md`](docs/HISTORY.md).
+oMLX serves local models on `127.0.0.1:1234` from `~/.hearth/models`, with a
+token required (ADR 0026). Cloud (Gemini) is reached by each tool directly
+with its own key, never through the local server — so nothing sent to `:1234`
+can leave the machine. What was tried before is in [`docs/HISTORY.md`](docs/HISTORY.md).
 
 ## Why
 
@@ -19,7 +18,7 @@ hunt. This stack addresses **roles** instead:
 local-main   cloud-cheap
 ```
 
-Each local role is an LM Studio `--identifier`, so clients ask for
+Each local role is the model id oMLX serves, so clients ask for
 `local-main`, never a model. Concrete models live in exactly two files —
 [`config/roles.tsv`](config/roles.tsv) and [`docs/MODELS.md`](docs/MODELS.md).
 
@@ -30,29 +29,29 @@ flowchart LR
         aider["aider / ask-*"]
         webui["Open WebUI :3000"]
         sbx["sandboxed.sh agents<br/>egress: 127.0.0.1:1234 only"]
-        lms["LM Studio 127.0.0.1:1234<br/>local-main x3 slots<br/>token required"]
+        srv["oMLX 127.0.0.1:1234<br/>local-main x3 slots<br/>token required"]
     end
     laptop["Laptop<br/>own token, tunnel-only key"]
     cloud["Gemini<br/>tool's own key"]
     searx["SearXNG<br/>opt-in search"]
 
-    zed --> lms
-    aider --> lms
-    webui --> lms
-    sbx --> lms
-    laptop -->|"SSH tunnel"| lms
+    zed --> srv
+    aider --> srv
+    webui --> srv
+    sbx --> srv
+    laptop -->|"SSH tunnel"| srv
     aider -.->|"ask-cloud only"| cloud
     webui -.->|"opt-in per message"| searx
 
     classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
     classDef leaveCls fill:#FAEEDA,stroke:#854F0B,color:#633806
-    class lms localCls
+    class srv localCls
     class cloud,searx leaveCls
 ```
 
 ## Three guarantees
 
-1. **Privacy is structural.** LM Studio holds only local models, so anything
+1. **Privacy is structural.** oMLX holds only local models, so anything
    sent to `:1234` stays on the host by construction. Cloud needs a separate
    provider key in the calling tool; only `ask-cloud` has one. Sandboxed agents
    can reach `127.0.0.1:1234` and nothing else (`scripts/sandbox-probe.sh`).
@@ -64,10 +63,7 @@ flowchart LR
 ## Requirements
 
 - macOS on Apple Silicon (the reference host is 64 GB)
-- The LM Studio app (0.4.28 here) — it owns the server and is where auth and
-  tokens are set; there is no CLI for either (lmstudio-ai/lms#489)
-- The `lms` CLI at `~/.lmstudio/bin/lms` (installed by the app, or by the
-  llmster installer with `--no-modify-path`)
+- oMLX, started with `scripts/omlx.sh up`. Weights live in `~/.hearth/models`
 - [Podman](https://podman.io) for Open WebUI / SearXNG
 
 ## Quick start
@@ -75,12 +71,11 @@ flowchart LR
 ```bash
 git clone <this-repo> hearth && cd hearth
 
-# 1. Server and models (see docs/RUNBOOK.md for the settings to set in the app)
-#    LM Studio app open, "Enable Local LLM Service (headless)" on
-~/.lmstudio/bin/lms server start --bind 127.0.0.1 -p 1234
-scripts/lms-load.sh                 # loads exactly what config/roles.tsv lists
+# 1. Server. Weights are the directories named in config/roles.tsv,
+#    under ~/.hearth/models. See docs/RUNBOOK.md.
+scripts/omlx.sh up
 
-# 2. Token — created in the LM Studio app, stored mode 600
+# 2. Token — the oMLX API key, stored mode 600
 #    ~/.config/hearth/env:  LMSTUDIO_HOST_TOKEN=...
 
 # 3. Shell aliases
@@ -88,8 +83,7 @@ echo "source $PWD/scripts/aliases.zsh" >> ~/.zshrc
 ```
 
 Ops detail: [`docs/RUNBOOK.md`](docs/RUNBOOK.md). Architecture:
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Migration status:
-[`docs/MIGRATION-LMSTUDIO.md`](docs/MIGRATION-LMSTUDIO.md).
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Usage
 
@@ -104,10 +98,10 @@ ask-deep           # aider on local-deep: slow, careful, loaded for the session 
 ask-cloud          # Gemini via GOOGLE_API_KEY — the only alias that leaves the host
 
 # Server management
-ai-load            # scripts/lms-load.sh — load roles.tsv, report drift
-ai-loaded          # lms ps — list loaded models
-ai-restart         # stop and start the server on 127.0.0.1:1234
-ai-log             # lms log stream
+ai-load            # scripts/omlx.sh up — start oMLX and load local-main
+ai-loaded          # scripts/omlx.sh status
+ai-restart         # stop and start oMLX on 127.0.0.1:1234
+ai-log             # tail ~/Library/Logs/hearth-omlx.log
 ai-status          # scripts/status.sh
 ai-health          # scripts/healthcheck.sh
 ai-boot            # scripts/boot.sh
@@ -117,7 +111,7 @@ ai-boot            # scripts/boot.sh
 
 Source `~/.hearth-client.sh` (set by `scripts/client-setup.sh`): run
 `ai-tunnel` first to open the SSH tunnel, then any of these — they all go
-through the tunnel to the host's LM Studio on `:1234`.
+through the tunnel to the host's oMLX on `:1234`.
 
 ```bash
 # Tunnel management
@@ -209,7 +203,7 @@ removed gateway (`:4000`, `:11434`, LiteLLM); never read
 CLAUDE.md / AGENTS.md   rules for coding agents in this repo
 config/roles.tsv        role → LM Studio model key, context, slots
 docs/                   architecture, routing, models, runbook, history, ADRs
-scripts/                lms-load, benches, sandbox, client setup, …
+scripts/                omlx, benches, sandbox, client setup, …
 client/                 laptop shims (bash/zsh + PowerShell), SSH-tunnel based
 bench/tasks/            fixed prompts for comparing models
 bench/results/          every bench run, committed

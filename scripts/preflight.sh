@@ -1,11 +1,11 @@
 #!/bin/bash
 # Read-only. Changes nothing. Run after any edit to config/roles.tsv, the
-# scripts, or LM Studio's settings — and before trusting a healthcheck.
+# scripts, or oMLX's settings — and before trusting a healthcheck.
 #
 #   scripts/preflight.sh
 #
 # Static checks: repo integrity, config/roles.tsv ↔ docs/MODELS.md, rule 1
-# (model names in two files only), LM Studio's saved server settings, where
+# (model names in two files only), oMLX's saved server settings, where
 # secrets live, weight drift (D4), autostart, shell hygiene. The live checks
 # (what actually answers, on which interface) are scripts/healthcheck.sh.
 #
@@ -47,10 +47,13 @@ done
 
 # ---------------------------------------------------------------- tooling
 hdr "Tooling"
-[ -x "$HEARTH_LMS" ] && ok "lms at ${HEARTH_LMS}" || er "lms not found at ${HEARTH_LMS} — LM Studio checks below cannot run"
+omlx_bin=""
+for c in /opt/homebrew/bin/omlx "${HOME}/.omlx/bin/omlx" "${HOME}/.omlx/venv/bin/omlx"; do
+  [ -x "$c" ] && omlx_bin="$c" && break
+done
+[ -n "$omlx_bin" ] || omlx_bin="$(command -v omlx 2>/dev/null || true)"
+[ -n "$omlx_bin" ] && [ -x "$omlx_bin" ] && ok "omlx at ${omlx_bin}" || er "omlx not installed — scripts/omlx.sh up cannot serve"
 [ -x /usr/bin/python3 ] && ok "python3 (stdlib only)" || er "/usr/bin/python3 missing"
-[ -d "$HEARTH_APP" ] && ok "LM Studio app installed (D6)" || bad "${HEARTH_APP} not installed (D6)"
-[ -d "$HOME/.lmstudio/llmster" ] && wrn "llmster still installed — it can grab the daemon from the app (D6)" || ok "no llmster install to compete with the app"
 
 # ---------------------------------------------------------------- roles.tsv
 hdr "config/roles.tsv"
@@ -62,19 +65,19 @@ else
     { n++ }
     NF != 8 { print "line " NR ": " NF " columns, want 8 (role backend model_key ctx slots weights draft load)"; next }
     $7 != "mtp" && $7 != "-" { print $1 ": draft must be mtp or -" }
-    $2 == "lmstudio" && $8 != "resident" && $8 != "demand" { print $1 ": load must be resident or demand" }
-    $2 != "lmstudio" && $8 != "-" { print $1 ": load must be - on a cloud row" }
-    $2 == "lmstudio" && $8 == "resident" { res++ }
-    END { if (n > 0 && res == 0) print "no resident lmstudio role — nothing would serve local-main" }
+    $2 == "omlx" && $8 != "resident" && $8 != "demand" { print $1 ": load must be resident or demand" }
+    $2 != "omlx" && $8 != "-" { print $1 ": load must be - on a cloud row" }
+    $2 == "omlx" && $8 == "resident" { res++ }
+    END { if (n > 0 && res == 0) print "no resident omlx role — nothing would serve local-main" }
     seen[$1]++ { print "duplicate role " $1 }
-    $2 != "lmstudio" && $2 != "gemini" { print $1 ": backend \"" $2 "\" is not lmstudio or an explicit cloud backend (gemini)" }
-    $2 == "lmstudio" && ($4 !~ /^[0-9]+$/ || $5 !~ /^[0-9]+$/) { print $1 ": ctx/slots must be integers" }
-    $2 == "lmstudio" && $1 !~ /^local-/ { print $1 ": an lmstudio row must be a local-* role" }
-    $2 != "lmstudio" && $1 ~ /^local-/ { print $1 ": a local-* role on a cloud backend — rule 2/3" }
-    $3 ~ /:\/\// || $6 ~ /:\/\// { print $1 ": URL in roles.tsv — LM Studio must never front a remote model" }
+    $2 != "omlx" && $2 != "gemini" { print $1 ": backend \"" $2 "\" is not omlx or an explicit cloud backend (gemini)" }
+    $2 == "omlx" && ($4 !~ /^[0-9]+$/ || $5 !~ /^[0-9]+$/) { print $1 ": ctx/slots must be integers" }
+    $2 == "omlx" && $1 !~ /^local-/ { print $1 ": an omlx row must be a local-* role" }
+    $2 != "omlx" && $1 ~ /^local-/ { print $1 ": a local-* role on a cloud backend — rule 2/3" }
+    $3 ~ /:\/\// || $6 ~ /:\/\// { print $1 ": URL in roles.tsv — :1234 must never front a remote model" }
     END { if (n == 0) print "no rows" }' "$ROLES")
   if [ -z "$probs" ]; then
-    ok "well-formed; backends lmstudio/gemini only; local-* only on lmstudio"
+    ok "well-formed; backends omlx/gemini only; local-* only on omlx"
   else
     while IFS= read -r l; do
       [ -n "$l" ] || continue
@@ -84,29 +87,15 @@ $probs
 EOF
   fi
 
-  on_disk=""
-  [ -x "$HEARTH_LMS" ] && on_disk=$("$HEARTH_LMS" ls --json 2>/dev/null | /usr/bin/python3 -I -c '
-import json, sys
-for m in json.load(sys.stdin):
-    print(m.get("modelKey", ""))
-    for v in m.get("variants") or []: print(v)
-' 2>/dev/null)
-  while IFS="$(printf '\t')" read -r role _ key _ _ w; do
+  while IFS="$(printf '\t')" read -r role _ _ _ _ w; do
     [ -n "$role" ] || continue
-    if [ -z "$on_disk" ]; then
-      er "${role}: cannot list models (lms ls) — download check skipped"
-    elif printf '%s\n' "$on_disk" | grep -qxF "$key"; then
-      ok "${role}: ${key} is downloaded"
-    else
-      bad "${role}: ${key} not in lms ls"
-    fi
-    if [ -e "$HOME/.hearth/models/${w}" ] || [ -e "$HOME/.lmstudio/models/${w}" ]; then
+    if [ -e "$HOME/.hearth/models/${w}" ]; then
       ok "${role}: weights on disk"
     else
-      bad "${role}: weights path ${w} missing under ~/.hearth/models and ~/.lmstudio/models"
+      bad "${role}: weights path ${w} missing under ~/.hearth/models"
     fi
   done <<EOF
-$(hearth_roles lmstudio)
+$(hearth_roles omlx)
 EOF
 
   # Rule 1: every concrete name in roles.tsv is in MODELS.md, and nowhere else.
@@ -123,17 +112,27 @@ EOF
 fi
 
 # ---------------------------------------------------------------- server settings
-hdr "LM Studio saved server settings"
-if [ ! -f "$LMS_SERVER_CFG" ]; then
-  er "${LMS_SERVER_CFG} missing — has the server ever been configured?"
+hdr "oMLX saved server settings"
+OMLX_SETTINGS="$HOME/.omlx/settings.json"
+if [ ! -f "$OMLX_SETTINGS" ]; then
+  er "${OMLX_SETTINGS} missing — scripts/omlx.sh up writes it"
 else
-  v=$(hearth_server_setting networkInterface)
-  [ "$v" = "127.0.0.1" ] && ok "bind ${v}" || bad "bind ${v:-?}, want 127.0.0.1 — scripts/boot.sh locks loopback (D8)"
-  [ "$(hearth_server_setting port)" = "$HEARTH_PORT" ] && ok "port ${HEARTH_PORT}" || bad "port $(hearth_server_setting port), want ${HEARTH_PORT}"
-  [ "$(hearth_server_setting cors)" = "false" ] && ok "CORS off" || bad "CORS on — any website you visit could call the server"
-  [ "$(hearth_server_setting justInTimeModelLoading)" = "false" ] && ok "JIT loading off" || bad "JIT loading on — an unlisted model could load and evict local-main"
-  [ "$(hearth_server_setting logSensitiveData)" = "false" ] && ok "sensitive-data logging off" || bad "logSensitiveData on — prompts are written to server logs"
-  echo "        (Require Authentication is not in this file; healthcheck.sh proves it live.)"
+  # Print bind, port, cors, fallback only. The file also holds the API key.
+  eval "$(/usr/bin/python3 -I -c '
+import json, shlex, sys
+d = json.load(open(sys.argv[1]))
+s = d.get("server") or {}
+cors = s.get("cors_origins")
+fb = (d.get("model") or {}).get("model_fallback")
+print("omlx_host=%s" % shlex.quote(str(s.get("host") or "")))
+print("omlx_port=%s" % shlex.quote(str(s.get("port") or "")))
+print("omlx_cors=%s" % shlex.quote("off" if cors == [] else "on"))
+print("omlx_fallback=%s" % shlex.quote("off" if fb is False else "on"))
+' "$OMLX_SETTINGS")"
+  [ "$omlx_host" = "127.0.0.1" ] && ok "bind ${omlx_host}" || bad "bind ${omlx_host:-?}, want 127.0.0.1"
+  [ "$omlx_port" = "$HEARTH_PORT" ] && ok "port ${HEARTH_PORT}" || bad "port ${omlx_port}, want ${HEARTH_PORT}"
+  [ "$omlx_cors" = "off" ] && ok "CORS off" || bad "CORS on — any website you visit could call the server"
+  [ "$omlx_fallback" = "off" ] && ok "model fallback off" || bad "model fallback on — an unknown name can be answered by another model"
 fi
 
 # ---------------------------------------------------------------- secrets

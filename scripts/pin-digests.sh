@@ -1,17 +1,16 @@
 #!/bin/bash
-# Record and verify the weights behind every LM Studio role (D4).
+# Record and verify the weights behind every local role (D4).
 #
 #   scripts/pin-digests.sh                  # record, after a bench you trust
 #   scripts/pin-digests.sh --check          # fast: file count, bytes, newest mtime
 #   scripts/pin-digests.sh --check --deep   # re-hash everything (~20 GB, ~30 s)
 #
-# Hashes the `weights` path from config/roles.tsv. A copy under
-# ~/.hearth/models wins; otherwise ~/.lmstudio/models.
+# Hashes the `weights` path from config/roles.tsv under ~/.hearth/models.
 # sha256 of every file, then sha256 of the sorted "path sha" list. Written to
 # pins/digests.tsv, git-tracked, so drift shows in a diff. preflight.sh runs
 # the fast check.
 #
-# This detects; it does not enforce. LM Studio will load whatever is on disk.
+# This detects; it does not enforce. oMLX loads whatever is on disk.
 # Re-record only after re-benching.
 #
 # Exit 0 match / recorded, 1 drift, 2 could not run.
@@ -21,14 +20,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
 
 PINS="${ROOT}/pins/digests.tsv"
-MODELS="$HOME/.lmstudio/models"
-# Resident weights served by oMLX live under ~/.hearth/models (ADR 0026).
+MODELS="$HOME/.hearth/models"
 weight_path() {
-  if [ -e "${HOME}/.hearth/models/${1}" ]; then
-    printf '%s\n' "${HOME}/.hearth/models/${1}"
-  else
-    printf '%s\n' "${MODELS}/${1}"
-  fi
+  printf '%s\n' "${MODELS}/${1}"
 }
 MODE=record; DEEP=0
 for a in "$@"; do
@@ -64,20 +58,20 @@ deep() {
   fi
 }
 
-rows=$(hearth_roles lmstudio)
-[ -n "$rows" ] || { echo "could not run: no lmstudio rows in config/roles.tsv"; exit 2; }
+rows=$(hearth_roles omlx)
+[ -n "$rows" ] || { echo "could not run: no omlx rows in config/roles.tsv"; exit 2; }
 
 if [ "$MODE" = record ]; then
   tmp=$(mktemp)
   {
     echo "# role	model_key	weights	files	bytes	newest_mtime	sha256	recorded"
     echo "# Written by scripts/pin-digests.sh (D4). Hash of the weights on disk"
-    echo "# under ~/.lmstudio/models. Detects drift; does not enforce."
+    echo "# under ~/.hearth/models. Detects drift; does not enforce."
   } > "$tmp"
   while IFS="$(printf '\t')" read -r role _ key _ _ w; do
     [ -n "$role" ] || continue
     p="$(weight_path "$w")"
-    [ -n "$w" ] && [ "$w" != "-" ] && [ -e "$p" ] || { echo "could not run: ${role}: weights '${w}' not found under ~/.hearth/models or ${MODELS}"; rm -f "$tmp"; exit 2; }
+    [ -n "$w" ] && [ "$w" != "-" ] && [ -e "$p" ] || { echo "could not run: ${role}: weights '${w}' not found under ${MODELS}"; rm -f "$tmp"; exit 2; }
     printf 'hashing %s (%s)… ' "$role" "$w"
     q=$(quick "$p"); h=$(deep "$p")
     echo "${h:0:12}"

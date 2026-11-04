@@ -1,8 +1,7 @@
 #!/bin/bash
-# Write each LM Studio role's label and context into Zed's settings, from
-# config/roles.tsv + `lms ls`. Clients still call the role (`local-main`);
-# only the label shown in Zed's model picker names the model, and it is
-# regenerated whenever roles change, so it cannot go stale.
+# Write each local role's label and context into Zed's settings, from
+# config/roles.tsv. Clients still call the role (`local-main`). The label
+# is the role, regenerated whenever roles change, so it cannot go stale.
 #
 #   scripts/zed-sync.sh            # update ~/.config/zed/settings.json
 #   scripts/zed-sync.sh --check    # report drift, change nothing
@@ -10,7 +9,6 @@
 # Edits only `display_name` and `max_tokens` on entries whose `name` is a
 # role, inside language_models.openai_compatible.hearth, leaving comments
 # and everything else byte-for-byte. Backup: settings.json.zed-sync.bak
-# Called by scripts/lms-load.sh after a successful load.
 #
 # Exit 0 in sync / updated, 1 drift (--check) or a role missing in Zed,
 # 2 could not run.
@@ -22,34 +20,21 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ZED="${ZED_SETTINGS:-$HOME/.config/zed/settings.json}"
 CHECK=0; [ "${1:-}" = "--check" ] && CHECK=1
 [ -f "$ZED" ] || { echo "could not run: no Zed settings at ${ZED}"; exit 2; }
-[ -x "$HEARTH_LMS" ] || { echo "could not run: lms not found"; exit 2; }
-
-ls_json=$("$HEARTH_LMS" ls --json 2>/dev/null) || { echo "could not run: lms ls failed"; exit 2; }
 
 # Program on stdin (heredoc), data in argv — never both on stdin.
-# A demand role's label says to load it first: picking it in Zed while it is
-# unloaded is answered by local-main without saying so (JIT off).
-/usr/bin/python3 -I - "$ZED" "$CHECK" "$ls_json" "$(hearth_roles lmstudio)" "$(hearth_demand_roles)" <<'PY'
+# A demand role's label says to load it first.
+/usr/bin/python3 -I - "$ZED" "$CHECK" "$(hearth_roles omlx)" "$(hearth_demand_roles)" <<'PY'
 import json, re, shutil, sys
-zed, check, ls_json, roles_tsv = sys.argv[1], sys.argv[2] == "1", sys.argv[3], sys.argv[4]
-demand = set(sys.argv[5].split())
-models = {}
-for m in json.loads(ls_json):
-    models[m.get("modelKey", "")] = m
-    for v in m.get("variants") or []:
-        models.setdefault(v, m)
+zed, check, roles_tsv = sys.argv[1], sys.argv[2] == "1", sys.argv[3]
+demand = set(sys.argv[4].split())
 
 rows = [l.split("\t") for l in roles_tsv.splitlines() if l.strip()]
 text = open(zed).read()
 new, rc = text, 0
 for role, _backend, key, ctx, _slots, *_ in rows:
-    m = models.get(key)
-    if m is None:
-        print(f"skip   {role}: {key} not in lms ls"); rc = max(rc, 1); continue
     if "embed" in key:
         continue  # Zed's model picker lists chat models only
-    quant = (m.get("quantization") or {}).get("name", "")
-    label = f'{role} · {m.get("displayName", key)}' + (f" {quant}" if quant else "")
+    label = role
     if role in demand:
         label += " — load first: scripts/demand-load.sh " + role + " up"
     # The entry: "name": "<role>", then its fields up to the closing brace.

@@ -19,11 +19,9 @@ else
 fi
 export HEARTH_ROOT
 
-# LM Studio (the app owns the server, D6) on localhost — ADR 0016. Every local alias is
-# local-main (D1); there is no router, so a role name is an LM Studio
-# --identifier and nothing can fall back anywhere.
+# oMLX on localhost (ADR 0026). Every local alias is local-main (D1); there
+# is no router, so a role name is the model id and nothing can fall back.
 HEARTH_LOCAL="${HEARTH_LOCAL:-http://127.0.0.1:1234/v1}"
-HEARTH_LMS="${HEARTH_LMS:-$HOME/.lmstudio/bin/lms}"
 . "${HEARTH_ROOT}/scripts/lib.sh"
 
 # Read one NAME=value from ~/.config/hearth/env WITHOUT sourcing it. Sourcing
@@ -111,7 +109,7 @@ ask-cloud() {
 alias ai-health='"${HEARTH_ROOT}/scripts/healthcheck.sh"'
 alias ai-status='"${HEARTH_ROOT}/scripts/status.sh"'
 alias ai-boot='"${HEARTH_ROOT}/scripts/boot.sh"'
-alias ai-load='"${HEARTH_ROOT}/scripts/lms-load.sh"'
-alias ai-loaded='"$HEARTH_LMS" ps'
-ai-restart() { "$HEARTH_LMS" server stop; hearth_server_start; }
-alias ai-log='"$HEARTH_LMS" log stream'
+alias ai-load='"${HEARTH_ROOT}/scripts/omlx.sh" up'
+alias ai-loaded='"${HEARTH_ROOT}/scripts/omlx.sh" status'
+ai-restart() { "${HEARTH_ROOT}/scripts/omlx.sh" down && "${HEARTH_ROOT}/scripts/omlx.sh" up; }
+alias ai-log='tail -f "$HOME/Library/Logs/hearth-omlx.log"'

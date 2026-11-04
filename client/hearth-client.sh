@@ -5,7 +5,7 @@
 #
 # Portable: bash and zsh, macOS and Linux. No bash 4 syntax.
 #
-# The host's LM Studio listens on 127.0.0.1:1234 only. This machine reaches it
+# The host's oMLX listens on 127.0.0.1:1234 only. This machine reaches it
 # through an SSH tunnel — the same setup on and off the LAN, encrypted, and
 # nothing on the host is exposed to the network.
 #
@@ -19,7 +19,7 @@
 #                       it). For a SearXNG MCP server on this laptop (ADR 0022).
 #
 # Secrets (files, mode 600 — never exported into this shell):
-#   ~/.hearth-key         this machine's LM Studio token (laptop-<name>)
+#   ~/.hearth-key         this machine's API key (laptop-<name>)
 #   ~/.hearth-gemini-key  this machine's own Google API key, for ask-cloud only
 #
 # Commands: ai-tunnel, ai-tunnel-stop, ai-ping, ai-models, ai-ask, ai-webui,
@@ -71,7 +71,7 @@ _hearth_our_ssh() {
     >/dev/null 2>&1
 }
 
-# Every forward this client asked for, not just LM Studio. An old ssh that
+# Every forward this client asked for, not just :1234. An old ssh that
 # only has :1234 must not look like a finished tunnel.
 _hearth_forwards_open() {
   _hearth_port_open "$HEARTH_LOCAL_PORT" || return 1
@@ -148,7 +148,7 @@ ai-tunnel() {
     -L "127.0.0.1:${HEARTH_WEBUI_PORT}:127.0.0.1:3000" \
     "$@" \
     "$HEARTH_SSH" \
-    && echo "tunnel: up (LM Studio → 127.0.0.1:${HEARTH_LOCAL_PORT}, WebUI → 127.0.0.1:${HEARTH_WEBUI_PORT}${_sxmsg})"
+    && echo "tunnel: up (oMLX → 127.0.0.1:${HEARTH_LOCAL_PORT}, WebUI → 127.0.0.1:${HEARTH_WEBUI_PORT}${_sxmsg})"
   _rc=$?; unset _sxmsg; return $_rc
 }
 
@@ -165,7 +165,7 @@ ai-ping() {
   case "$_c" in
     200) echo "up" ;;
     401) echo "BAD TOKEN — ~/.hearth-key was refused (revoked, or wrong machine's token)" ;;
-    000) echo "NO ANSWER — tunnel listening but the host did not reply (asleep? LM Studio down? on the host: scripts/boot.sh)" ;;
+    000) echo "NO ANSWER — tunnel listening but the host did not reply (asleep? oMLX down? on the host: scripts/boot.sh)" ;;
     *)   echo "HTTP ${_c}" ;;
   esac
   [ "$_c" = "200" ]

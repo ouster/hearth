@@ -1,18 +1,14 @@
 #!/bin/bash
-# Run bench/tasks against roles or candidate models and write a comparison
-# report. LM Studio on :1234 (ADR 0016).
+# Run bench/tasks against loaded roles and write a comparison report.
+# oMLX on :1234 (ADR 0026).
 #
-#   scripts/bench.sh                         every lmstudio LLM role in roles.tsv
-#   scripts/bench.sh local-main               a loaded role
-#   scripts/bench.sh <lms model key> ...     candidates (see `lms ls`)
-#   scripts/bench.sh --evict <key>           unload the roles first — for a
-#                                            candidate that will not fit beside
-#                                            local-main under the ~48 GB ceiling
+#   scripts/bench.sh                         every resident role in roles.tsv
+#   scripts/bench.sh local-main              one loaded role
 #
-# JIT is off, so a candidate is loaded explicitly as `bench-candidate`
-# (64K context, 1 slot), benched, and unloaded; roles.tsv is restored with
-# scripts/lms-load.sh on exit either way. Nothing becomes a role until this
-# (and scripts/concurrency-bench.sh) says it should — rule 5.
+# A name that is not a resident role is refused. Put candidate weights under
+# ~/.hearth/models, point a role at them, and load with scripts/omlx.sh up.
+# Nothing becomes a role until this (and scripts/concurrency-bench.sh) says
+# it should — rule 5.
 #
 # Auto-checks what can be checked (syntax). Everything else is written out for
 # you to read. Do not let a script tell you a model "won" on quality.
@@ -28,11 +24,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ai_load_env
 AI_PY=/usr/bin/python3
 [ -n "${LMSTUDIO_HOST_TOKEN:-}" ] || { echo "could not run: LMSTUDIO_HOST_TOKEN not set"; exit 2; }
-hearth_lms_ok || { echo "could not run: LM Studio not running (scripts/boot.sh)"; exit 2; }
+code=$(hearth_http /models || true)
+[ "$code" != "000" ] || { echo "could not run: oMLX is not answering (scripts/omlx.sh up)"; exit 2; }
 export LMSTUDIO_HOST_TOKEN
-
-EVICT=0
-if [ "${1:-}" = "--evict" ]; then EVICT=1; shift; fi
 
 TASKDIR="${ROOT}/bench/tasks"
 STAMP="$(date +%Y-%m-%d-%H%M)"
@@ -48,19 +42,12 @@ else
   MODELS=$(hearth_resident_roles | awk -F'\t' '$3 !~ /embed/ {print $1}' | tr '\n' ' ')
 fi
 ROLE_NAMES=" $(hearth_resident_roles | cut -f1 | tr '\n' ' ') "
-# A demand role is usually unloaded, and JIT-off LM Studio would answer it
-# with local-main. Bench its model key instead (loaded as bench-candidate).
 for m in $MODELS; do
-  if hearth_demand_roles | grep -qxF "$m"; then
-    echo "could not run: ${m} is loaded on demand — pass its model key from roles.tsv instead"; exit 2
-  fi
+  case "$ROLE_NAMES" in
+    *" ${m} "*) ;;
+    *) echo "could not run: ${m} is not a resident role. Bench a loaded role."; exit 2 ;;
+  esac
 done
-
-restore() {
-  "$HEARTH_LMS" unload bench-candidate >/dev/null 2>&1 || true
-  "${ROOT}/scripts/lms-load.sh" >/dev/null 2>&1 || echo "WARNING: lms-load.sh failed — run it by hand"
-}
-trap restore EXIT
 
 echo "Models: ${MODELS}"
 echo "Server: ${HEARTH_URL}"
@@ -71,20 +58,6 @@ meta()      { awk -v k="$2" -F': *' '/^---$/{n++} n==1 && $1==k {print $2; exit}
 
 for model in $MODELS; do
   target="$model"
-  case "$ROLE_NAMES" in
-    *" ${model} "*) : ;;
-    *)
-      if ! "$HEARTH_LMS" ls --json 2>/dev/null | grep -qF "\"${model}\""; then
-        echo "SKIP ${model} — not downloaded (lms get)"; continue
-      fi
-      "$HEARTH_LMS" unload bench-candidate >/dev/null 2>&1 || true
-      [ "$EVICT" -eq 1 ] && "$HEARTH_LMS" unload --all >/dev/null 2>&1
-      # --parallel 1 explicitly: without it LM Studio loads 4 slots.
-      if ! "$HEARTH_LMS" load "$model" --identifier bench-candidate -c 65536 --parallel 1 --gpu max -y </dev/null >/dev/null 2>&1; then
-        echo "SKIP ${model} — load failed (too big beside local-main? try --evict)"; continue
-      fi
-      target=bench-candidate ;;
-  esac
   echo "=== ${model} ==="
   safe=$(printf '%s' "$model" | tr ':/@' '___')
   mkdir -p "${OUT}/${safe}"
@@ -162,7 +135,6 @@ PY
     printf '%7s tok  %7ss  %6s tok/s  %s\n' "$toks" "$secs" "$tps" "$verdict"
     printf '%s\t%s\t%s\t%s\t%s\n' "$model" "$tid" "$toks" "$secs" "$verdict" >> "$TSV"
   done
-  [ "$target" = "bench-candidate" ] && "$HEARTH_LMS" unload bench-candidate >/dev/null 2>&1
 done
 
 # ---------------------------------------------------------------- report
@@ -184,7 +156,7 @@ for r in rows:
     elif v == "error":     a["err"] += 1
 
 print(f"# Bench — {stamp}\n")
-print("Host: M4 Max, 64 GB. LM Studio on :1234. Seconds are wall time per request, including prefill.\n")
+print("Host: M4 Max, 64 GB. oMLX on :1234. Seconds are wall time per request, including prefill.\n")
 print("## Verbosity and speed\n")
 print("Tokens emitted is the number that matters. Throughput barely varies between")
 print("models on this machine — it is memory-bandwidth bound — so wall-clock is")
@@ -225,8 +197,8 @@ Outputs:
 ## Decision
 
 If a candidate wins, also run `scripts/concurrency-bench.sh` against it, then
-`scripts/swap-role.sh <role> <model key> <weights path>`, update
-`docs/MODELS.md` and write an ADR. Nothing is promoted on speed alone.
+point the role at those weights in `config/roles.tsv`, update `docs/MODELS.md`,
+and write an ADR. Nothing is promoted on speed alone.
 """)
 PY
 

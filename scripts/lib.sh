@@ -2,8 +2,7 @@
 #
 #   . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 #
-# LM Studio on 127.0.0.1:1234 (ADR 0016). The app owns the server (D6);
-# `lms` drives whichever daemon is running.
+# oMLX on 127.0.0.1:1234 (ADR 0026). scripts/omlx.sh starts and stops it.
 
 # launchd and non-interactive shells get a stripped PATH.
 case ":${PATH:-}:" in
@@ -11,12 +10,9 @@ case ":${PATH:-}:" in
   *) PATH="/opt/homebrew/bin:/usr/local/bin:${PATH:-/usr/bin:/bin:/usr/sbin:/sbin}" ;;
 esac
 
-HEARTH_LMS="${HEARTH_LMS:-$HOME/.lmstudio/bin/lms}"
 HEARTH_PORT="${HEARTH_PORT:-1234}"
 HEARTH_URL="${HEARTH_URL:-http://127.0.0.1:${HEARTH_PORT}/v1}"
 HEARTH_ENV="${HEARTH_ENV:-$HOME/.config/hearth/env}"
-HEARTH_APP="${HEARTH_APP:-/Applications/LM Studio.app}"
-LMS_SERVER_CFG="$HOME/.lmstudio/.internal/http-server-config.json"
 
 # HEARTH_* is canonical; AI_STACK_* still accepted during the rename.
 _hearth_env() {
@@ -72,7 +68,7 @@ ai_volume() {
 
 # Read the two secrets into THIS shell without exporting them. `set -a` would
 # hand both to every child — including the Podman VM boot.sh starts, which
-# outlives the script. Callers that need a child to see the LM Studio token
+# outlives the script. Callers that need a child to see the API key
 # export that one variable themselves. Placeholders are dropped.
 ai_load_env() {
   local line name val
@@ -91,71 +87,6 @@ ai_load_env() {
     esac
   done
   return 0
-}
-
-# `lms server start --cors` only turns CORS on; there is no flag to turn it
-# off. Write loopback + CORS off into the saved settings, then start without
-# --cors so a restart cannot come up on the LAN or with CORS.
-# A missing file or a failed write is a failure. Callers must not report
-# "CORS off" unless hearth_server_saved_ok says so after the start.
-hearth_lock_loopback() {
-  [ -f "$LMS_SERVER_CFG" ] || { echo "hearth: ${LMS_SERVER_CFG} missing — cannot lock loopback" >&2; return 1; }
-  /usr/bin/python3 -I -c '
-import json, sys
-path, bind, port = sys.argv[1], sys.argv[2], int(sys.argv[3])
-try:
-    with open(path) as fh:
-        cfg = json.load(fh)
-except Exception as exc:
-    sys.stderr.write("hearth: cannot read %s: %s\n" % (path, exc))
-    sys.exit(1)
-cfg["networkInterface"] = bind
-cfg["port"] = port
-cfg["cors"] = False
-try:
-    with open(path, "w") as fh:
-        json.dump(cfg, fh, indent=2)
-        fh.write("\n")
-    with open(path) as fh:
-        got = json.load(fh)
-except Exception as exc:
-    sys.stderr.write("hearth: cannot write %s: %s\n" % (path, exc))
-    sys.exit(1)
-if got.get("networkInterface") != bind or int(got.get("port") or 0) != port or got.get("cors") is not False:
-    sys.stderr.write("hearth: server settings did not stick in %s\n" % path)
-    sys.exit(1)
-' "$LMS_SERVER_CFG" "127.0.0.1" "$HEARTH_PORT"
-}
-
-# Saved settings (not the live socket) say loopback, our port, CORS off.
-hearth_server_saved_ok() {
-  [ "$(hearth_server_setting networkInterface)" = "127.0.0.1" ] \
-    && [ "$(hearth_server_setting port)" = "$HEARTH_PORT" ] \
-    && [ "$(hearth_server_setting cors)" = "false" ]
-}
-
-hearth_server_start() {
-  if [ -f "$LMS_SERVER_CFG" ]; then
-    hearth_lock_loopback || return 1
-  fi
-  "$HEARTH_LMS" server start --bind 127.0.0.1 -p "$HEARTH_PORT" || return 1
-  if [ ! -f "$LMS_SERVER_CFG" ]; then
-    echo "hearth: ${LMS_SERVER_CFG} missing after server start — CORS not confirmed" >&2
-    return 1
-  fi
-  if hearth_server_saved_ok; then
-    return 0
-  fi
-  # The app can rewrite the file as it starts. Lock what it wrote and start once more.
-  echo "hearth: saved settings drifted on start — locking and restarting once" >&2
-  hearth_lock_loopback || return 1
-  "$HEARTH_LMS" server stop >/dev/null 2>&1 || true
-  "$HEARTH_LMS" server start --bind 127.0.0.1 -p "$HEARTH_PORT" || return 1
-  if hearth_server_saved_ok; then
-    return 0
-  fi
-  echo "hearth: saved settings still not loopback with CORS off (bind=$(hearth_server_setting networkInterface) cors=$(hearth_server_setting cors))" >&2
-  return 1
 }
 
 # Listen addresses on PORT that are not 127.0.0.1 or ::1, space-separated.
@@ -181,22 +112,6 @@ EOF
   printf '%s' "${bad# }"
 }
 
-# `lms` exists and a daemon (the app's, D6) answers.
-hearth_lms_ok() {
-  [ -x "$HEARTH_LMS" ] && "$HEARTH_LMS" daemon status >/dev/null 2>&1
-}
-
-# Which daemon owns ~/.lmstudio: "app", "llmster", or "none".
-hearth_daemon_owner() {
-  local s
-  s=$("$HEARTH_LMS" daemon status 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g')
-  case "$s" in
-    *"LM Studio v"*"is running"*) printf 'app' ;;
-    *"llmster v"*"is running"*)   printf 'llmster' ;;
-    *)                            printf 'none' ;;
-  esac
-}
-
 # HTTP status for GET <path> on the server. "000" means no answer.
 #   hearth_http /models            # no token
 #   hearth_http /models "$TOKEN"
@@ -213,44 +128,32 @@ hearth_http() {
 
 # Rows of config/roles.tsv, tab-separated: role backend key ctx slots weights.
 #   hearth_roles            # all rows
-#   hearth_roles lmstudio   # one backend
+#   hearth_roles omlx       # one backend
 hearth_roles() {
   local root="${ROOT:?ROOT not set}" b="${1:-}"
   awk -F'\t' -v b="$b" '!/^[[:space:]]*(#|$)/ && (b == "" || $2 == b) {print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6}' \
     "${root}/config/roles.tsv"
 }
 
-# Like `hearth_roles lmstudio`, minus roles loaded on demand (column 8).
-# With JIT off, a request for a role that is not loaded is answered by
-# whatever IS loaded, so a demand role must never be called unless loaded.
+# Resident omlx roles (column 8 is not demand). A demand role must not be
+# called unless it was loaded: an unknown name can be answered by whatever
+# is already loaded.
 hearth_resident_roles() {
   local root="${ROOT:?ROOT not set}"
-  awk -F'\t' '!/^[[:space:]]*(#|$)/ && $2 == "lmstudio" && $8 != "demand" {print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6}' \
+  awk -F'\t' '!/^[[:space:]]*(#|$)/ && $2 == "omlx" && $8 != "demand" {print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6}' \
     "${root}/config/roles.tsv"
 }
 
-# Names of lmstudio roles loaded on demand, one per line.
+# Names of omlx roles loaded on demand, one per line.
 hearth_demand_roles() {
   local root="${ROOT:?ROOT not set}"
-  awk -F'\t' '!/^[[:space:]]*(#|$)/ && $2 == "lmstudio" && $8 == "demand" {print $1}' "${root}/config/roles.tsv"
+  awk -F'\t' '!/^[[:space:]]*(#|$)/ && $2 == "omlx" && $8 == "demand" {print $1}' "${root}/config/roles.tsv"
 }
 
-# LM Studio's memory footprint in GB, summed over its processes, e.g. "25.2".
+# oMLX memory footprint in GB from its pid file, e.g. "24.0". Empty if down.
 hearth_footprint_gb() {
-  local p
-  for p in $(pgrep -f '\.lmstudio/|LM Studio'); do
-    footprint -p "$p" 2>/dev/null | grep -o 'Footprint: [0-9.]* [KMG]B' | head -1
-  done | awk '{v=$2; if ($3=="MB") v/=1024; if ($3=="KB") v/=1048576; s+=v} END {printf "%.1f", s}'
-}
-
-# One key from LM Studio's server settings file, or "" if unreadable.
-hearth_server_setting() {
-  /usr/bin/python3 -I -c '
-import json, sys
-try:
-    v = json.load(open(sys.argv[1])).get(sys.argv[2])
-except Exception:
-    sys.exit(0)
-print("" if v is None else (str(v).lower() if isinstance(v, bool) else v))
-' "$LMS_SERVER_CFG" "$1"
+  local pid
+  pid=$(cat "$HOME/.omlx/hearth.pid" 2>/dev/null || true)
+  [ -n "$pid" ] || return 0
+  footprint -p "$pid" 2>/dev/null | awk '/Footprint:/ {v=$2; if ($3=="MB") v/=1024; if ($3=="KB") v/=1048576; printf "%.1f", v; exit}'
 }
