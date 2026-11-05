@@ -66,6 +66,39 @@ flowchart LR
 - oMLX, started with `scripts/omlx.sh up`. Weights live in `~/.hearth/models`
 - [Podman](https://podman.io) for Open WebUI / SearXNG
 
+## oMLX on the host
+
+[oMLX](https://github.com/jundot/omlx) serves the local models on the Studio.
+Zed on that machine calls `http://127.0.0.1:8000/v1`. The native kernels need full Xcode, then the Metal toolchain component.
+Current Xcode does not include that component in the base install. Homebrew's
+`python@3.11` bottle also requires the separate Command Line Tools package at
+`/Library/Developer/CommandLineTools`. Xcode.app does not satisfy that check.
+
+```bash
+xcode-select --install
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+xcodebuild -downloadComponent MetalToolchain
+```
+
+The Metal download is also Xcode → Settings → Components → Metal Toolchain.
+`xcrun --find metal` should print a path. The `xcode-select --switch` after
+`--install` matters: the tools installer can move the active directory onto
+Command Line Tools, and the kernel build then cannot see `metal`.
+
+```bash
+brew tap jundot/omlx https://github.com/jundot/omlx
+brew trust --formula jundot/omlx/omlx
+brew install jundot/omlx/omlx --with-custom-kernel
+omlx start
+```
+
+`brew trust` is required: Homebrew refuses the formula until that tap is
+trusted. `omlx start` registers a user LaunchAgent, so the server starts at
+login and launchd restarts it if it dies. It does not run while the Mac is
+sitting at the login window. Settings (model directory `~/.omlx/models`,
+port 8000) live in `~/.omlx/settings.json`. Do not also run the oMLX menu-bar
+app; both bind port 8000.
+
 ## Quick start
 
 ```bash
