@@ -69,7 +69,7 @@ flowchart LR
 ## oMLX on the host
 
 [oMLX](https://github.com/jundot/omlx) serves the local models on the Studio.
-Zed on that machine calls `http://127.0.0.1:8000/v1`. The native kernels need full Xcode, then the Metal toolchain component.
+Zed on that machine calls `http://127.0.0.1:1234/v1`. The native kernels need full Xcode, then the Metal toolchain component.
 Current Xcode does not include that component in the base install. Homebrew's
 `python@3.11` bottle also requires the separate Command Line Tools package at
 `/Library/Developer/CommandLineTools`. Xcode.app does not satisfy that check.
@@ -96,8 +96,8 @@ omlx start
 trusted. `omlx start` registers a user LaunchAgent, so the server starts at
 login and launchd restarts it if it dies. It does not run while the Mac is
 sitting at the login window. Settings (model directory `~/.omlx/models`,
-port 8000) live in `~/.omlx/settings.json`. Do not also run the oMLX menu-bar
-app; both bind port 8000.
+port 1234) live in `~/.omlx/settings.json`. Do not also run the oMLX menu-bar
+app; both bind port 1234.
 
 ## Quick start
 
