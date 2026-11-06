@@ -85,6 +85,29 @@ slower and stronger, for one-off questions.
 | 256 GB (248) | Qwen3.6 35B-A3B | DeepSeek V4 Flash | beside |
 | 512 GB (504) | Qwen3.6 35B-A3B | MiniMax M3 (beside) or GLM-5.3 (swap) | see below |
 
+**Quant recipe A/B (same bases as live roles)**
+
+Not new families — alternate MLX quants of the incumbent bases, recorded
+2026-11-07 from a web scan (`mlx-alt-weights-research` canvas). Goal: see
+whether a mixed-precision recipe beats the live `lmstudio-community` MLX-4bit
+pins on `bench/tasks`, tool-smoke, and `scripts/concurrency-bench.sh` under
+the RAM-minus-8 ceiling. Download under `~/.hearth/models/<weights>` (HF
+org/name). Do **not** point `roles.tsv` at these until a bench wins (rule 5).
+
+| Priority | Challenges | Weights path (HF) | Kind | Size (card) | Why |
+|---|---|---|---|---|---|
+| 1 | `local-main` | `Jundot/Qwen3.6-35B-A3B-oQ4e-mtp` | oQe mixed (oMLX 0.7.3), MTP + vision | ~22 GB | oMLX-author quant; r/oMLX prefers oQ for this server |
+| 2 | `local-main` | `unsloth/Qwen3.6-35B-A3B-UD-MLX-4bit` | Unsloth UD dynamic 4-bit | ~23 GB class | Often ranked above native mlx-community 4-bit |
+| 3 | `local-main` | `mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit` | OptiQ mixed 4/8, MTP sidecar | ~22 GB | Sensitivity-aware; Capability Score claims vs uniform-4bit |
+| control | `local-main` | `mlx-community/Qwen3.6-35B-A3B-4bit` | uniform mlx-vlm 4-bit | 20.4 GB | Same size class as the live pin — publisher/control twin |
+| 1 | `local-deep` | `Jundot/Qwen3.6-27B-oQ4e-mtp` | oQ4e imatrix + MTP | ~17 GB | Dense 27B class; their table edged mlx-lm 4bit avg |
+| later | either | `nightmedia/*-qx64-hi-mlx` (matching base) | Deckard hybrid qx | varies | Obscure hybrid; tool-smoke first |
+| catalog | either | `majentik/garden` TurboQuant / RotorQuant tiers | smoke-gated | varies | Only after a named repo is picked; verify text vs full tower |
+
+Live pins stay: `lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` (`local-main`),
+`lmstudio-community/Qwen3.8-27B-MLX-4bit` (`local-deep`). Skip GGUF orgs for
+oMLX (no GGUF→MLX path).
+
 **Alternatives by tier**
 
 | Tier | Model | Kind | 4-bit size | Notes |
