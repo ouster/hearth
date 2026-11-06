@@ -181,6 +181,14 @@ Coding threads that need search use Write + search. The query text leaves,
 the same rule as web search. What is registered, and how to add one, is in
 [`docs/MCP.md`](docs/MCP.md) and [`docs/IDES.md`](docs/IDES.md).
 
+An incomplete directory name makes the agent retry `cd`. In
+`~/.config/zed/settings.json`, set `ask_user` to `true` in the `write` and
+`write-web` profiles, and set `agent.tool_permissions.tools.terminal.default`
+to `confirm`. Personal agent instructions go in `~/.config/zed/AGENTS.md`
+(create the file). Tell the agent: if a path does not resolve, call
+`find_path` or `list_directory` once, then ask. Do not `cd` to a guessed
+name, and do not repeat a command that just failed.
+
 ## Laptops
 
 SSH tunnel only — the server never listens on the LAN. Each laptop gets its
