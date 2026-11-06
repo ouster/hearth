@@ -5,7 +5,9 @@
 #   scripts/pin-digests.sh --check          # fast: file count, bytes, newest mtime
 #   scripts/pin-digests.sh --check --deep   # re-hash everything (~20 GB, ~30 s)
 #
-# Hashes the `weights` path from config/roles.tsv under ~/.hearth/models.
+# Hashes the `weights` path of this host's rows in config/roles.tsv (its RAM
+# tier, ADR 0032) under ~/.hearth/models. Records are keyed by weights path, so
+# hosts on different tiers share one file; recording keeps other tiers' rows.
 # sha256 of every file, then sha256 of the sorted "path sha" list. Written to
 # pins/digests.tsv, git-tracked, so drift shows in a diff. preflight.sh runs
 # the fast check.
@@ -59,7 +61,7 @@ deep() {
 }
 
 rows=$(hearth_roles omlx)
-[ -n "$rows" ] || { echo "could not run: no omlx rows in config/roles.tsv"; exit 2; }
+[ -n "$rows" ] || { echo "could not run: no omlx rows in config/roles.tsv fit this host's RAM tier (ADR 0032)"; exit 2; }
 
 if [ "$MODE" = record ]; then
   tmp=$(mktemp)
@@ -68,6 +70,12 @@ if [ "$MODE" = record ]; then
     echo "# Written by scripts/pin-digests.sh (D4). Hash of the weights on disk"
     echo "# under ~/.hearth/models. Detects drift; does not enforce."
   } > "$tmp"
+  # Keep records for weights this host does not serve (other tiers).
+  mine=$(printf '%s\n' "$rows" | cut -f6 | tr '\n' '|')
+  if [ -f "$PINS" ]; then
+    awk -F'\t' -v mine="$mine" 'BEGIN { n = split(mine, a, "|"); for (i = 1; i <= n; i++) if (a[i] != "") m[a[i]] = 1 }
+      !/^#/ && NF && !($3 in m)' "$PINS" >> "$tmp"
+  fi
   while IFS="$(printf '\t')" read -r role _ key _ _ w; do
     [ -n "$role" ] || continue
     p="$(weight_path "$w")"
@@ -88,8 +96,8 @@ fi
 rc=0
 while IFS="$(printf '\t')" read -r role _ key _ _ w; do
   [ -n "$role" ] || continue
-  rec=$(awk -F'\t' -v r="$role" '$1 == r' "$PINS")
-  if [ -z "$rec" ]; then echo "DRIFT  ${role}: not recorded"; rc=1; continue; fi
+  rec=$(awk -F'\t' -v w="$w" '!/^#/ && $3 == w' "$PINS" | head -1)
+  if [ -z "$rec" ]; then echo "DRIFT  ${role}: ${w} not recorded"; rc=1; continue; fi
   if [ "$(printf '%s' "$rec" | cut -f2,3)" != "$(printf '%s\t%s' "$key" "$w")" ]; then
     echo "DRIFT  ${role}: roles.tsv now ${key} / ${w}; recorded $(printf '%s' "$rec" | cut -f2,3 | tr '\t' ' ')"; rc=1; continue
   fi

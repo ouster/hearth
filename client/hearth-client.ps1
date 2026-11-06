@@ -230,7 +230,7 @@ function ask-deep {
     $k = Get-HearthSecret ".hearth-key"; if (-not $k) { return }
     $ids = (Invoke-RestMethod -TimeoutSec 8 -Uri "$($script:HearthUrl)/models" -Headers @{ Authorization = "Bearer $k" }).data.id
     if ($ids -notcontains "local-deep") {
-        Write-Host "local-deep is not loaded on the host. On the host: scripts/demand-load.sh local-deep up --evict (swaps out local-main; ... down brings it back)" -ForegroundColor Yellow
+        Write-Host "local-deep is not loaded on the host. On the host: scripts/demand-load.sh local-deep up (a 48 GB host swaps out local-main; ... down brings it back)" -ForegroundColor Yellow
         return
     }
     $prevBase = $env:OPENAI_API_BASE

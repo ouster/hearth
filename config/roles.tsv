@@ -4,11 +4,18 @@
 # weights is the directory under ~/.hearth/models that oMLX serves.
 # scripts/pin-digests.sh hashes that directory (D4).
 #
-# role	backend	model_key	ctx	slots	weights	draft	load
+# role	backend	model_key	ctx	slots	weights	draft	load	min_ram
 # backend: omlx for a local role, or an explicit cloud backend (gemini).
-# draft is "-" . The column remains so a row stays eight fields.
-# load: resident → scripts/omlx.sh up keeps it loaded; demand → loaded only
-# by ask-deep or scripts/demand-load.sh (ADR 0020); skipped by healthcheck and bench.
-local-main	omlx	qwen3.6-35b-a3b-mlx	131072	3	lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit	-	resident
-local-deep	omlx	qwen3.8-27b-mlx	65536	1	lmstudio-community/Qwen3.8-27B-MLX-4bit	-	demand
-cloud-cheap	gemini	gemini-3.6-flash	-	-	-	-	-
+# draft is "-" . The column remains so the columns keep their positions.
+# load: resident → scripts/omlx.sh up keeps it loaded. beside → loaded only by
+# ask-deep or scripts/demand-load.sh, next to the resident (ADR 0020, 0028).
+# swap → the same, but it unloads the resident first and restores it after
+# (ADR 0031). Demand roles are skipped by healthcheck and bench.
+# min_ram: tiers (ADR 0032). A host uses, per role, the row with the largest
+# min_ram (GB of RAM) at or below its own. "-" on cloud rows. A tier gets a
+# row only after it is benched on that hardware; candidates live in MODELS.md.
+# No local-main row fits under 48 GB, so a smaller host fails loudly.
+local-main	omlx	qwen3.6-35b-a3b-mlx	131072	3	lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit	-	resident	48
+local-deep	omlx	qwen3.8-27b-mlx	65536	1	lmstudio-community/Qwen3.8-27B-MLX-4bit	-	beside	64
+local-deep	omlx	qwen3.8-27b-mlx	65536	1	lmstudio-community/Qwen3.8-27B-MLX-4bit	-	swap	48
+cloud-cheap	gemini	gemini-3.6-flash	-	-	-	-	-	-

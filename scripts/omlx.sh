@@ -46,10 +46,11 @@ find_omlx() {
   return 1
 }
 
+# This host's local-main row (tier resolved from RAM, ADR 0032).
 role_fields() {
-  awk -F'\t' '!/^[[:space:]]*(#|$)/ && $1=="local-main" && $2=="omlx" && $8=="resident" {
+  hearth_resolved_roles | awk -F'\t' '$1=="local-main" && $2=="omlx" && $8=="resident" {
     print $4 "\t" $5 "\t" $6; exit
-  }' "${ROOT}/config/roles.tsv"
+  }'
 }
 
 listener() {
@@ -216,7 +217,7 @@ link_one() {
 link_weights() {
   mkdir -p "$MODEL_DIR"
   link_one local-main "$WEIGHTS" || fail "weights missing: ${HOME}/.hearth/models/${WEIGHTS}"
-  deep=$(awk -F'\t' '!/^[[:space:]]*(#|$)/ && $1=="local-deep" && $8=="demand" { print $6; exit }' "${ROOT}/config/roles.tsv")
+  deep=$(hearth_resolved_roles | awk -F'\t' '$1=="local-deep" && ($8=="beside" || $8=="swap") { print $6; exit }')
   if [ -n "$deep" ]; then
     link_one local-deep "$deep" || echo "omlx: local-deep weights not under ~/.hearth/models — ask-deep cannot load it until the weights are copied" >&2
   fi
@@ -226,7 +227,7 @@ configure_model() {
   OMLX_API_KEY="$OMLX_HOST_TOKEN" \
   OMLX_PORT="$HEARTH_PORT" \
   OMLX_CTX="$CTX" \
-  OMLX_ROLES="${ROOT}/config/roles.tsv" \
+  OMLX_ROLES_TSV="$(hearth_resolved_roles)" \
   /usr/bin/python3 -I - <<'PY'
 import json, os, time, urllib.error, urllib.request, http.cookiejar
 base = "http://127.0.0.1:%s" % os.environ["OMLX_PORT"]
@@ -257,14 +258,11 @@ if code != 200:
     raise SystemExit("admin login failed (%s)" % code)
 
 roles = {}
-with open(os.environ["OMLX_ROLES"]) as fh:
-    for line in fh:
-        if not line.strip() or line.startswith("#"):
-            continue
-        f = line.rstrip("\n").split("\t")
-        if len(f) < 8 or f[1] != "omlx" or f[5] in ("", "-"):
-            continue
-        roles[f[0]] = {"ctx": int(f[3]), "load": f[7]}
+for line in os.environ["OMLX_ROLES_TSV"].splitlines():
+    f = line.split("\t")
+    if len(f) < 8 or f[1] != "omlx" or f[5] in ("", "-"):
+        continue
+    roles[f[0]] = {"ctx": int(f[3]), "load": f[7]}
 
 code, listing = call("GET", "/v1/models")
 if code != 200:
@@ -334,7 +332,7 @@ PY
 cmd_up() {
   OMLX="$(find_omlx)" || fail "omlx not installed"
   row="$(role_fields)"
-  [ -n "$row" ] || fail "no resident local-main row in config/roles.tsv"
+  [ -n "$row" ] || fail "no resident local-main row in config/roles.tsv fits $(hearth_ram_gb || echo ?) GB of RAM (tiers, ADR 0032)"
   CTX="$(printf '%s' "$row" | cut -f1)"
   SLOTS="$(printf '%s' "$row" | cut -f2)"
   WEIGHTS="$(printf '%s' "$row" | cut -f3)"

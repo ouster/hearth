@@ -144,41 +144,19 @@ hearth_http() {
   fi
 }
 
-# Rows of config/roles.tsv, tab-separated: role backend key ctx slots weights.
-#   hearth_roles            # all rows
-#   hearth_roles omlx       # one backend
-hearth_roles() {
-  local root="${ROOT:?ROOT not set}" b="${1:-}"
-  awk -F'\t' -v b="$b" '!/^[[:space:]]*(#|$)/ && (b == "" || $2 == b) {print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6}' \
-    "${root}/config/roles.tsv"
-}
-
-# Resident omlx roles (column 8 is not demand). A demand role must not be
-# called unless it was loaded: an unknown name can be answered by whatever
-# is already loaded.
-hearth_resident_roles() {
-  local root="${ROOT:?ROOT not set}"
-  awk -F'\t' '!/^[[:space:]]*(#|$)/ && $2 == "omlx" && $8 != "demand" {print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6}' \
-    "${root}/config/roles.tsv"
-}
-
-# Names of omlx roles loaded on demand, one per line.
-hearth_demand_roles() {
-  local root="${ROOT:?ROOT not set}"
-  awk -F'\t' '!/^[[:space:]]*(#|$)/ && $2 == "omlx" && $8 == "demand" {print $1}' "${root}/config/roles.tsv"
-}
-
 # Memory envelope, sized from installed RAM (ADR 0031). Integers, GB.
 # Ceiling = RAM minus 8 for macOS: 56 on 64 GB, 40 on 48 GB. It is both the
 # iogpu wired limit and the oMLX memory guard.
+# HEARTH_RAM_GB overrides the detected RAM: preflight uses it to simulate a
+# tier, and an operator can run a big machine as a smaller tier (ADR 0032).
 HEARTH_OS_RESERVE_GB=8
-# local-main and local-deep load together only at or above this ceiling.
-# Combined peak measured 49.9 GB with the smaller resident; ~53 GB estimated
-# with the current one (ADR 0028, 0030).
-HEARTH_COLOAD_MIN_GB=56
 
 hearth_ram_gb() {
   local b
+  if [ -n "${HEARTH_RAM_GB:-}" ]; then
+    case "$HEARTH_RAM_GB" in *[!0-9]*) return 1 ;; esac
+    printf '%s' "$HEARTH_RAM_GB"; return 0
+  fi
   b=$(/usr/sbin/sysctl -n hw.memsize 2>/dev/null) || return 1
   [ -n "$b" ] || return 1
   printf '%s' $(( b / 1073741824 ))
@@ -190,11 +168,56 @@ hearth_gpu_ceiling_gb() {
   printf '%s' $(( r - HEARTH_OS_RESERVE_GB ))
 }
 
-# Exit 0 when local-deep may load beside local-main.
-hearth_coload_ok() {
-  local c
-  c=$(hearth_gpu_ceiling_gb) || return 1
-  [ "$c" -ge "$HEARTH_COLOAD_MIN_GB" ]
+# Every row of config/roles.tsv, all tiers, columns as written (nine).
+hearth_all_rows() {
+  local root="${ROOT:?ROOT not set}"
+  awk -F'\t' '!/^[[:space:]]*(#|$)/' "${root}/config/roles.tsv"
+}
+
+# This host's rows (ADR 0032): for each role, the row with the largest
+# min_ram (column 9) at or below hearth_ram_gb; a "-" min_ram applies to
+# every host. Printed as the first eight columns, in file order. Prints
+# nothing for a role no tier fits — callers must fail loudly on that.
+hearth_resolved_roles() {
+  local root="${ROOT:?ROOT not set}" ram
+  ram=$(hearth_ram_gb) || { echo "cannot read RAM" >&2; return 1; }
+  awk -F'\t' -v OFS='\t' -v ram="$ram" '
+    /^[[:space:]]*(#|$)/ { next }
+    {
+      m = $9
+      if (m == "-") { fit = 1; m = -1 } else { fit = (m + 0 <= ram + 0) }
+      if (!(($1) in order)) { order[$1] = ++n; name[n] = $1 }
+      if (fit && (!(($1) in best) || m + 0 > best[$1] + 0)) {
+        best[$1] = m
+        row[$1] = $1 OFS $2 OFS $3 OFS $4 OFS $5 OFS $6 OFS $7 OFS $8
+      }
+    }
+    END { for (i = 1; i <= n; i++) if (name[i] in row) print row[name[i]] }
+  ' "${root}/config/roles.tsv"
+}
+
+# This host's rows: role backend key ctx slots weights.
+#   hearth_roles            # all backends
+#   hearth_roles omlx       # one backend
+hearth_roles() {
+  local b="${1:-}"
+  hearth_resolved_roles | awk -F'\t' -v b="$b" 'b == "" || $2 == b {print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6}'
+}
+
+# This host's resident omlx roles. A demand role must not be called unless
+# it was loaded: an unknown name can be answered by whatever is loaded.
+hearth_resident_roles() {
+  hearth_resolved_roles | awk -F'\t' '$2 == "omlx" && $8 == "resident" {print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6}'
+}
+
+# Names of this host's omlx roles loaded on demand (load beside or swap).
+hearth_demand_roles() {
+  hearth_resolved_roles | awk -F'\t' '$2 == "omlx" && ($8 == "beside" || $8 == "swap") {print $1}'
+}
+
+# Load column for one of this host's roles: resident, beside, swap, or "-".
+hearth_role_load() {
+  hearth_resolved_roles | awk -F'\t' -v r="$1" '$1 == r {print $8; exit}'
 }
 
 # oMLX memory footprint in GB from its pid file, e.g. "24.0". Empty if down.

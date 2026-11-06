@@ -51,6 +51,76 @@ stack.
 **Bench candidate (not a role):** `qwen3.6:27b-coding-mtp-q4_K_M` on Ollama
 (~18 GB) — rejected for verbosity vs `qwen3-coder:30b` (ADR 0005 era bench).
 
+## Tiers (ADR 0032)
+
+`config/roles.tsv` column 9, `min_ram`: per role, a host serves the row with
+the largest `min_ram` at or below its RAM. `HEARTH_RAM_GB` overrides the
+detected size. Ceiling is RAM minus 8 (ADR 0031).
+
+| RAM | Ceiling | `local-main` | `local-deep` | Status |
+|---|---|---|---|---|
+| < 48 GB | — | none: `omlx.sh up` refuses | — | no tier benched |
+| 48 GB | 40 GB | `qwen3.6-35b-a3b-mlx`, 128K × 3 | `qwen3.8-27b-mlx`, **swap** | waiting on a c3 bench on 48 GB hardware with the host's `\.omlx/` matcher: 30/30, peak ≤ 36 GB |
+| 64 GB | 56 GB | `qwen3.6-35b-a3b-mlx`, 128K × 3 | `qwen3.8-27b-mlx`, **beside** | live. Combined peak with this resident not re-measured (~53 GB est.) |
+| > 64 GB | RAM − 8 | falls back to the 64 GB rows | | works now; its own tier needs a bench |
+
+### Candidates by RAM (unbenched)
+
+Not roles. Each needs `bench/tasks` and `scripts/concurrency-bench.sh` on
+that hardware before it gets a row (rule 5). Web search, 2026-11-07. Sources
+are mostly blogs, Hugging Face cards and leaderboards, and they often
+disagree: sizes are as reported unless marked *(repo)*, which means measured
+here. Usable = RAM minus 8 (ADR 0031); weights plus KV cache must fit under
+it. *Agent* = MoE with ~3–4B active, for resident tool loops. *Deep* =
+slower and stronger, for one-off questions.
+
+**Shortlist to bench first**
+
+| RAM (usable) | Agent | Deep | Load |
+|---|---|---|---|
+| 32 GB (24) | Gemma 4 26B-A4B | Devstral Small 2 24B or Qwen3.8-27B | swap |
+| 48 GB (40) | Qwen3.6 35B-A3B (tier row) | Qwen3.8-27B (tier row) | swap |
+| 64 GB (56) | Qwen3.6 35B-A3B (tier row); alternative Qwen3-Coder-Next 80B-A3B with no deep beside | Qwen3.8-27B (tier row) | beside |
+| 128 GB (120) | Qwen3.6 35B-A3B | Qwen3.5-122B-A10B or gpt-oss-120b | beside (~109 GB with the 122B, tight) |
+| 256 GB (248) | Qwen3.6 35B-A3B | DeepSeek V4 Flash | beside |
+| 512 GB (504) | Qwen3.6 35B-A3B | MiniMax M3 (beside) or GLM-5.3 (swap) | see below |
+
+**Alternatives by tier**
+
+| Tier | Model | Kind | 4-bit size | Notes |
+|---|---|---|---|---|
+| 32 | Gemma 4 26B-A4B | agent | ~15 GB *(repo)* | Laptop c3 30/30, peak 22 GB (`[o]mlx` matcher) |
+| 32 | Qwen3.6 35B-A3B | agent | 20.4 GB *(repo)* | Only ~32K × 1 at this ceiling |
+| 32 | GLM-4.7-Flash 30B-A3B | agent | ~19 GB | Little data |
+| 32 | Nemotron 3.5 Lightning 31.6B-A3.6B | agent | 17.8–23 GB | SWE-bench Verified 51.6 vs 70.1 for Qwen3.6 35B-A3B |
+| 32 | Qwen3-Coder 30B-A3B | agent | ~22 GB in memory | Older generation |
+| 32 | Devstral Small 2 24B | deep | ~14 GB est. | Apache 2.0. KV cache large at long context |
+| 32 | Qwen3.8-27B | deep | 16.1 GB *(repo)* | Terminal-Bench 2.1 73.0. Here: ~26 tok/s, verbose; laptop c3 20/30 timeouts |
+| 32 | Gemma 4 31B, Qwen3.6-27B | deep | ~17 GB | Dense |
+| 48 | Gemma 4 26B-A4B | agent | ~15 GB *(repo)* | Fallback if Qwen3.6 exceeds 36 GB on 48 GB |
+| 48 | Devstral Small 2, Gemma 4 31B, Qwen3.6-27B | deep | 14–17 GB | Swap alternatives to Qwen3.8-27B |
+| 64 | Qwen3-Coder-Next 80B-A3B | agent | ~46 GB | SWE-bench Verified 70.6 (vendor). ~10 GB left for KV; no deep beside |
+| 64 | gpt-oss-120b, Nemotron 3 Super 120B-A12B | deep | 64–72 GB | Do not fit; need 96 GB+ |
+| 128 | Qwen3.5-122B-A10B | deep or agent | 63–75 GB peak | oMLX bench, M3 Max: 42 tok/s, 63.4 GB. ~65 tok/s reported on M5 Max |
+| 128 | gpt-oss-120b | deep | ~65 GB | Reported as the most reliable open-weight tool caller |
+| 128 | Nemotron 3 Super 120B-A12B | deep | 64–72 GB | |
+| 128 | Devstral 2 123B | deep | ~75 GB | SWE-bench Verified 72.2. Dense, so slow on a Mac. No MLX build found |
+| 128 | Qwen3-Coder-Next 80B-A3B | agent | ~46 GB | Pairs with Qwen3.8-27B 8-bit (~29 GB) |
+| 128 | Qwen3.8-Flash-Next 125B-A6B | deep | 81 GB at 2-bit only | Licence limits some commercial use |
+| 256 | DeepSeek V4 Flash | deep | 145–167 GB | oMLX on M3 Ultra 256 GB: 26 tok/s, 42 with MTP. ~75 tok/s prefill, so ~400 s for a 30K prompt |
+| 256 | GLM-5.3-Flash 320B-A18B | deep | 182–204 GB | MIT. Too big beside the resident: swap |
+| 256 | Qwen3.5-397B-A17B | deep | ~220 GB est. | No Mac bench found |
+| 256 | MiniMax M3 427B-A23B | deep | ~240 GB | SWE-bench Verified 80.5. No room for KV under 248 |
+| 512 | MiniMax M3 / M3.1 Flash | deep | ~240 / ~249 GB peak | Fits beside the resident |
+| 512 | GLM-5.3 753B-A40B | deep | 418 GB | One source only; other searches find only GLM-5.3-Flash. Confirm it exists. Swap |
+| 512 | DeepSeek V4 Flash | deep | 145–167 GB | Fits with wide margin |
+| 512 | Kimi K3, Muse Spark Open, DeepSeek V4 Pro | — | 1.56 TB / 533 GB / conflicting | Do not fit one 512 GB host |
+
+`local-main` stays a ~3B-active MoE at every tier: wall time is set by active
+parameters and tokens emitted (see *Verbosity, not speed*). More RAM buys a
+better `local-deep`, keeps it loaded, and adds slots. Large `local-deep`
+models prefill slowly; they suit short hard questions, not long context.
+
 ## Dormant
 
 Four roles, no keys: `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`, `cloud-frontier-fast`. In the gateway era these were commented-out blocks in `config.yaml`;
@@ -171,7 +241,7 @@ whatever is on disk. The embedding pin was removed with the role (ADR 0018).
 2. Bench it against the incumbent: `scripts/concurrency-bench.sh` and
    `bench/tasks/` (rule 5). Same settings as the last baseline
 3. Check the footprint fits under the ceiling (RAM minus 8: 56 GB on 64, 40 GB on 48) with `local-main` already resident
-4. Update this table and `config/roles.tsv` together, then `scripts/omlx.sh up`
+4. Update this table and `config/roles.tsv` together (row at the tier's `min_ram`, ADR 0032), then `scripts/omlx.sh up`
    and `scripts/zed-sync.sh`
 5. `scripts/tool-smoke.sh openai http://127.0.0.1:1234/v1 local-main`
 6. Write an ADR in `docs/decisions/` and a row in `docs/HISTORY.md`

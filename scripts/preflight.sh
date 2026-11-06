@@ -63,13 +63,15 @@ else
   probs=$(awk -F'\t' '
     /^[[:space:]]*(#|$)/ {next}
     { n++ }
-    NF != 8 { print "line " NR ": " NF " columns, want 8 (role backend model_key ctx slots weights draft load)"; next }
+    NF != 9 { print "line " NR ": " NF " columns, want 9 (role backend model_key ctx slots weights draft load min_ram)"; next }
     $7 != "mtp" && $7 != "-" { print $1 ": draft must be mtp or -" }
-    $2 == "omlx" && $8 != "resident" && $8 != "demand" { print $1 ": load must be resident or demand" }
+    $2 == "omlx" && $8 != "resident" && $8 != "beside" && $8 != "swap" { print $1 ": load must be resident, beside or swap" }
     $2 != "omlx" && $8 != "-" { print $1 ": load must be - on a cloud row" }
+    $2 == "omlx" && $9 !~ /^[0-9]+$/ { print $1 ": min_ram must be an integer GB on an omlx row (ADR 0032)" }
+    $2 != "omlx" && $9 != "-" { print $1 ": min_ram must be - on a cloud row" }
     $2 == "omlx" && $8 == "resident" { res++ }
     END { if (n > 0 && res == 0) print "no resident omlx role — nothing would serve local-main" }
-    seen[$1]++ { print "duplicate role " $1 }
+    seen[$1 "@" $9]++ { print "duplicate role " $1 " at min_ram " $9 }
     $2 != "omlx" && $2 != "gemini" { print $1 ": backend \"" $2 "\" is not omlx or an explicit cloud backend (gemini)" }
     $2 == "omlx" && ($4 !~ /^[0-9]+$/ || $5 !~ /^[0-9]+$/) { print $1 ": ctx/slots must be integers" }
     $2 == "omlx" && $1 !~ /^local-/ { print $1 ": an omlx row must be a local-* role" }
@@ -78,6 +80,8 @@ else
     END { if (n == 0) print "no rows" }' "$ROLES")
   if [ -z "$probs" ]; then
     ok "well-formed; backends omlx/gemini only; local-* only on omlx"
+    tiers=$(hearth_all_rows | awk -F'\t' '$9 != "-" {print $9}' | sort -nu | tr '\n' ' ')
+    ok "tiers with rows (GB RAM): ${tiers}"
   else
     while IFS= read -r l; do
       [ -n "$l" ] || continue
@@ -85,6 +89,13 @@ else
     done <<EOF
 $probs
 EOF
+  fi
+
+  host_ram=$(hearth_ram_gb || echo ?)
+  if hearth_resident_roles | awk -F'\t' '$1 == "local-main"' | grep -q .; then
+    ok "this host (${host_ram} GB) resolves: $(hearth_resolved_roles | awk -F'\t' '$2 == "omlx" {printf "%s=%s ", $1, $8}')"
+  else
+    bad "no local-main row fits this host (${host_ram} GB) — omlx.sh up will refuse (ADR 0032)"
   fi
 
   while IFS="$(printf '\t')" read -r role _ _ _ _ w; do
@@ -98,7 +109,8 @@ EOF
 $(hearth_roles omlx)
 EOF
 
-  # Rule 1: every concrete name in roles.tsv is in MODELS.md, and nowhere else.
+  # Rule 1: every concrete name in roles.tsv, every tier, is in MODELS.md
+  # and nowhere else.
   while IFS="$(printf '\t')" read -r role _ key _ _ w; do
     [ -n "$role" ] || continue
     grep -qF "$key" "$MODELS_MD" && ok "${role}: ${key} documented in MODELS.md" || bad "${role}: ${key} not in docs/MODELS.md (update both together)"
@@ -107,7 +119,7 @@ EOF
     [ -z "$leaks" ] && ok "${role}: model key is not hardcoded in scripts, client, or bench tasks (pins/digests.tsv may record it)" \
                      || bad "rule 1: ${key} also named in ${leaks}"
   done <<EOF
-$(hearth_roles)
+$(hearth_all_rows | awk -F'\t' '!seen[$3]++')
 EOF
 fi
 
@@ -151,8 +163,11 @@ if want_gb=$(hearth_gpu_ceiling_gb); then
   else
     wrn "iogpu.wired_limit_mb ${wired:-?}, want ${want_mb} — scripts/iogpu-wired.sh (0 is the macOS default, ~75% of RAM)"
   fi
-  hearth_coload_ok && ok "local-deep may load beside local-main (ceiling ${want_gb} GB)" \
-    || ok "local-deep evicts local-main (ceiling ${want_gb} GB < ${HEARTH_COLOAD_MIN_GB})"
+  case "$(hearth_role_load local-deep)" in
+    beside) ok "local-deep loads beside local-main (ceiling ${want_gb} GB)" ;;
+    swap)   ok "local-deep evicts local-main for its session (ceiling ${want_gb} GB)" ;;
+    *)      ok "no local-deep row for this tier" ;;
+  esac
 else
   er "cannot read hw.memsize"
 fi

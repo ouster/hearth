@@ -35,7 +35,7 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
    `docs/MCP.md`.
 
    Live: `local-main` (oMLX identifier, resident), `local-deep` (loaded for an
-   `ask-deep` session, beside `local-main` on 64 GB, ADR 0020, 0028, 0031 — never call it
+   `ask-deep` session; `load` is `beside` or `swap` per RAM tier, ADR 0020, 0028, 0031, 0032 — never call it
    unless loaded), `cloud-cheap`
    (Gemini, `ask-cloud` only). `local-code` / `local-chat` are alias names that
    mean `local-main` (D1). Dormant: `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`, `cloud-frontier-fast` — no keys.
@@ -68,8 +68,10 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
 7. **Check the RAM envelope.** The ceiling is installed RAM minus 8 GB
    (ADR 0031): `iogpu.wired_limit_mb` and the oMLX memory guard both follow it.
    64 GB host → 56 GB; 48 GB host → 40 GB. macOS's default cap (~75% of RAM)
-   applies until `scripts/iogpu-wired.sh` runs.
-   `local-main` (ADR 0030) peaks at 34.0 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-06, oMLX process footprint). `local-deep` loads beside it only at a 56 GB ceiling or above (ADR 0028); below that `ask-deep` evicts `local-main` for the session (ADR 0031). Say when a suggestion will not fit, or
+   applies until `scripts/iogpu-wired.sh` runs. Roles are tiered by RAM
+   (`min_ram` in `roles.tsv`, ADR 0032); only benched tiers have rows, and
+   candidates for other sizes are in `docs/MODELS.md`.
+   `local-main` (ADR 0030) peaks at 34.0 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-06, oMLX process footprint). `local-deep` loads beside it on the 64 GB tier (ADR 0028) and swaps it out on the 48 GB tier (ADR 0031, 0032). Say when a suggestion will not fit, or
    will evict something that needs to stay loaded — on this machine the resident
    set matters more than any one model's quality.
 

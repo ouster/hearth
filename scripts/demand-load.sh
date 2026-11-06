@@ -1,5 +1,5 @@
 #!/bin/bash
-# Load or unload a role marked load=demand in config/roles.tsv (ADR 0020).
+# Load or unload a role marked load=beside or load=swap in config/roles.tsv (ADR 0020, 0032).
 #
 #   scripts/demand-load.sh <role> up            # load beside the resident role
 #   scripts/demand-load.sh <role> up --evict    # unload the resident role first
@@ -9,9 +9,10 @@
 # whatever is loaded, so `up` confirms this role is really loaded before it
 # returns 0.
 #
-# On a 64 GB host both roles may be loaded together (ADR 0028): `up` does
-# not unload the resident, and `--evict` still does, for a run that needs the
-# machine to itself. Below a 56 GB GPU ceiling `up` always evicts (ADR 0031).
+# load=beside (ADR 0028): `up` loads next to the resident, and `--evict`
+# still unloads it, for a run that needs the machine to itself. load=swap
+# (ADR 0031): `up` always evicts. The load comes from this host's tier in
+# config/roles.tsv (ADR 0032).
 # `down` unloads this role. If the resident was evicted, `down` loads it again.
 #
 # Exit 0 ok, 1 refused or failed, 2 could not run.
@@ -23,12 +24,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ROLE="${1:-}"; ACTION="${2:-}"; EVICT=0
 [ "${3:-}" = "--evict" ] && EVICT=1
 [ -n "$ROLE" ] && { [ "$ACTION" = up ] || [ "$ACTION" = down ]; } || { sed -n '2,6p' "$0"; exit 2; }
-hearth_demand_roles | grep -qxF "$ROLE" || { echo "could not run: ${ROLE} is not a load=demand role in roles.tsv" >&2; exit 2; }
-# Below a 56 GB ceiling (a 48 GB Mac) the pair does not fit: `up` always
-# evicts the resident, and `down` brings it back (ADR 0031).
-if [ "$ACTION" = up ] && [ "$EVICT" = 0 ] && ! hearth_coload_ok; then
+hearth_demand_roles | grep -qxF "$ROLE" || { echo "could not run: ${ROLE} is not a beside or swap role for this host in roles.tsv" >&2; exit 2; }
+# A swap row (this host's tier, ADR 0031, 0032) always evicts the resident;
+# `down` brings it back.
+LOAD="$(hearth_role_load "$ROLE")"
+if [ "$ACTION" = up ] && [ "$EVICT" = 0 ] && [ "$LOAD" = swap ]; then
   EVICT=1
-  echo "GPU ceiling $(hearth_gpu_ceiling_gb || echo ?) GB is under ${HEARTH_COLOAD_MIN_GB} GB: ${ROLE} cannot load beside the resident, evicting it." >&2
+  echo "${ROLE} is load=swap on this $(hearth_ram_gb || echo ?) GB host: unloading the resident first." >&2
 fi
 holder="$(lsof -nP -iTCP:"${HEARTH_PORT}" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1}')"
 case "$holder" in
@@ -37,7 +39,7 @@ case "$holder" in
     [ -n "${OMLX_HOST_TOKEN:-}" ] || { echo "could not run: host token missing" >&2; exit 2; }
     export OMLX_HOST_TOKEN
     HEARTH_ROLE="$ROLE" HEARTH_ACTION="$ACTION" HEARTH_EVICT="$EVICT" \
-      HEARTH_PORT="$HEARTH_PORT" HEARTH_ROLES="${ROOT}/config/roles.tsv" \
+      HEARTH_PORT="$HEARTH_PORT" HEARTH_ROLES_TSV="$(hearth_resolved_roles)" \
       /usr/bin/python3 -I - <<'PY'
 import json, os, sys, time, urllib.error, urllib.request, http.cookiejar
 base = "http://127.0.0.1:%s" % os.environ["HEARTH_PORT"]
@@ -69,13 +71,10 @@ if code != 200:
     raise SystemExit("admin login failed (%s)" % code)
 
 residents = []
-with open(os.environ["HEARTH_ROLES"]) as fh:
-    for line in fh:
-        if not line.strip() or line.startswith("#"):
-            continue
-        f = line.rstrip("\n").split("\t")
-        if len(f) >= 8 and f[1] == "omlx" and f[7] == "resident":
-            residents.append(f[0])
+for line in os.environ["HEARTH_ROLES_TSV"].splitlines():
+    f = line.split("\t")
+    if len(f) >= 8 and f[1] == "omlx" and f[7] == "resident":
+        residents.append(f[0])
 
 def listing():
     code, body = call("GET", "/admin/api/models")

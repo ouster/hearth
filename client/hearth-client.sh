@@ -250,7 +250,7 @@ ask-deep() {
        | python3 -c 'import sys, json
 sys.exit(0 if any(m.get("id") == "local-deep" for m in json.load(sys.stdin).get("data", [])) else 1)' 2>/dev/null; then
     echo "local-deep is not loaded on the host. On the host: scripts/demand-load.sh local-deep up" >&2
-    echo "(local-main stays loaded; scripts/demand-load.sh local-deep down unloads local-deep)" >&2
+    echo "(on a 64 GB host local-main stays loaded; on 48 GB it is swapped out until scripts/demand-load.sh local-deep down)" >&2
     unset _k; return 1
   fi
   # weak-model is local-deep too: a commit step should use the same model
