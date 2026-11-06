@@ -1,0 +1,20 @@
+<|file_sep|>model.py
+from dataclasses import dataclass
+<|file_sep|>original/model.py
+@dataclass
+class Matter:
+    ref: str
+    client: str
+
+def label(m: Matter) -> str:
+    return f"{m.ref} {m.client}"
+<|file_sep|>current/model.py
+@dataclass
+class Matter:
+    ref: str
+    client: str
+    settlement: str
+
+def label(m: Matter) -> str:
+    return f"{m.ref} {m.client}"
+<|file_sep|>updated/model.py

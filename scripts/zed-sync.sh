@@ -23,16 +23,17 @@ CHECK=0; [ "${1:-}" = "--check" ] && CHECK=1
 
 # Program on stdin (heredoc), data in argv — never both on stdin.
 # A demand role's label says to load it first.
-/usr/bin/python3 -I - "$ZED" "$CHECK" "$(hearth_roles omlx)" "$(hearth_demand_roles)" <<'PY'
+/usr/bin/python3 -I - "$ZED" "$CHECK" "$(hearth_roles omlx)" "$(hearth_demand_roles)" "$(hearth_edit_roles | cut -f1)" <<'PY'
 import json, re, shutil, sys
 zed, check, roles_tsv = sys.argv[1], sys.argv[2] == "1", sys.argv[3]
 demand = set(sys.argv[4].split())
+edit = set(sys.argv[5].split())
 
 rows = [l.split("\t") for l in roles_tsv.splitlines() if l.strip()]
 text = open(zed).read()
 new, rc = text, 0
 for role, _backend, key, ctx, _slots, *_ in rows:
-    if "embed" in key:
+    if "embed" in key or role in edit:
         continue  # Zed's model picker lists chat models only
     label = role
     if role in demand:
@@ -52,6 +53,27 @@ for role, _backend, key, ctx, _slots, *_ in rows:
     if check:
         rc = max(rc, 1)
     new = new[:hit.start(2)] + body2 + new[hit.end(2):]
+
+# Edit prediction (ADR 0033). Checked, never written: the provider is the
+# one Zed setting that decides whether file text leaves the machine.
+try:
+    ep = (json.loads(new).get("edit_predictions") or {})
+except ValueError:
+    ep = None
+if ep is None:
+    print("check  edit_predictions: settings are not plain JSON; check the provider by hand")
+else:
+    prov = ep.get("provider")
+    oac = ep.get("open_ai_compatible_api") or {}
+    url = str(oac.get("api_url", ""))
+    local = url.startswith(("http://127.0.0.1:", "http://localhost:")) and url.endswith("/v1/completions")
+    if prov == "none":
+        print("ok     edit_predictions: off" + ("; local-edit is available (docs/IDES.md)" if edit else ""))
+    elif prov == "open_ai_compatible_api" and local and oac.get("model") in edit | {"local-edit"}:
+        print("ok     edit_predictions: %s at %s" % (oac.get("model"), url))
+    else:
+        print("DRIFT  edit_predictions: provider %r — Zed's default sends file text to its service; set \"none\" or local-edit (docs/IDES.md)" % prov)
+        rc = max(rc, 1)
 
 if not check and new != text:
     shutil.copy2(zed, zed + ".zed-sync.bak")

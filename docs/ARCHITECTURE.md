@@ -15,7 +15,7 @@ flowchart TB
         scripts["scripts / benches"]
         webui["Open WebUI :3000<br/>(Podman)"]
         sbx["sandboxed.sh agents"]
-        srv["oMLX 127.0.0.1:1234<br/>local-main: 128K x 3<br/>local-deep: beside it on 64 GB, swaps on 48 GB<br/>token required"]
+        srv["oMLX 127.0.0.1:1234<br/>local-main: 128K x 3<br/>local-edit: edit prediction<br/>local-deep: swaps with local-main<br/>token required"]
     end
 
     laptop["Laptop<br/>SSH tunnel, own token"]
@@ -43,7 +43,8 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 | Role | Backend | What |
 |---|---|---|
 | `local-main` | oMLX | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0030) |
-| `local-deep` | oMLX | slower, more careful model for hard one-off questions. Loaded **beside** `local-main` on a 64 GB host (ADR 0028); on 48 GB it evicts `local-main` for the session (ADR 0031). `ask-deep` unloads it on the way out and `local-main` is loaded again. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up`) |
+| `local-deep` | oMLX | slower, more careful model for hard one-off questions. Evicts `local-main` for its session on every tier (ADR 0031, 0033). `ask-deep` unloads it on the way out and `local-main` is loaded again. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up`) |
+| `local-edit` | oMLX | editor edit prediction: `/v1/completions` only, kept loaded, 8K × 2. Never a chat or agent model (ADR 0033) |
 | `cloud-cheap` | Gemini | reached directly by `ask-cloud`; never loaded into oMLX |
 
 `local-code` and `local-chat` were collapsed into `local-main` (D1): two heavy
@@ -86,7 +87,7 @@ console is the cap.
 ## Process supervision
 
 oMLX serves `local-main` on `127.0.0.1:1234` from `~/.hearth/models` (ADR 0026).
-`ask-deep` loads `local-deep` from the same tree, beside it on 64 GB (ADR 0028) or in its place on 48 GB (ADR 0031).
+`ask-deep` loads `local-deep` from the same tree in its place (ADR 0031, 0033).
 Login runs `scripts/boot.sh`, which runs `scripts/omlx.sh up`, then starts
 Podman, SearXNG and Open WebUI. `scripts/omlx.sh down` stops oMLX and
 leaves the port empty.

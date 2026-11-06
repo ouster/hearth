@@ -65,7 +65,7 @@ else
     { n++ }
     NF != 9 { print "line " NR ": " NF " columns, want 9 (role backend model_key ctx slots weights draft load min_ram)"; next }
     $7 != "mtp" && $7 != "-" { print $1 ": draft must be mtp or -" }
-    $2 == "omlx" && $8 != "resident" && $8 != "beside" && $8 != "swap" { print $1 ": load must be resident, beside or swap" }
+    $2 == "omlx" && $8 != "resident" && $8 != "beside" && $8 != "swap" && $8 != "edit" { print $1 ": load must be resident, beside, swap or edit" }
     $2 != "omlx" && $8 != "-" { print $1 ": load must be - on a cloud row" }
     $2 == "omlx" && $9 !~ /^[0-9]+$/ { print $1 ": min_ram must be an integer GB on an omlx row (ADR 0032)" }
     $2 != "omlx" && $9 != "-" { print $1 ": min_ram must be - on a cloud row" }

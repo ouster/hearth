@@ -1,0 +1,14 @@
+<|file_sep|>original/run.sh
+#!/bin/bash
+set -uo pipefail
+for f in "$@"; do
+  wc -l "$f"
+done
+<|file_sep|>current/run.sh
+#!/bin/bash
+set -uo pipefail
+[ $# -gt 0 ] || { echo "usage: $0 file..." >&2; exit 2; }
+for f in "$@"; do
+  wc -l "$f"
+done
+<|file_sep|>updated/run.sh

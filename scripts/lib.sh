@@ -215,7 +215,13 @@ hearth_demand_roles() {
   hearth_resolved_roles | awk -F'\t' '$2 == "omlx" && ($8 == "beside" || $8 == "swap") {print $1}'
 }
 
-# Load column for one of this host's roles: resident, beside, swap, or "-".
+# This host's edit-prediction roles (load=edit, ADR 0033), same columns as
+# hearth_roles. Kept loaded; called only on /v1/completions.
+hearth_edit_roles() {
+  hearth_resolved_roles | awk -F'\t' '$2 == "omlx" && $8 == "edit" {print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6}'
+}
+
+# Load column for one of this host's roles: resident, beside, swap, edit, or "-".
 hearth_role_load() {
   hearth_resolved_roles | awk -F'\t' -v r="$1" '$1 == r {print $8; exit}'
 }

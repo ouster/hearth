@@ -1,0 +1,18 @@
+<|file_sep|>original/status.go
+func label(s Status) string {
+	switch s {
+	case Open:
+		return "open"
+	}
+	return "unknown"
+}
+<|file_sep|>current/status.go
+func label(s Status) string {
+	switch s {
+	case Open:
+		return "open"
+	case Settled:
+	}
+	return "unknown"
+}
+<|file_sep|>updated/status.go

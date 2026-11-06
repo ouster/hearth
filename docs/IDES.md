@@ -183,27 +183,60 @@ tunnel-only one.
 ### Thinking
 
 Thinking for `local-main` is set on the server by `scripts/omlx.sh`
-(`docs/MODELS.md`), and healthcheck fails without it. Do not add
-`"enable_thinking": false` to `agent.default_model`. Zed's thinking toggle is
-reported to act only on its Ollama provider, not on `openai_compatible`
-(one developer report, 2026). Whether the flag reaches oMLX is unverified,
-so leave it out rather than rely on it being ignored.
+(`docs/MODELS.md`), and healthcheck fails without it. Leave
+`enable_thinking` out of `agent.default_model`. In Zed 1.27 an
+`openai_compatible` model supports thinking only if its `available_models`
+entry sets `reasoning_effort`; without that, `enable_thinking` is forced off
+and no reasoning field is sent, so the server default applies (read from
+`crates/language_models/src/provider/open_ai_compatible.rs` at v1.27.0).
+Adding `reasoning_effort` would change that: `enable_thinking: false` would
+then send effort `none`. Do not add it.
 
 ### Edit prediction
 
-Zed's default edit prediction provider is Zeta. For a signed-in user that
-runs on Zed's service and sends the surrounding file text there, which is
-what rule 3 forbids. On the host either turn it off:
+Zed's default edit prediction provider is its hosted model (`"provider":
+"zed"`). For a signed-in user it sends the text around the cursor to Zed's
+service, which rule 3 forbids. On the Free plan the service refuses with
+403, but the request has already left: this laptop's Zed log shows one on
+2026-10-31. Turn it off on every machine (Zed 1.27 key):
 
 ```json
-{ "features": { "edit_prediction_provider": "none" } }
+{ "edit_predictions": { "provider": "none" } }
 ```
 
-or point it at a self-hosted model. Zed supports Ollama or any server with
-the OpenAI completions API for this, and Zeta can be self-hosted without a
-Zed login. That would be a new local role: it needs a row in
-`config/roles.tsv`, a bench, an ADR, and room in the RAM envelope. Check the
-key name against Zed's current edit-prediction docs before relying on it.
+**`local-edit`** (ADR 0033) is the local prediction model. Build it first
+(`docs/MODELS.md` → *Building `local-edit`*). Then, once
+`scripts/edit-bench.sh` passes:
+
+```json
+"edit_predictions": {
+  "provider": "open_ai_compatible_api",
+  "open_ai_compatible_api": {
+    "api_url": "http://127.0.0.1:1234/v1/completions",
+    "model": "local-edit",
+    "prompt_format": "sweep",
+    "max_output_tokens": 512
+  }
+}
+```
+
+The key goes in through the UI (status bar edit-prediction menu → Configure
+Providers → OpenAI-compatible API key), so it lands in the keychain. Use the
+host token on the host. `scripts/zed-sync.sh --check` (and preflight) fail
+if the provider is anything else but `none`.
+
+**From a laptop**, two ways, both local:
+
+| | Host through the tunnel | The laptop's own oMLX |
+|---|---|---|
+| `api_url` | `http://127.0.0.1:1234/v1/completions` (`ai-tunnel` first) | `http://127.0.0.1:<its port>/v1/completions` (8000 by default) |
+| Key | the laptop's own `laptop-<name>` key | the laptop oMLX's own key |
+| Setup | none beyond the host's | `client/edit-model.sh convert …` then `laptop-up` |
+| Cost | a LAN round trip per prediction; shares the host's slots | ~1.4 GB of the laptop's RAM; works with the tunnel down |
+| Bench | `scripts/edit-bench.sh` on the host | `client/edit-model.sh bench` |
+
+`client/edit-model.sh` is the one script a laptop runs: it writes only
+`~/.hearth/models` and the laptop's own oMLX.
 
 ### Sandbox (Zed 1.14)
 
@@ -250,6 +283,49 @@ The distinction is not about safety. It is about which mode you are in.
 
 ---
 
+## JetBrains AI Assistant
+
+Optional. Calls `local-main` the same way Zed does. On a laptop the tunnel
+must be up (`ai-tunnel`).
+
+1. **Host:** a key for this IDE, so it can be revoked on its own:
+   `scripts/omlx.sh sub-key add jetbrains-<laptop>` (prompt does not echo).
+2. **IDE:** Settings → Tools → AI Assistant → Providers & API keys →
+   **OpenAI Compatible**. Base URL `http://127.0.0.1:1234/v1`. Type the key
+   into the API key field; the IDE keeps it in its own password store.
+   **Test Connection**.
+3. **Assign the model by hand.** Models from an OpenAI-compatible endpoint
+   are not assigned to features automatically. Pick `local-main` for chat
+   and each feature you use. Never `local-deep` unless it is loaded.
+4. **Offline mode on** for sensitive repos, and no cloud provider or JetBrains
+   AI subscription model on the host (rule 3). A feature with no local model
+   assigned may use JetBrains' cloud if a subscription is signed in.
+
+Not verified against oMLX: whether Test Connection passes oMLX's token check,
+and whether Junie uses a local provider from the IDE or only from Junie CLI.
+One JetBrains IDE configures all of them only if settings sync is on; each
+IDE otherwise needs steps 2–4.
+
+## Xcode 27
+
+Optional. Swift work only.
+
+1. **Host:** `scripts/omlx.sh sub-key add xcode-<laptop>`.
+2. **Xcode:** Settings → Intelligence → Add a Chat Provider → **Internet
+   Hosted**. URL `http://127.0.0.1:1234` (no `/v1`: Xcode adds the path).
+   Header `Authorization`; type the key, without `Bearer` (Xcode adds it).
+   Model `local-main`.
+3. **No Claude, Gemini or OpenAI agent** in Intelligence for sensitive repos,
+   and none on the host. ACP agents added to Xcode follow
+   *External agents (ACP)* above.
+
+"Locally Hosted" does not work here: it takes only a port and sends no key,
+and oMLX refuses a request without one. Not verified: whether Internet
+Hosted accepts plain `http`. If it refuses, say so in this file rather than
+adding a TLS proxy in front of `:1234`.
+
+---
+
 ## Why two tools, and why this matters
 
 The 2026 research on AI-assisted development is not comfortable reading.
@@ -291,8 +367,8 @@ for indexing or an agent, is for non-sensitive repos only.
 
 | Editor | Local models | Cloud by default | State |
 |---|---|---|---|
-| JetBrains (AI Assistant, Junie) | Ollama, LM Studio, LiteLLM. Local models can be assigned to features beyond chat. Junie (out of beta June 2026, on ACP) can use them; one JetBrains answer says only from Junie CLI. "Junie Local" bundles its own local model and needs a 64 GB M5 Mac | JetBrains AI subscription or own keys | Most credible second editor for local work. Not benched against oMLX's token auth |
-| Xcode 27 | "Locally Hosted" provider by port (Intelligence settings). Unverified whether it can send oMLX's token | Built-in Claude, Gemini and OpenAI agents with your own keys; ACP agents | Swift only. Locally Hosted at `:1234`, never its cloud agents, for sensitive work |
+| JetBrains (AI Assistant, Junie) — setup above | Ollama, LM Studio, LiteLLM. Local models can be assigned to features beyond chat. Junie (out of beta June 2026, on ACP) can use them; one JetBrains answer says only from Junie CLI. "Junie Local" bundles its own local model and needs a 64 GB M5 Mac | JetBrains AI subscription or own keys | Most credible second editor for local work. Not benched against oMLX's token auth |
+| Xcode 27 — setup above | "Locally Hosted" provider by port (Intelligence settings). Unverified whether it can send oMLX's token | Built-in Claude, Gemini and OpenAI agents with your own keys; ACP agents | Swift only. Locally Hosted at `:1234`, never its cloud agents, for sensitive work |
 | VS Code + Copilot | Bring-your-own-model includes Ollama; still needs a GitHub login | Copilot | Works; an extension stack rather than built in |
 | Cursor | Custom endpoint possible; earlier it rejected non-HTTPS base URLs | Indexing and search use Cursor's cloud | Not used here |
 | Windsurf, Kiro, Antigravity | Nothing found | Agent-first cloud IDEs | Not used here |

@@ -1,0 +1,14 @@
+<|file_sep|>notes.py.diff
+original:
+def total(items):
+    return sum(i.price for i in items)
+updated:
+def total(lines):
+    return sum(i.price for i in items)
+<|file_sep|>original/notes.py
+def total(items):
+    return sum(i.price for i in items)
+<|file_sep|>current/notes.py
+def total(lines):
+    return sum(i.price for i in items)
+<|file_sep|>updated/notes.py
