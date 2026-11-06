@@ -1,7 +1,7 @@
 # ADR 0024 — local-main returns to the 26B-A4B
 
 **Date:** 2026-11-01
-**Status:** accepted 2026-11-01 by the operator.
+**Status:** superseded by ADR 0030 (2026-11-06); was: accepted 2026-11-01 by the operator.
 **Supersedes:** ADR 0023
 
 ## Context

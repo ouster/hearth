@@ -286,7 +286,8 @@ common = {
 }
 main = dict(common)
 main.update({
-    "reasoning_parser": "gemma",
+    "reasoning_parser": "qwen",
+    "top_k": 20,
     "max_context_window": ctx,
     "max_tokens": 65536,
     "is_pinned": True,

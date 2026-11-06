@@ -18,20 +18,23 @@ oMLX serves these from `~/.hearth/models`. Machine-read copy:
 
 | Role | Model key | Source | Size | Load | Set | Why |
 |---|---|---|---|---|---|---|
-| `local-main` | `gemma-4-26b-a4b-it-qat-mlx` | `lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit` @ `aa5e2e5` | 15.6 GB | 128K × 3 parallel, no draft, **thinking on (set by `scripts/omlx.sh`)** | 2026-11-01 | MoE, ~4B active, Google QAT 4-bit. Beat the Qwen3.6 build on `bench/tasks` 03 and matched it on 01/02/04 in fewer tokens; 40/40 valid tool calls under concurrency; ~15% slower prefill, 3–4.5 GB less memory. Restored after the looping thread turned out to be context trim, on both models (ADR 0024). Native window 262,144 |
+| `local-main` | `qwen3.6-35b-a3b-mlx` | `lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a` | 20.4 GB | 128K × 3 parallel, no draft, **thinking on (set by `scripts/omlx.sh`)** | 2026-11-06 | MoE, ~3B active, 4-bit. Returned after the 2026-11-06 benches: faster decode, the better long-context answer, c3 30/30 with TTFT p50 60.7 s against the previous resident's 79.2 s. Short tasks emit about 2.2× the tokens. Peak 34.0 GB. ADR 0030. Native window 262,144 |
 | `local-deep` | `qwen3.8-27b-mlx` | `lmstudio-community/Qwen3.8-27B-MLX-4bit` @ `6067b15` | 16.1 GB | 64K × 1, **on demand**: `ask-deep` loads it beside `local-main` and unloads it on the way out | 2026-11-01 | Dense 27B. Best `bench/tasks` 03 answer of the three benched; ~26 tok/s and 2.5–5.5× the tokens of the 26B-A4B, so 10–24× slower. For hard one-off questions, never agent loops. Thinks by default (its template). Beside the resident, both peaked at 49.9 GB on 2026-11-01, over the old ~48 GB cap, and the resident's requests timed out during a long prefill. The cap is now 56 GB, so the two may be loaded together (ADR 0028). ADR 0020 |
 | `cloud-cheap` | `gemini-3.6-flash` | Google, `ask-cloud` only | — | — | 2026-10-22 | 1M ctx, 65K output. ADR 0014 |
 
-**Resident set:** concurrency-3 peak 25.2 GB at 128K × 3, ~30K-token prompts
-(`bench/results/2026-11-01-gemma-concurrency`, footprint includes the app).
-The Qwen3.6 build that held this role for part of the same day peaked at
-29.7 GB (`bench/results/2026-11-01-128k`).
+**Resident set:** concurrency-3 peak 34.0 GB at 128K × 3, ~30K-token prompts
+(`bench/results/2026-11-06-2012-concurrency-c3-qwen3.6`, oMLX process
+footprint). The previous resident the same day peaked at 31.0 GB
+(`bench/results/2026-11-06-1956-concurrency-c3-local-main`). Loaded beside
+`local-deep` was not re-measured; the last combined peak was 49.9 GB with
+the smaller resident (ADR 0028).
 
 **Thinking is set by `scripts/omlx.sh`.** `local-main` gets `enable_thinking`
-and the gemma reasoning parser; sampling is temperature 1.0, top-k 64, top-p
-0.95, repetition penalty 1.0. Lower temperature or a repeat penalty makes its
-thinking loop (seen in Zed agent turns, 2026-11-01). Zed also pins
-`temperature: 1.0` for `local-main` in `agent.model_parameters`.
+and the qwen reasoning parser. Sampling follows the weights' generation
+config: temperature 1.0, top-k 20, top-p 0.95, repetition penalty 1.0. Zed
+also pins `temperature: 1.0` for `local-main` in `agent.model_parameters`.
+The previous resident looped in thinking at a lower temperature (Zed agent
+turns, 2026-11-01); that sampling does not follow the role.
 
 `scripts/omlx.sh up` writes those settings again. `scripts/healthcheck.sh` fails if
 `local-main` returns no `reasoning_content` or leaks thought markers into the
@@ -69,8 +72,8 @@ Frontier is cloud-only by necessity, which is what these roles are for.
 
 | Model | Was | Removed | Why |
 |---|---|---|---|
-| `qwen/qwen3.6-35b-a3b` (`lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a`) | `local-main` | 2026-11-01 | Held the role for part of the day after a misdiagnosed loop (ADR 0023). Weaker on `bench/tasks` 03; c3 peak 29.7 GB. Weights kept. ADR 0024 |
-| `qwen3.6:35b-mlx` (Ollama) | `local-big` | 2026-10-31 | Same base model as the MLX 4-bit weights in the row above. ADR 0016 |
+| `gemma-4-26b-a4b-it-qat-mlx` (`lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit` @ `aa5e2e5`) | `local-main` | 2026-11-06 | Resident from ADR 0024. Short tasks finished sooner and the weights are smaller. Lost the 2026-11-06 long-context answer and the c3 prefill (TTFT p50 79.2 s, peak 31.0 GB). Weights kept. ADR 0030 |
+| `qwen3.6:35b-mlx` (Ollama) | `local-big` | 2026-10-31 | Ollama build of the same 35B-A3B, now `local-main` again. ADR 0016, 0030 |
 | `qwen3-coder:30b` | `local-code` | 2026-10-31 | Role collapsed into `local-big` (D1). ADR 0016 |
 | `qwen3:8b` | `local-chat` | 2026-10-31 | Role collapsed into `local-big` (D1). ADR 0016 |
 | `nomic-embed-text` (Ollama, then an f16 GGUF) | `local-embed` | 2026-11-01 | Nothing called it. Healthcheck was the only request. ADR 0018 |

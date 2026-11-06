@@ -42,7 +42,7 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 
 | Role | Backend | What |
 |---|---|---|
-| `local-main` | oMLX | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0024) |
+| `local-main` | oMLX | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0030) |
 | `local-deep` | oMLX | slower, more careful model for hard one-off questions. Loaded **beside** `local-main` (ADR 0028). `ask-deep` unloads it on the way out and leaves `local-main` loaded. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up`) |
 | `cloud-cheap` | Gemini | reached directly by `ask-cloud`; never loaded into oMLX |
 
@@ -136,10 +136,13 @@ memory, no evictions and no gateway hop, not concurrency.
 `bench/results/2026-10-31-phase0`, `…-phase1`. The live server is the LM
 Studio app (D6), loaded at 128K × 3 (ADR 0017). Those rows are the 64K
 measurement, not a claim that llmster is still running. The current
-`local-main` (ADR 0024) at 128K × 3: c1 TTFT p95 25.0 s, c3 total p95 75.2 s,
-peak 25.2 GB (`bench/results/2026-11-01-gemma-concurrency`). The resident
-from ADR 0023, same day, was c1 TTFT p95 21.8 s, c3 total p95 65.5 s,
-peak 29.7 GB (`bench/results/2026-11-01-128k`).
+`local-main` (ADR 0030) at 128K × 3: c3 TTFT p50 60.7 s / p95 61.5 s, c3 total
+p95 62.3 s, peak 34.0 GB (`bench/results/2026-11-06-2012-concurrency-c3-qwen3.6`).
+The previous resident the same day was c3 TTFT p50 79.2 s / p95 88.2 s, total
+p95 88.9 s, peak 31.0 GB (`bench/results/2026-11-06-1956-concurrency-c3-local-main`).
+Earlier, ADR 0024: c1 TTFT p95 25.0 s, c3 total p95 75.2 s, peak 25.2 GB
+(`bench/results/2026-11-01-gemma-concurrency`). ADR 0023, same day: c1 TTFT
+p95 21.8 s, c3 total p95 65.5 s, peak 29.7 GB (`bench/results/2026-11-01-128k`).
 
 ## The second boundary: containment
 

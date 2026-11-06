@@ -68,7 +68,7 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
 7. **Check the RAM envelope.** 64 GB total. macOS's default GPU cap is ~48 GB
    (75% above 36 GB). This host sets `iogpu.wired_limit_mb` to 57344, so the
    ceiling is 56 GB (RAM minus 8), and the oMLX memory guard matches it (ADR 0027).
-   `local-main` (ADR 0024) peaks at 25.2 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-01, footprint includes the app). `local-deep` may be loaded beside it (ADR 0028). Say when a suggestion will not fit, or
+   `local-main` (ADR 0030) peaks at 34.0 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-06, oMLX process footprint). `local-deep` may be loaded beside it (ADR 0028). Say when a suggestion will not fit, or
    will evict something that needs to stay loaded — on this machine the resident
    set matters more than any one model's quality.
 
