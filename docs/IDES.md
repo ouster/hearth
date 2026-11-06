@@ -180,6 +180,55 @@ Zed's SSH remote projects also work: edit files on the host over SSH while
 the model call goes through the tunnel. That needs a normal SSH key, not the
 tunnel-only one.
 
+### Thinking
+
+Thinking for `local-main` is set on the server by `scripts/omlx.sh`
+(`docs/MODELS.md`), and healthcheck fails without it. Do not add
+`"enable_thinking": false` to `agent.default_model`. Zed's thinking toggle is
+reported to act only on its Ollama provider, not on `openai_compatible`
+(one developer report, 2026). Whether the flag reaches oMLX is unverified,
+so leave it out rather than rely on it being ignored.
+
+### Edit prediction
+
+Zed's default edit prediction provider is Zeta. For a signed-in user that
+runs on Zed's service and sends the surrounding file text there, which is
+what rule 3 forbids. On the host either turn it off:
+
+```json
+{ "features": { "edit_prediction_provider": "none" } }
+```
+
+or point it at a self-hosted model. Zed supports Ollama or any server with
+the OpenAI completions API for this, and Zeta can be self-hosted without a
+Zed login. That would be a new local role: it needs a row in
+`config/roles.tsv`, a bench, an ADR, and room in the RAM envelope. Check the
+key name against Zed's current edit-prediction docs before relying on it.
+
+### Sandbox (Zed 1.14)
+
+Since Zed 1.14 (August 2026) the agent panel's **terminal and fetch tools**
+run sandboxed by default: no writes outside the project or to `.git`, no
+network. It does **not** cover the edit tool, MCP servers (so not
+`searxng`), ACP agents, the normal terminal, or LSP servers. It complements
+`tool_permissions`; it does not replace `scripts/sandboxed.sh` for aider.
+
+`agent.sandbox_permissions.network_hosts` widens it. Every host listed
+there is an egress path for an injected agent (`docs/THREAT-MODEL.md`,
+accepted risk 1). Keep it empty on the host; on a laptop, list only what a
+thread needs and say why.
+
+### External agents (ACP)
+
+Zed can run other vendors' agents (Claude Code, Codex, Gemini CLI and others)
+over the Agent Client Protocol, installed from the ACP Registry. None of the
+controls above apply to them: profiles and `tool_permissions` govern only
+Zed's own agent, the sandbox does not cover them, and they call their own
+cloud with their own keys. Zed may also forward its MCP servers to them.
+
+**No ACP agent on the host.** On a laptop one is a cloud tool like
+`ask-cloud`: non-sensitive repos only.
+
 ### Agent profiles — the reason Zed is here
 
 Zed's agent has **profiles with configurable tool access**. You can define one
@@ -187,8 +236,9 @@ that reads and proposes but cannot apply edits or run commands, and a separate
 one that can.
 
 That is the closest thing shipping today to an assistant that helps without
-taking over, and it is why Zed earns its place over JetBrains here — JetBrains
-only supports chat on local models.
+taking over, and it is why Zed earns its place here. JetBrains now runs its
+agent on local models too (see *Other editors*), but Zed's profiles are the
+finer-grained control.
 
 Suggested split:
 
@@ -235,9 +285,15 @@ stopped thinking, which by definition is not something you notice.
 ## Other editors
 
 Not recommended here, recorded so the question does not come round again.
+Checked 2026-11-07 by web search; vendor claims, not tested on this host.
+Rule 3 applies to all of them: a tool that sends code to a cloud service,
+for indexing or an agent, is for non-sensitive repos only.
 
-| Editor | State |
-|---|---|
-| JetBrains | Native LiteLLM support, free tier, but **chat only** on local models — no agent, no next-edit |
-| VS Code + Continue | Works fully, but an extension rather than built in |
-| Cursor | Not used here — rejects non-HTTPS base URLs; agent mode unreliable with custom endpoints |
+| Editor | Local models | Cloud by default | State |
+|---|---|---|---|
+| JetBrains (AI Assistant, Junie) | Ollama, LM Studio, LiteLLM. Local models can be assigned to features beyond chat. Junie (out of beta June 2026, on ACP) can use them; one JetBrains answer says only from Junie CLI. "Junie Local" bundles its own local model and needs a 64 GB M5 Mac | JetBrains AI subscription or own keys | Most credible second editor for local work. Not benched against oMLX's token auth |
+| Xcode 27 | "Locally Hosted" provider by port (Intelligence settings). Unverified whether it can send oMLX's token | Built-in Claude, Gemini and OpenAI agents with your own keys; ACP agents | Swift only. Locally Hosted at `:1234`, never its cloud agents, for sensitive work |
+| VS Code + Copilot | Bring-your-own-model includes Ollama; still needs a GitHub login | Copilot | Works; an extension stack rather than built in |
+| Cursor | Custom endpoint possible; earlier it rejected non-HTTPS base URLs | Indexing and search use Cursor's cloud | Not used here |
+| Windsurf, Kiro, Antigravity | Nothing found | Agent-first cloud IDEs | Not used here |
+| Cline, aider | Any OpenAI-compatible endpoint | No | aider is the second tool |

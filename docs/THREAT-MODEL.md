@@ -99,7 +99,7 @@ substitutes for the other.
 |---|---|---|
 | A prompt sends personal information to a cloud model | **caught** (unless you run `ask-cloud`) | not caught |
 | An injected agent exfiltrates a key via curl | not caught | **caught**, if the agent was started with `scripts/sandboxed.sh` |
-| Write + search puts file text into a SearXNG query | not caught | not caught. Zed is not sandboxed. `confirm` shows the query before it leaves |
+| Write + search puts file text into a SearXNG query | not caught | not caught. Zed's 1.14 sandbox covers its terminal and fetch tools, not MCP. `confirm` shows the query before it leaves |
 | An injected agent reads a file it shouldn't | not caught | not caught |
 | An injected agent rewrites source in the repo | not caught | not caught |
 
@@ -203,7 +203,13 @@ Recorded so nobody mistakes silence for safety.
 2. **An injected agent can corrupt its own repo.** Mitigated by git hygiene,
    not by the sandbox.
 3. **Untrusted MCP servers are unaudited.** Unknown capability, real-data adjacency.
-4. **No confirmation gates** beyond git commits. This costs nothing today
+4. **Zed's sandbox has holes by design.** Since 1.14 it covers only the
+   agent's terminal and fetch tools. Each host in
+   `agent.sandbox_permissions.network_hosts` is an egress path, and ACP
+   agents (Claude Code, Codex, Gemini CLI) bypass profiles, `confirm` and the
+   sandbox entirely, calling their own cloud. None on the host
+   (`docs/IDES.md`).
+5. **No confirmation gates** beyond git commits. This costs nothing today
    because nothing in the stack can send mail or move money. It becomes urgent
    the day something can.
 
