@@ -197,6 +197,27 @@ nothing else. `scripts/client-setup.sh <laptop-name>` prints the steps;
 details in [`docs/LAPTOP.md`](docs/LAPTOP.md). Never port-forward `:22`,
 `:1234`, `:3000` or `:8888`.
 
+A laptop may also run its own oMLX for `local-edit` (edit prediction with
+the tunnel down, ADR 0033; `client/edit-model.sh laptop-up`). Lock it the
+same way as the host's: bound to `127.0.0.1`, an API key required, and
+**CORS off**. oMLX's own default allows every origin (`"cors_origins":
+["*"]`), which lets any web page you visit try requests against it. In
+`~/.omlx/settings.json` set `"server": {"cors_origins": []}`, then:
+
+```bash
+brew services restart omlx
+```
+
+Check that a cross-site preflight gets no `access-control-allow-origin`
+header back:
+
+```bash
+curl -s -o /dev/null -D - -X OPTIONS http://127.0.0.1:8000/v1/models -H 'Origin: https://example.com' -H 'Access-Control-Request-Method: GET' | grep -i access-control-allow-origin
+```
+
+No output means CORS is off. The host's `scripts/omlx.sh up` writes
+`cors_origins: []` itself, and preflight fails if it is on.
+
 ## Using an AI assistant with this repo
 
 Claude Code reads `CLAUDE.md`; Cursor reads `AGENTS.md` (a symlink to it) and
@@ -243,6 +264,8 @@ removed gateway (`:4000`, `:11434`, LiteLLM); never read
 - `docs/MCP.md` includes a worked example of confining networked tools to a
   named Zed profile; the example server is not installed.
 - Prompt-injection / agent containment: `docs/THREAT-MODEL.md`, ADR 0007.
+- Every oMLX, host or laptop, binds `127.0.0.1`, requires a key, and has
+  CORS off (see *Laptops*).
 
 ## Layout
 
