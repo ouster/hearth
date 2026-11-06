@@ -1,9 +1,13 @@
 #!/bin/bash
-# Set the Apple GPU wired limit to 56 GB and keep it across reboot (ADR 0027).
-# 64 GB machine, 8 GB left for macOS. Re-run asks for the admin password.
+# Set the Apple GPU wired limit to RAM minus 8 GB and keep it across reboot
+# (ADR 0027, 0031): 57344 MB on 64 GB, 40960 MB on 48 GB. Matches the oMLX
+# memory guard in scripts/omlx.sh. Re-run asks for the admin password.
 set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "${ROOT}/scripts/lib.sh"
 
-MB=57344
+GB="$(hearth_gpu_ceiling_gb)" || { echo "iogpu-wired: cannot read hw.memsize" >&2; exit 2; }
+MB=$(( GB * 1024 ))
 LABEL="com.hearth.iogpu-wired"
 DEST="/Library/LaunchDaemons/${LABEL}.plist"
 

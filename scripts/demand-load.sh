@@ -9,8 +9,9 @@
 # whatever is loaded, so `up` confirms this role is really loaded before it
 # returns 0.
 #
-# Both roles may be loaded together (ADR 0028). `up` does not unload the
-# resident. `--evict` still does, for a run that needs the machine to itself.
+# On a 64 GB host both roles may be loaded together (ADR 0028): `up` does
+# not unload the resident, and `--evict` still does, for a run that needs the
+# machine to itself. Below a 56 GB GPU ceiling `up` always evicts (ADR 0031).
 # `down` unloads this role. If the resident was evicted, `down` loads it again.
 #
 # Exit 0 ok, 1 refused or failed, 2 could not run.
@@ -23,6 +24,12 @@ ROLE="${1:-}"; ACTION="${2:-}"; EVICT=0
 [ "${3:-}" = "--evict" ] && EVICT=1
 [ -n "$ROLE" ] && { [ "$ACTION" = up ] || [ "$ACTION" = down ]; } || { sed -n '2,6p' "$0"; exit 2; }
 hearth_demand_roles | grep -qxF "$ROLE" || { echo "could not run: ${ROLE} is not a load=demand role in roles.tsv" >&2; exit 2; }
+# Below a 56 GB ceiling (a 48 GB Mac) the pair does not fit: `up` always
+# evicts the resident, and `down` brings it back (ADR 0031).
+if [ "$ACTION" = up ] && [ "$EVICT" = 0 ] && ! hearth_coload_ok; then
+  EVICT=1
+  echo "GPU ceiling $(hearth_gpu_ceiling_gb || echo ?) GB is under ${HEARTH_COLOAD_MIN_GB} GB: ${ROLE} cannot load beside the resident, evicting it." >&2
+fi
 holder="$(lsof -nP -iTCP:"${HEARTH_PORT}" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1}')"
 case "$holder" in
   Python|python*|omlx)

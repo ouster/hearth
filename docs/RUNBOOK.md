@@ -10,7 +10,7 @@ Start, stop, diagnose. oMLX serves `127.0.0.1:1234` from `~/.hearth/models`
 |---|---|---|
 | Server | `127.0.0.1:1234` | oMLX, `scripts/omlx.sh up`. `down` stops it |
 | Weights | `~/.hearth/models` | the directories named in `config/roles.tsv` |
-| Roles | `config/roles.tsv` | `local-main` resident, 128K × 3. `local-deep` loads beside it (ADR 0028) |
+| Roles | `config/roles.tsv` | `local-main` resident, 128K × 3. `local-deep` loads beside it on 64 GB, evicts it on 48 GB (ADR 0028, 0031) |
 | Token | `~/.config/hearth/env`, mode 600 | `OMLX_HOST_TOKEN`. Scripts pass it to the server as `OMLX_API_KEY` |
 | Server settings | `~/.omlx/settings.json` (mode 600) | written by `scripts/omlx.sh up`: loopback, CORS off, no model fallback |
 | Remote Login (sshd) | `:22` | laptops' tunnel; their keys are `restrict`ed to `-L` `:1234`/`:3000`/`:8888`, with `-R` denied (`scripts/client-setup.sh --update-keys` brings old keys up to date) |
@@ -61,10 +61,12 @@ trim line appears. oMLX does not emit that line today, so it stays quiet.
 
 `scripts/boot.sh` runs `scripts/omlx.sh up`. It serves `local-main` from
 the copy in `~/.hearth/models` on `127.0.0.1:1234`, with the host token, a
-56 GB memory guard, an 8 GB RAM cache, and a 20 GB SSD cache. `ask-deep`
-loads `local-deep` beside `local-main` and unloads `local-deep` on the way
-out. The GPU wired limit is 57344 MB (56 GB), installed by
-`scripts/iogpu-wired.sh`.
+memory guard of RAM minus 8 GB, an 8 GB RAM cache (4 GB below 64 GB RAM),
+and a 20 GB SSD cache. On a 64 GB host `ask-deep` loads `local-deep` beside
+`local-main`; on 48 GB it evicts `local-main` for the session (ADR 0031).
+Either way it unloads `local-deep` on the way out. The GPU wired limit is the
+same RAM minus 8 (57344 MB on 64 GB, 40960 MB on 48 GB), installed by
+`scripts/iogpu-wired.sh`. Preflight warns if either differs.
 `scripts/omlx.sh bench` checks thinking, tools, and a repeated 30K prompt.
 `scripts/omlx.sh down` stops oMLX and leaves the port empty.
 A reboot starts oMLX again.
@@ -98,8 +100,8 @@ ai-restart                     # oMLX down, then up, on 127.0.0.1:1234
 ai-log                         # tail -f ~/Library/Logs/hearth-omlx.log
 ```
 
-Footprint of the model worker (the number that matters against the 56 GB
-GPU ceiling — RSS understates it):
+Footprint of the model worker (the number that matters against the
+GPU ceiling, RAM minus 8 — RSS understates it):
 
 ```bash
 footprint -p "$(cat ~/.omlx/hearth.pid)" | awk '/Footprint:/'

@@ -6,9 +6,11 @@ copies: Zed `display_name` labels (`scripts/zed-sync.sh`) and the key plus
 weights path in `pins/digests.tsv` (`scripts/pin-digests.sh`). (Before ADR 0016
 the second file was `litellm/config.yaml`.)
 
-**Hardware envelope:** 64 GB unified. macOS's default GPU cap is ~75% above 36 GB
-(~48 GB). This host sets `iogpu.wired_limit_mb` to 57344, so the ceiling is **56 GB**
-(RAM minus 8) and the oMLX guard matches it (ADR 0027). The resident set matters more than any single
+**Hardware envelope:** the ceiling is installed RAM minus 8 GB (ADR 0031):
+**56 GB** on the 64 GB host, **40 GB** on a 48 GB host. `iogpu.wired_limit_mb`
+and the oMLX guard both follow it. macOS's default GPU cap (~75% of RAM)
+applies until `scripts/iogpu-wired.sh` runs. `local-deep` loads beside
+`local-main` only at a 56 GB ceiling; below that it evicts it. The resident set matters more than any single
 model's size — see the measurement below.
 
 ## Live — oMLX (ADR 0026)
@@ -19,7 +21,7 @@ oMLX serves these from `~/.hearth/models`. Machine-read copy:
 | Role | Model key | Source | Size | Load | Set | Why |
 |---|---|---|---|---|---|---|
 | `local-main` | `qwen3.6-35b-a3b-mlx` | `lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a` | 20.4 GB | 128K × 3 parallel, no draft, **thinking on (set by `scripts/omlx.sh`)** | 2026-11-06 | MoE, ~3B active, 4-bit. Returned after the 2026-11-06 benches: faster decode, the better long-context answer, c3 30/30 with TTFT p50 60.7 s against the previous resident's 79.2 s. Short tasks emit about 2.2× the tokens. Peak 34.0 GB. ADR 0030. Native window 262,144 |
-| `local-deep` | `qwen3.8-27b-mlx` | `lmstudio-community/Qwen3.8-27B-MLX-4bit` @ `6067b15` | 16.1 GB | 64K × 1, **on demand**: `ask-deep` loads it beside `local-main` and unloads it on the way out | 2026-11-01 | Dense 27B. Best `bench/tasks` 03 answer of the three benched; ~26 tok/s and 2.5–5.5× the tokens of the 26B-A4B, so 10–24× slower. For hard one-off questions, never agent loops. Thinks by default (its template). Beside the resident, both peaked at 49.9 GB on 2026-11-01, over the old ~48 GB cap, and the resident's requests timed out during a long prefill. The cap is now 56 GB, so the two may be loaded together (ADR 0028). ADR 0020 |
+| `local-deep` | `qwen3.8-27b-mlx` | `lmstudio-community/Qwen3.8-27B-MLX-4bit` @ `6067b15` | 16.1 GB | 64K × 1, **on demand**: `ask-deep` loads it beside `local-main` and unloads it on the way out | 2026-11-01 | Dense 27B. Best `bench/tasks` 03 answer of the three benched; ~26 tok/s and 2.5–5.5× the tokens of the 26B-A4B, so 10–24× slower. For hard one-off questions, never agent loops. Thinks by default (its template). Beside the resident, both peaked at 49.9 GB on 2026-11-01, over the old ~48 GB cap, and the resident's requests timed out during a long prefill. The cap is now 56 GB, so the two may be loaded together on 64 GB (ADR 0028). On a 48 GB host (40 GB ceiling) `ask-deep` evicts `local-main` instead (ADR 0031). ADR 0020 |
 | `cloud-cheap` | `gemini-3.6-flash` | Google, `ask-cloud` only | — | — | 2026-10-22 | 1M ctx, 65K output. ADR 0014 |
 
 **Resident set:** concurrency-3 peak 34.0 GB at 128K × 3, ~30K-token prompts
@@ -168,7 +170,7 @@ whatever is on disk. The embedding pin was removed with the role (ADR 0018).
    this file
 2. Bench it against the incumbent: `scripts/concurrency-bench.sh` and
    `bench/tasks/` (rule 5). Same settings as the last baseline
-3. Check the footprint fits under the 56 GB ceiling with `local-main` already resident
+3. Check the footprint fits under the ceiling (RAM minus 8: 56 GB on 64, 40 GB on 48) with `local-main` already resident
 4. Update this table and `config/roles.tsv` together, then `scripts/omlx.sh up`
    and `scripts/zed-sync.sh`
 5. `scripts/tool-smoke.sh openai http://127.0.0.1:1234/v1 local-main`

@@ -128,11 +128,33 @@ print("omlx_host=%s" % shlex.quote(str(s.get("host") or "")))
 print("omlx_port=%s" % shlex.quote(str(s.get("port") or "")))
 print("omlx_cors=%s" % shlex.quote("off" if cors == [] else "on"))
 print("omlx_fallback=%s" % shlex.quote("off" if fb is False else "on"))
+g = (d.get("memory") or {}).get("memory_guard_custom_ceiling_gb")
+print("omlx_guard=%s" % shlex.quote("%g" % g if isinstance(g, (int, float)) else ""))
 ' "$OMLX_SETTINGS")"
   [ "$omlx_host" = "127.0.0.1" ] && ok "bind ${omlx_host}" || bad "bind ${omlx_host:-?}, want 127.0.0.1"
   [ "$omlx_port" = "$HEARTH_PORT" ] && ok "port ${HEARTH_PORT}" || bad "port ${omlx_port}, want ${HEARTH_PORT}"
   [ "$omlx_cors" = "off" ] && ok "CORS off" || bad "CORS on — any website you visit could call the server"
   [ "$omlx_fallback" = "off" ] && ok "model fallback off" || bad "model fallback on — an unknown name can be answered by another model"
+  if want_gb=$(hearth_gpu_ceiling_gb); then
+    [ "$omlx_guard" = "$want_gb" ] && ok "memory guard ${omlx_guard} GB (RAM minus ${HEARTH_OS_RESERVE_GB})" \
+      || wrn "memory guard ${omlx_guard:-unset} GB, want ${want_gb} — scripts/omlx.sh up rewrites it (ADR 0031)"
+  fi
+fi
+
+# ---------------------------------------------------------------- GPU envelope
+hdr "GPU envelope"
+if want_gb=$(hearth_gpu_ceiling_gb); then
+  wired=$(/usr/sbin/sysctl -n iogpu.wired_limit_mb 2>/dev/null || true)
+  want_mb=$(( want_gb * 1024 ))
+  if [ "$wired" = "$want_mb" ]; then
+    ok "iogpu.wired_limit_mb ${wired} ($(hearth_ram_gb) GB RAM minus ${HEARTH_OS_RESERVE_GB})"
+  else
+    wrn "iogpu.wired_limit_mb ${wired:-?}, want ${want_mb} — scripts/iogpu-wired.sh (0 is the macOS default, ~75% of RAM)"
+  fi
+  hearth_coload_ok && ok "local-deep may load beside local-main (ceiling ${want_gb} GB)" \
+    || ok "local-deep evicts local-main (ceiling ${want_gb} GB < ${HEARTH_COLOAD_MIN_GB})"
+else
+  er "cannot read hw.memsize"
 fi
 
 # ---------------------------------------------------------------- secrets

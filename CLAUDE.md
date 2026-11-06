@@ -18,7 +18,7 @@ the port empty. Cloud (Gemini) is reached by each tool with its own key.
 
 Read `docs/ROUTING.md` before suggesting any routing change.
 
-**Serving:** login boot starts oMLX (ADR 0026, 0028). `ask-deep` loads `local-deep` beside `local-main` and unloads `local-deep` on the way out.
+**Serving:** login boot starts oMLX (ADR 0026, 0028). On a 64 GB host `ask-deep` loads `local-deep` beside `local-main`; below that it evicts `local-main` (ADR 0031). Either way it unloads `local-deep` on the way out and `local-main` is loaded again.
 
 Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgres is the removed gateway — never suggest commands against it. `docs/MIGRATION-LMSTUDIO.md` is the record of the earlier cut onto LM Studio, which oMLX replaced.
 
@@ -34,8 +34,8 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
    Same discipline for MCP servers: client config docs (`docs/IDES.md`) and
    `docs/MCP.md`.
 
-   Live: `local-main` (oMLX identifier, resident), `local-deep` (loaded beside
-   `local-main` for an `ask-deep` session, ADR 0020 and 0028 — never call it
+   Live: `local-main` (oMLX identifier, resident), `local-deep` (loaded for an
+   `ask-deep` session, beside `local-main` on 64 GB, ADR 0020, 0028, 0031 — never call it
    unless loaded), `cloud-cheap`
    (Gemini, `ask-cloud` only). `local-code` / `local-chat` are alias names that
    mean `local-main` (D1). Dormant: `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`, `cloud-frontier-fast` — no keys.
@@ -65,10 +65,11 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
    still loads whatever is on disk; say so rather than implying roles are
    immutable. Re-record only after re-benching.
 
-7. **Check the RAM envelope.** 64 GB total. macOS's default GPU cap is ~48 GB
-   (75% above 36 GB). This host sets `iogpu.wired_limit_mb` to 57344, so the
-   ceiling is 56 GB (RAM minus 8), and the oMLX memory guard matches it (ADR 0027).
-   `local-main` (ADR 0030) peaks at 34.0 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-06, oMLX process footprint). `local-deep` may be loaded beside it (ADR 0028). Say when a suggestion will not fit, or
+7. **Check the RAM envelope.** The ceiling is installed RAM minus 8 GB
+   (ADR 0031): `iogpu.wired_limit_mb` and the oMLX memory guard both follow it.
+   64 GB host → 56 GB; 48 GB host → 40 GB. macOS's default cap (~75% of RAM)
+   applies until `scripts/iogpu-wired.sh` runs.
+   `local-main` (ADR 0030) peaks at 34.0 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-06, oMLX process footprint). `local-deep` loads beside it only at a 56 GB ceiling or above (ADR 0028); below that `ask-deep` evicts `local-main` for the session (ADR 0031). Say when a suggestion will not fit, or
    will evict something that needs to stay loaded — on this machine the resident
    set matters more than any one model's quality.
 

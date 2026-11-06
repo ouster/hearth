@@ -27,9 +27,11 @@ LOG="${HOME}/Library/Logs/hearth-omlx.log"
 LABEL="com.hearth.omlx"
 PLIST="${HOME}/Library/LaunchAgents/${LABEL}.plist"
 SETTINGS="${OMLX_HOME}/settings.json"
-HOT_CACHE="8GB"
+# Guard and hot cache follow installed RAM (ADR 0031): 56 GB / 8 GB on a
+# 64 GB host, 40 GB / 4 GB on 48 GB. The SSD cache is disk, not RAM.
+GUARD_GB="$(hearth_gpu_ceiling_gb)" || { echo "omlx: cannot read hw.memsize" >&2; exit 2; }
+if [ "$(hearth_ram_gb)" -ge 64 ]; then HOT_CACHE="8GB"; else HOT_CACHE="4GB"; fi
 SSD_CACHE="20GB"
-GUARD_GB=56
 CMD="${1:-status}"
 
 fail() { echo "omlx: $*" >&2; exit 1; }

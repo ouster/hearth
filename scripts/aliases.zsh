@@ -63,10 +63,12 @@ alias ask-architect='_aider_local'
 # visible, and nothing is evicted because there is only one model.
 ask-arch() { _aider_local --architect --editor-model openai/local-main "$@"; }
 
-# Slow, careful local model for hard one-off questions (ADR 0020, 0028).
-# Still local: safe for sensitive work. It loads beside local-main. The
-# session unloads it on the way out, including Ctrl-C, and leaves local-main
-# loaded. Idempotent: INT and EXIT can both fire.
+# Slow, careful local model for hard one-off questions (ADR 0020, 0028, 0031).
+# Still local: safe for sensitive work. On a 64 GB host it loads beside
+# local-main. Below that it evicts local-main, so Zed, aider and laptops get
+# errors until the session ends. The session unloads it on the way out,
+# including Ctrl-C, and local-main is loaded again. Idempotent: INT and EXIT
+# can both fire.
 _hearth_ask_deep_restore() {
   [ "${_hearth_ask_deep_state:-}" = loaded ] || return 0
   _hearth_ask_deep_state=restored
@@ -80,7 +82,7 @@ ask-deep() {
   _hearth_ask_deep_state=$("${HEARTH_ROOT}/scripts/demand-load.sh" local-deep up) || return 1
   # already: a manual `up`, or a session this shell did not start. Leave it
   # loaded. loaded: this call brought it in, so the trap unloads it on the
-  # way out, including Ctrl-C. local-main stays loaded either way.
+  # way out, including Ctrl-C, and restores local-main if it was evicted.
   if [ "$_hearth_ask_deep_state" != loaded ]; then
     echo "local-deep is already loaded; this session will not unload it." >&2
     echo "When you are finished: scripts/demand-load.sh local-deep down" >&2

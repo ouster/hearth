@@ -156,7 +156,16 @@ for r in rows:
     elif v == "error":     a["err"] += 1
 
 print(f"# Bench — {stamp}\n")
-print("Host: M4 Max, 64 GB. oMLX on :1234. Seconds are wall time per request, including prefill.\n")
+import subprocess
+def _sysctl(k):
+    try:
+        return subprocess.run(["/usr/sbin/sysctl", "-n", k], capture_output=True, text=True).stdout.strip()
+    except OSError:
+        return ""
+_chip = _sysctl("machdep.cpu.brand_string").replace("Apple ", "") or "unknown chip"
+_ram = _sysctl("hw.memsize")
+_ram = "%d GB" % (int(_ram) // 1073741824) if _ram.isdigit() else "unknown RAM"
+print(f"Host: {_chip}, {_ram}. oMLX on :1234. Seconds are wall time per request, including prefill.\n")
 print("## Verbosity and speed\n")
 print("Tokens emitted is the number that matters. Throughput barely varies between")
 print("models on this machine — it is memory-bandwidth bound — so wall-clock is")

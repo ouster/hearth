@@ -168,6 +168,35 @@ hearth_demand_roles() {
   awk -F'\t' '!/^[[:space:]]*(#|$)/ && $2 == "omlx" && $8 == "demand" {print $1}' "${root}/config/roles.tsv"
 }
 
+# Memory envelope, sized from installed RAM (ADR 0031). Integers, GB.
+# Ceiling = RAM minus 8 for macOS: 56 on 64 GB, 40 on 48 GB. It is both the
+# iogpu wired limit and the oMLX memory guard.
+HEARTH_OS_RESERVE_GB=8
+# local-main and local-deep load together only at or above this ceiling.
+# Combined peak measured 49.9 GB with the smaller resident; ~53 GB estimated
+# with the current one (ADR 0028, 0030).
+HEARTH_COLOAD_MIN_GB=56
+
+hearth_ram_gb() {
+  local b
+  b=$(/usr/sbin/sysctl -n hw.memsize 2>/dev/null) || return 1
+  [ -n "$b" ] || return 1
+  printf '%s' $(( b / 1073741824 ))
+}
+
+hearth_gpu_ceiling_gb() {
+  local r
+  r=$(hearth_ram_gb) || return 1
+  printf '%s' $(( r - HEARTH_OS_RESERVE_GB ))
+}
+
+# Exit 0 when local-deep may load beside local-main.
+hearth_coload_ok() {
+  local c
+  c=$(hearth_gpu_ceiling_gb) || return 1
+  [ "$c" -ge "$HEARTH_COLOAD_MIN_GB" ]
+}
+
 # oMLX memory footprint in GB from its pid file, e.g. "24.0". Empty if down.
 hearth_footprint_gb() {
   local pid
