@@ -1,0 +1,36 @@
+import sqlite3
+from typing import Any, Optional
+
+def search_cases(query: str, limit: int = 10) -> list[dict]:
+    conn: Optional[sqlite3.Connection] = None
+    try:
+        conn = sqlite3.connect("cases.db")
+        cursor: sqlite3.Cursor = conn.cursor()
+
+        sql: str = (
+            "SELECT id, citation, court, year, summary "
+            "FROM cases "
+            "WHERE (instr(lower(citation), lower(?)) > 0 "
+            "OR instr(lower(summary), lower(?)) > 0) "
+            "ORDER BY year DESC "
+            "LIMIT ?"
+        )
+        limit_value: int = max(0, limit)
+        params: tuple[str, str, int] = (query, query, limit_value)
+        cursor.execute(sql, params)
+
+        description: Optional[Any] = cursor.description
+        columns: list[str] = []
+        if description is not None:
+            for column: Any in description:
+                columns.append(str(column[0]))
+
+        results: list[dict[str, Any]] = []
+        for row: tuple[Any, ...] in cursor.fetchall():
+            item: dict[str, Any] = dict(zip(columns, row))
+            results.append(item)
+
+        return results
+    finally:
+        if conn is not None:
+            conn.close()

@@ -1,0 +1,13 @@
+model	task	prompt_tokens	tokens	seconds	verdict
+local-main	01-bash-launchd	124	1681	17.2	syntax-ok
+local-main	02-python-mcp-tool	154	2691	27.9	syntax-ok
+local-main	03-refactor-judgment	179	2996	31.4	needs-reading
+local-main	04-long-context	44222	2120	95.2	needs-reading
+qwen3.6	01-bash-launchd	110	3334	21.8	syntax-ok
+qwen3.6	02-python-mcp-tool	144	8058	51.2	syntax-ok
+qwen3.6	03-refactor-judgment	162	6616	42.0	needs-reading
+qwen3.6	04-long-context	43361	2495	55.8	needs-reading
+local-deep	01-bash-launchd	152	20905	762.1	syntax-ok
+local-deep	02-python-mcp-tool	186	20062	706.1	SYNTAX-FAIL
+local-deep	03-refactor-judgment	204	32768	1190.0	needs-reading
+local-deep	04-long-context	43403	4541	388.6	needs-reading

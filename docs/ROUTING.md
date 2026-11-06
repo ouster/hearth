@@ -28,7 +28,7 @@ Route to `local-*` roles (oMLX, `:1234`), always:
 | `cloud-cheap` | bulk non-sensitive work, big context | `ask-cloud` → Gemini directly | live |
 | `local-embed` | — | — | removed 2026-11-01, nothing called it (ADR 0018) |
 | `local-code`, `local-chat` | — | alias names only; mean `local-main` (D1) | collapsed |
-| `cloud-code`, `cloud-frontier*` | — | — | dormant, no keys |
+| `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`, `cloud-frontier-fast` | — | — | dormant, no keys |
 
 ## Enforcement
 

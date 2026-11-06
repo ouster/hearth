@@ -38,7 +38,7 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
    `local-main` for an `ask-deep` session, ADR 0020 and 0028 — never call it
    unless loaded), `cloud-cheap`
    (Gemini, `ask-cloud` only). `local-code` / `local-chat` are alias names that
-   mean `local-main` (D1). Dormant: `cloud-code`, `cloud-frontier*` — no keys.
+   mean `local-main` (D1). Dormant: `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`, `cloud-frontier-fast` — no keys.
 
 2. **oMLX never holds a cloud model.** There is no router, so there are no
    fallbacks; if `local-main` is down, fail loudly. No script adds a remote backend

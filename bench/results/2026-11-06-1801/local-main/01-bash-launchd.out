@@ -1,0 +1,19 @@
+```bash
+#!/bin/bash
+set -euo pipefail
+
+SERVICE_LABEL="com.example.service"
+PLIST_PATH="$HOME/Library/LaunchAgents/${SERVICE_LABEL}.plist"
+
+if [ ! -f "$PLIST_PATH" ]; then
+    echo "Error: The plist file '$PLIST_PATH' does not exist." >&2
+    exit 1
+fi
+
+if ! launchctl list "$SERVICE_LABEL" >/dev/null 2>&1; then
+    echo "Service '$SERVICE_LABEL' is not loaded. Loading now..."
+    launchctl load "$PLIST_PATH"
+else
+    echo "Service '$SERVICE_LABEL' is already loaded."
+fi
+```

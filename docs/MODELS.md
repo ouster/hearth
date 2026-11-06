@@ -48,7 +48,7 @@ stack.
 
 ## Dormant
 
-No keys. In the gateway era these were commented-out blocks in `config.yaml`;
+Four roles, no keys: `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`, `cloud-frontier-fast`. In the gateway era these were commented-out blocks in `config.yaml`;
 after ADR 0016 a cloud role would be a `gemini` (or other explicit cloud
 backend) row in `config/roles.tsv` plus an alias that passes its own key —
 never an `omlx` row. A remote model on `:1234` would break the boundary.

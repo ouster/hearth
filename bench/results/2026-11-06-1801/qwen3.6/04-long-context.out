@@ -1,0 +1,11 @@
+Based strictly on the provided file:
+
+1. **Fallback chain for `cloud-frontier`:** The document explicitly states there is **no fallback chain**. The `cloud-frontier*` roles are listed as "dormant, no keys," and the routing rules confirm: *"There is no router, so nothing can quietly reroute a request to a cloud model."*
+
+2. **Dormant roles and what each is blocked on:**
+   - `cloud-code`: Blocked on an **Anthropic API key** (deliberately unset; requires a separate Console key).
+   - `cloud-frontier`: Blocked on an **OpenRouter key**.
+   - `cloud-frontier-direct`: Blocked on a **Moonshot key**.
+   - `cloud-frontier-fast`: Blocked on a **Fireworks key**.
+
+3. **Postgres port and why:** The file notes Postgres was bound to `:5433` (during the gateway era). The specific reason **why that port was chosen is not in the file**.

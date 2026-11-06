@@ -48,7 +48,7 @@ Models are addressed by ROLE, never by vendor model name:
   local-chat              alias of local-main
   cloud-cheap             Gemini, via ask-cloud only — bulk non-sensitive work
 
-cloud-code and cloud-frontier* are dormant: no keys.
+cloud-code, cloud-frontier, cloud-frontier-direct, and cloud-frontier-fast are dormant: no keys.
 
 Concrete model names are written by hand in exactly two places:
 config/roles.tsv and docs/MODELS.md. Nowhere else. Generated copies

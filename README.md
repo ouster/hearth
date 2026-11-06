@@ -77,13 +77,19 @@ Current Xcode does not include that component in the base install. Homebrew's
 ```bash
 xcode-select --install
 sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+xcodebuild -runFirstLaunch
 xcodebuild -downloadComponent MetalToolchain
 ```
 
 The Metal download is also Xcode → Settings → Components → Metal Toolchain.
-`xcrun --find metal` should print a path. The `xcode-select --switch` after
-`--install` matters: the tools installer can move the active directory onto
-Command Line Tools, and the kernel build then cannot see `metal`.
+`xcodebuild -runFirstLaunch` installs the packages Xcode needs before it can
+download a component. Without that, `xcodebuild` fails to load a required
+plug-in. If the download then fails fetching the catalog, run the same
+download command again. `xcrun -sdk macosx metal --version` prints the
+compiler version once the toolchain is installed. The `metal` binary inside
+Xcode stays a stub until then. The `xcode-select --switch` after `--install`
+matters: the tools installer can move the active directory onto Command Line
+Tools, and the kernel build then cannot see `metal`.
 
 ```bash
 brew tap jundot/omlx https://github.com/jundot/omlx

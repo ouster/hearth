@@ -1,0 +1,59 @@
+Here are the identified bugs and the corrected solution.
+
+### Identified Bugs
+
+1.  **Floating Point Precision (Binary Representation)**
+    *   **The Issue:** Python `float` uses 64-bit binary representation. Currency prices (decimal) like `19.99` cannot be represented exactly in binary (they become repeating fractions).
+    *   **The Break:** This causes "trailing dust" in calculations. For example, summing `10.10` three times might result in `30.299999999999997` rather than `30.30`.
+    *   **Impact:** Accumulates arithmetic errors across multiple items, leading to accounting imbalances (pennies off).
+
+2.  **The `round()` Function Rounding Bias**
+    *   **The Issue:** The built-in `round()` function relies on the binary approximation of the float.
+    *   **The Break:** Due to representation errors, values exactly at the rounding boundary are misinterpreted.
+        *   Example: `round(2.675, 2)` results in `2.67`.
+        *   Reason: `2.675` is stored internally as `2.674999...`. The function rounds down, causing a 1-cent financial loss per transaction.
+
+3.  **Integer Division Behavior**
+    *   **The Issue:** The expression `discount_pct / 100` is risky if `discount_pct` is an integer (e.g., `5`).
+    *   **The Break:** In Python 2 (or specific strict contexts), this performs integer division, resulting in `0`. In Python 3, it works, but it relies on float promotion, reintroducing the precision loss mentioned in Bug 1.
+
+4.  **Variable Initialization and Type Coercion**
+    *   **The Issue:** `total = 0` initializes the accumulator as an integer.
+    *   **The Break:** While Python auto-promotes to float during addition, this obscures the intent of the variable. It should be initialized as the target financial type.
+
+5.  **Structural Robustness (Indexing)**
+    *   **The Issue:** Using `range(len(items))` and `items[i]` is inefficient and error-prone.
+    *   **The Break:** It throws an `IndexError` if the list is mutated during iteration or if `items` is passed as a non-sequence type. It is also an anti-pattern in Python.
+
+---
+
+### Corrected Version
+
+The following implementation uses the `decimal` module to guarantee precision and standard rounding behavior.
+
+```python
+from decimal import Decimal, ROUND_HALF_UP
+
+def apply_discount(items, discount_pct):
+    # 1. Initialize total as Decimal to avoid implicit float promotion
+    total = Decimal('0')
+    
+    # 2. Convert discount percentage to Decimal string to preserve exact value
+    discount_rate = Decimal(str(discount_pct)) / Decimal('100')
+
+    # 3. Iterate directly (fixes index error and style issues)
+    for item in items:
+        # 4. Convert price and qty to Decimal strings 
+        # This prevents float conversion errors immediately.
+        price = Decimal(str(item['price']))
+        qty = Decimal(str(item.get('qty', 1)))
+        
+        total += price * qty
+
+    # 5. Apply discount using Decimal arithmetic
+    if discount_rate > Decimal('0'):
+        total -= total * discount_rate
+
+    # 6. Use quantize for precise currency rounding (Standard "Half Up")
+    return total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+```

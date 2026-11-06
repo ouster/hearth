@@ -1,0 +1,2900 @@
+# Architecture
+
+Reference host: Apple Silicon Mac, 64 GB unified memory, macOS. oMLX serves
+local roles on `127.0.0.1:1234` from `~/.hearth/models` (ADR 0026).
+`scripts/omlx.sh down` stops oMLX and leaves the port empty (ADR 0028).
+Do not also run headless `llmster`. The gateway era is in `docs/HISTORY.md`.
+
+## Shape
+
+```mermaid
+flowchart TB
+    subgraph onHost["On the host"]
+        aider["aider"]
+        zed["Zed"]
+        scripts["scripts / benches"]
+        webui["Open WebUI :3000<br/>(Podman)"]
+        sbx["sandboxed.sh agents"]
+        srv["oMLX 127.0.0.1:1234<br/>local-main: 128K x 3<br/>local-deep loads beside it<br/>token required"]
+    end
+
+    laptop["Laptop<br/>SSH tunnel, own token"]
+    cloud["Gemini<br/>ask-cloud only, tool's own key"]
+
+    aider --> srv
+    zed --> srv
+    scripts --> srv
+    webui -->|"host.containers.internal"| srv
+    sbx -->|"only allowed egress"| srv
+    laptop -->|"ssh -L, tunnel-only key"| srv
+    aider -.-> cloud
+
+    classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
+    classDef leaveCls fill:#FAEEDA,stroke:#854F0B,color:#633806
+    class srv localCls
+    class cloud leaveCls
+```
+
+Everything addresses **roles**, never model names. Concrete models appear in
+exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
+
+## Roles
+
+| Role | Backend | What |
+|---|---|---|
+| `local-main` | oMLX | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0024) |
+| `local-deep` | oMLX | slower, more careful model for hard one-off questions. Loaded **beside** `local-main` (ADR 0028). `ask-deep` unloads it on the way out and leaves `local-main` loaded. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up`) |
+| `cloud-cheap` | Gemini | reached directly by `ask-cloud`; never loaded into oMLX |
+
+`local-code` and `local-chat` were collapsed into `local-main` (D1): two heavy
+models cannot both stay resident with 3 × 128K slots, and evicting the agent
+model was failure F2. The old alias names still work and mean `local-main`.
+
+`scripts/omlx.sh up` loads the resident role from `~/.hearth/models`. A
+demand role stays unloaded until `scripts/demand-load.sh` or `ask-deep`.
+
+## The privacy boundary
+
+There is no router and no key scope. The boundary is where models live:
+
+- **oMLX holds only local models.** Anything sent to `:1234` stays on
+  the host by construction. Rule: no script adds a cloud backend to
+  `config/roles.tsv` except as an explicit cloud row (`gemini`).
+- **Cloud needs a provider key in the calling tool.** Only `ask-cloud` passes
+  one, per invocation. Host Zed has no cloud provider (D3).
+- **Sandboxed agents can reach `127.0.0.1:1234` only**, so they cannot reach
+  cloud at all.
+
+What this does **not** do, stated plainly: tokens are not scoped to models
+(any valid token reaches every loaded model — fine while all are local), and
+there is no spend cap or per-request log. A Gemini quota in the Google Cloud
+console is the cap.
+
+## Server settings
+
+`scripts/omlx.sh up` writes `~/.omlx/settings.json` (mode 600). No token →
+401, wrong token → 401, host token → 200.
+
+| Setting | Value |
+|---|---|
+| Bind | `127.0.0.1:1234` — laptops use an SSH tunnel |
+| Authentication | on |
+| CORS | off |
+| Model fallback | off |
+| MCP | off |
+
+## Process supervision
+
+oMLX serves `local-main` on `127.0.0.1:1234` from `~/.hearth/models` (ADR 0026).
+`ask-deep` loads `local-deep` from the same tree beside it (ADR 0028).
+Login runs `scripts/boot.sh`, which runs `scripts/omlx.sh up`, then starts
+Podman, SearXNG and Open WebUI. `scripts/omlx.sh down` stops oMLX and
+leaves the port empty.
+
+### Environment files
+
+| File | Read by | Contains |
+|---|---|---|
+| `~/.config/hearth/env` (mode 600) | aliases (`_hearth_var`), scripts | `OMLX_HOST_TOKEN`, `GOOGLE_API_KEY` (moved from `~/.zshenv.local` 2026-10-31, where it was exported into every shell) |
+
+The aliases read single values from these files and inject them per command;
+they never `source` them into the interactive shell. Do not export a provider
+key from `~/.zshenv` or `~/.zshrc`: every process, including local aider and
+anything an agent spawns, would then hold it.
+
+## Verification
+
+| Script | Answers | Exit |
+|---|---|---|
+| `healthcheck.sh` | host token 200 (positive control), no/wrong token 401, each role answers, oMLX on :1234, LAN silent, no CORS, an unknown model name is refused or warned | 0 / 1 / 2 |
+| `preflight.sh` | roles.tsv well-formed and local-only on omlx, weights on disk and in MODELS.md, rule 1, oMLX settings, secrets placement, weight drift, autostart, bash 3.2 / CRLF | 0 / 1 / 2 |
+| `status.sh` | one glance, no model calls | — |
+| `omlx.sh status` | whether oMLX is listening and which roles it reports | 0 / 1 |
+| `pin-digests.sh --check [--deep]` | weights unchanged since recorded (D4) | 0 / 1 / 2 |
+| `tool-smoke.sh` | Zed-like read → write tool loop | 0 / 1 |
+| `concurrency-bench.sh`, `bench.sh` | load behaviour; quality tasks | — |
+| `sandbox-probe.sh` | sandboxed agents reach :1234 and nothing else | 0 / 1 |
+
+Exit 2 always means "could not run", never "found a problem".
+
+An unknown model name can be answered by the loaded role. Nothing new loads,
+but a typo'd model id silently gets `local-main`. `healthcheck.sh` reports
+it as a warning.
+
+## Measured (2026-10-31)
+
+| | Ollama via LiteLLM (phase 0) | llmster, 64K × 3 (phase 1) |
+|---|---|---|
+| c1 TTFT p95, 28K prompt | 21.0 s | 19.9 s |
+| c3 TTFT p95 | 65.8 s | 59.9 s |
+| c3 total p50 | 40.3 s | 61.0 s |
+| Peak footprint | 37.0 GB (1 slot) | 29.7 GB (3 slots) |
+
+Prefill was still serialised on that MLX engine; `--parallel` batches
+decode, so all three requests in a round finish together. The wins are
+memory, no evictions and no gateway hop, not concurrency.
+`bench/results/2026-10-31-phase0`, `…-phase1`. The live server is the LM
+Studio app (D6), loaded at 128K × 3 (ADR 0017). Those rows are the 64K
+measurement, not a claim that llmster is still running. The current
+`local-main` (ADR 0024) at 128K × 3: c1 TTFT p95 25.0 s, c3 total p95 75.2 s,
+peak 25.2 GB (`bench/results/2026-11-01-gemma-concurrency`). The resident
+from ADR 0023, same day, was c1 TTFT p95 21.8 s, c3 total p95 65.5 s,
+peak 29.7 GB (`bench/results/2026-11-01-128k`).
+
+## The second boundary: containment
+
+The local/cloud split governs **where data goes on purpose**. It has no
+jurisdiction over a compromised agent — an injected aider that `curl`s a
+stolen key to an attacker never touches the model server.
+
+`scripts/sandboxed.sh` closes that channel by denying egress to everything
+except `127.0.0.1:1234`. Verified by `scripts/sandbox-probe.sh` (11/11 on
+2026-10-31, including a deny check on the old `:4000`). Reads are
+deliberately unrestricted; see `docs/THREAT-MODEL.md` and ADR 0007.
+
+| Threat | Model placement | Sandbox |
+|---|---|---|
+| A prompt sends client data to a cloud model | **caught** unless you run `ask-cloud` | not caught |
+| An injected agent exfiltrates a key via curl | not caught | **caught** |
+
+## Known gaps
+
+- **Host SSH accepts passwords** (macOS default). `docs/LAPTOP.md` gives the
+  key-only override; not applied automatically.
+- **`scripts/omlx.sh up` rewrites `~/.omlx/settings.json`.** `healthcheck.sh`
+  checks the live listener and CORS header.
+- **Untrusted MCP servers are unaudited** — `docs/THREAT-MODEL.md` §3.
+- **Zed's built-in `fetch` and `search_web` tools** reach the internet in the
+  Write and Ask profiles; that predates this migration.
+
+# Claude Project spec
+
+Paste the two fields below into claude.ai → Projects → New project.
+Keep this file as the source of truth; when the instructions change here, re-paste.
+
+---
+
+## Title
+
+```
+Hearth — Local + Cloud
+```
+
+## Description
+
+```
+Private-first local inference on a Mac Studio. oMLX serves local
+roles on 127.0.0.1:1234. One cloud path, ask-cloud, calls Gemini with its own
+key. Routing rules, the model registry, and the clients (Zed, Open WebUI,
+shell aliases). Roles are re-pointed without rewriting clients.
+```
+
+---
+
+## Custom instructions
+
+```
+# Context
+
+Solo developer. Local inference on this Mac; one cloud caller for work that
+is not sensitive. Uses Zed and Open WebUI. Laptops reach the host through an
+SSH tunnel, not the LAN.
+
+This project covers the AI stack itself — not the applications built on it.
+Source of truth is the hearth repo. Current design: docs/ARCHITECTURE.md.
+
+# Architecture (assume this unless I say otherwise)
+
+oMLX serves on 127.0.0.1:1234. Clients talk OpenAI-compatible
+to that port and name a role. There is no gateway and no LAN bind. ask-cloud
+is the only path that calls a cloud API, and it calls Gemini directly.
+
+Models are addressed by ROLE, never by vendor model name:
+
+  local-main               the resident local model
+  local-deep              slow, careful local model; loaded per ask-deep session
+  local-code              alias of local-main
+  local-chat              alias of local-main
+  cloud-cheap             Gemini, via ask-cloud only — bulk non-sensitive work
+
+cloud-code and cloud-frontier* are dormant: no keys.
+
+Concrete model names are written by hand in exactly two places:
+config/roles.tsv and docs/MODELS.md. Nowhere else. Generated copies
+(Zed display labels, pins/digests.tsv) are written by scripts from roles.tsv.
+
+# Rules
+
+1. Never hardcode a vendor model name outside config/roles.tsv and
+   docs/MODELS.md. Aliases, scripts, IDE settings and code reference roles only.
+   If you catch yourself writing a model tag in a shell alias, stop.
+
+2. Privacy is structural, not advisory. Sensitive private data, PII, any repo I have
+   flagged as holding real data, and anything else I mark sensitive: local
+   roles only. oMLX holds only local models, and only ask-cloud carries
+   a cloud key. If you are writing code or config that could send that class
+   of data to a cloud endpoint, refuse and say why. Never add a cloud provider
+   to host Zed.
+
+3. Treat your own knowledge of models as stale. The field moves faster than your
+   training data. Before asserting a price, a context window, a benchmark result,
+   or that a model exists, search — and give the date of what you found. Do not
+   recommend from memory.
+
+4. State the cost tier whenever you propose a cloud model, in $/M input and
+   $/M output, with the source. Cheap local work should stay local; say so when
+   I am about to spend money on something a 30B model would handle.
+
+5. Nothing replaces a role until it has been benched. New model claims get run
+   against bench/tasks/ and compared to the incumbent before the config changes.
+
+6. Routing and model-choice changes get an ADR in docs/decisions/ — short: context,
+   decision, consequences, date. I already work this way.
+
+7. Shell scripts: portable bash that runs under zsh on macOS. LF line endings only,
+   never CRLF — it breaks launchd and shebangs. Applies to .sh, .plist, configs.
+   macOS /bin/bash is 3.2: no declare -A, no mapfile, no ${x^^}, and guard empty
+   arrays as ${arr[@]+"${arr[@]}"} under set -u. Code that only works on bash 4
+   passes every test I can run and then dies on the target machine.
+
+7a. Every diagram is Mermaid. No ASCII art, no committed SVG or PNG. GitHub
+   renders Mermaid natively, it diffs as text, and it cannot drift out of sync
+   with the prose the way an exported image does. If something genuinely cannot
+   be expressed in Mermaid, use a Markdown table.
+
+8. Work in this order: plan → I refine → I approve → build. Do not start building
+   because a plan looks obviously right. Show me the plan first.
+
+9. Be concise and direct. No preamble, no restating my question back at me, no
+   summarising what you just did at length. If you can cut a sentence and keep the
+   meaning, cut it.
+
+10. When something is uncertain, say so plainly and tell me the cheapest way to
+    find out. Do not fill gaps with confident-sounding guesses.
+
+# Repo layout
+
+  <hearth-repo>/
+    CLAUDE.md              rules for agents working in this repo
+    AGENTS.md              shared agent rules (Zed, aider read this too)
+    docs/
+      ARCHITECTURE.md      how serving is wired
+      ROUTING.md           the decision table: what goes local vs cloud
+      MODELS.md            registry — role → model, date set, why
+      RUNBOOK.md           start, stop, diagnose
+      decisions/           ADRs
+    config/roles.tsv       role → model key, context, slots
+    scripts/               load, healthcheck, bench, sandbox
+    bench/tasks/           fixed prompts for comparing models
+
+# Hardware envelope
+
+64 GB unified, but macOS caps GPU-accessible memory at ~48 GB (75%).
+local-main is one model at 128K × 3 slots; local-deep is swapped in for it on demand (ADR 0020).
+A second heavy model does not fit beside it. Say when a suggestion won't fit.
+```
+
+---
+
+## Knowledge files to attach
+
+Attach these from the repo (re-attach when they change):
+
+- `docs/ARCHITECTURE.md`
+- `docs/ROUTING.md`
+- `docs/MODELS.md`
+- `config/roles.tsv`
+
+Do **not** attach anything containing API keys.
+
+# How this compares to other private-AI setups
+
+> **Historical (gateway era).** Written for the LiteLLM + Ollama stack; superseded by ADR 0016. See `docs/ARCHITECTURE.md` for the current design.
+
+Read 2026-08-02. Two reference points worth knowing about: one person solving
+the same problem from a different angle, and one product solving the piece we
+found most annoying.
+
+---
+
+## Vitalik Buterin — "My self-sovereign / local / private / secure LLM setup"
+
+[April 2026](https://vitalik.eth.limo/general/2026/04/02/secure_llms.html).
+Near-identical brief: *"what kind of AI setup would we build if we took privacy,
+security and self-sovereignty as non-negotiable?"*
+
+### Where we independently landed on the same thing
+
+- **SearXNG** for search, for the same reason — reduce what any single engine
+  learns about you.
+- **AGENTS.md** as the shared instruction file.
+- **Local-first with a deliberate cloud escape hatch.** He hit the same wall we
+  did: local models are fine on well-trodden ground and fall apart on hard
+  problems. He tried and failed to get Qwen3.5:35B to implement BLS-12-381
+  hash-to-point, and sent it to Claude, which one-shotted it. Our `cloud-code`
+  role exists for exactly that moment.
+- **Roughly the same speed floor.** He says "anything slower than 50 tok/sec
+  feels too annoying to be worth it." Our roles run 65–120.
+
+### Where he is ahead — and these are real gaps for us
+
+**1. Sandboxing — closed, after this was written.**
+
+He runs LLM work inside [bubblewrap](https://github.com/containers/bubblewrap):
+`sbox` in any directory creates a sandbox rooted there, and anything started
+inside can only see that directory plus explicit whitelists. Ports, audio and
+filesystem are all constrained.
+
+We had nothing equivalent when this file was first written: `aider` and Zed's
+agent ran with full user permissions, able to read `~/.ssh`, `~/.aws`, every
+repo on the machine, and the gateway's own `.env`. `scripts/sandboxed.sh` and
+ADR 0007 answered that — an SBPL profile that restricts capability rather than
+attempting to detect injection. Different mechanism from bubblewrap, same
+instinct.
+
+**2. A threat model we never wrote down: prompt injection.**
+
+He cites research that roughly **15% of published agent skills contained
+malicious instructions**, and a demonstration where summarising a web page
+caused an agent to download and execute a shell script. Our stack has SearXNG
+wired into a chat UI and agents that read repositories. Both are injection
+surfaces. We have thought hard about where data *goes* and not at all about what
+untrusted content might *make the agent do*.
+
+**3. Human confirmation as a firewall.**
+
+His messaging daemon can read messages and send only to himself autonomously.
+Sending to anyone else requires explicit confirmation. His framing is the one
+worth stealing:
+
+> the new "two-factor confirmation" is that the two factors are the human and
+> the LLM ... the hope is that humans and LLMs fail in distinct ways
+
+We have `--no-auto-commits` and Zed's tool-restricted profiles, which are the
+same instinct applied only to code. Nothing gates an action with consequences.
+
+**4. A local `world_knowledge` corpus.**
+
+A Wikipedia dump plus manuals for things he cares about, so questions answerable
+locally never reach a search engine. For a regulated domain that would be
+reference docs and internal playbooks — the queries most worth not leaking. Our `local-embed` role
+exists and indexes nothing.
+
+### Where we are ahead
+
+**Multi-machine access.** He dismisses the DGX Spark partly because *"you have to
+figure out the networking details of how to connect to it from your actual work
+device"*. That is precisely what our gateway plus scoped keys plus client shim
+solves. His setup is one-machine; ours serves laptops with per-device keys,
+spend caps and revocation.
+
+**Structural privacy at a different layer.** His isolation is process-level
+(sandbox). Ours is route-level (key scope). They fail differently and are
+complementary rather than competing:
+
+| Threat | Sandbox | Key scope |
+|---|---|---|
+| Agent reads a file it shouldn't | **caught** | not caught |
+| Prompt sends client data to a cloud model | not caught | **caught** |
+| Compromised client machine | partly | **caught** — key is scoped |
+| Malicious skill exfiltrates via curl | **caught** | not caught |
+
+We have one column. He has the other. Having both is the correct answer.
+
+**Measurement.** He reports tok/s per hardware. We bench roles on real tasks and
+record the decision. His post is explicitly a starting point, not a finished
+product — he says so in a warning at the top.
+
+**Model indirection.** He swaps models by hand through llama-swap; we address
+roles, so nothing downstream changes.
+
+### One tooling disagreement worth noting
+
+He moved from Ollama to `llama-server` + `llama-swap`, because **Ollama could
+not fit Qwen3.5:35B on his GPU and llama-server could**. That is a real
+efficiency difference, not tribal preference. On 64 GB unified we are not
+memory-pressed at 37.5 GB resident, so it has not bitten us — but if a future
+role does not fit, that is the first thing to try before buying hardware.
+
+---
+
+## Routerly — the database-free gateway
+
+[github.com/Inebrio/Routerly](https://github.com/Inebrio/Routerly), AGPL-3.0.
+Directly addresses the thing we found most irritating.
+
+### What it does that LiteLLM does not
+
+| | Routerly | LiteLLM (ours) |
+|---|---|---|
+| Database | **none** — JSON in `~/.routerly/` | Postgres + Prisma, 64 tables |
+| Native Anthropic `/v1/messages` | **yes** | no — translates to OpenAI format |
+| Per-project tokens + budgets | yes | yes (virtual keys) |
+| Per-project model list | yes | yes |
+| Routing policies | 9, including LLM-picks-the-model | static fallbacks |
+| Provider breadth | 8 | 100+ |
+| MCP gateway | **none** | yes — scoped by key, team, org |
+| Maturity | v0.1.5, 43 stars, 3 contributors | widely deployed |
+
+**Checked again 2026-08-02: Routerly still has no MCP support.** That now cuts
+against switching. LiteLLM's MCP gateway applies the same key scoping to tools
+as to models, which is what ADR 0008 is built on — leaving would mean rebuilding
+tool access control as well as the routing verification below.
+
+**The interesting unlock is native Anthropic format.** Claude Code is currently a
+documented exception in our stack because LiteLLM only speaks OpenAI shape.
+Routerly handles `/v1/messages` natively, so Claude Code could route through the
+gateway and gain spend tracking and logging. That is a real capability, not a
+tidiness argument.
+
+### Why we are not switching yet
+
+- **v0.1.5, one release, three contributors, 43 stars.** This is pre-1.0
+  software that would hold our provider keys and enforce our privacy boundary.
+  LiteLLM's 64 tables are ugly; ugly is not the same as risky.
+- **The cost of switching is the verification, not the config.** The leak test,
+  fallback audit, digest pinning and every script touching `/key/*` would need
+  redoing and re-proving. That is the expensive part, and it buys removing
+  something that currently runs in a container we never look at.
+- **AGPL plus a commercial-licensing address** is an open-core shape. Worth
+  watching whether the free tier narrows.
+
+Revisit at 1.0, or the first time Postgres actually causes a problem rather
+than merely offending.
+
+---
+
+## What we should actually do about this
+
+In rough priority. Items 1 and 2 are now done; the rest stand.
+
+1. ~~**Sandboxing for agent work.**~~ Done — `scripts/sandboxed.sh`, ADR 0007.
+2. ~~**Write down a prompt-injection threat model.**~~ Partly done. ADR 0007
+   covers agent containment and ADR 0008 covers tool scope. Web search feeding
+   the chat UI is still unmodelled.
+3. **Confirmation gates for consequential actions.** Currently only `git commit`
+   qualifies, which is why this has not hurt. It would matter the moment
+   anything in this stack can send an email or move money.
+4. **`world_knowledge` corpus.** Domain reference material and internal
+   playbooks indexed locally via `local-embed`, so the queries most worth not
+   leaking never reach SearXNG.
+5. **Note llama-server** as the first thing to try if a model does not fit,
+   before assuming the hardware is the limit.
+
+The honest summary as first written: **we built the routing and governance
+layer well, and the isolation layer not at all.** Vitalik built the isolation
+layer and skipped the routing. ADR 0007 closed most of our side of that gap,
+and ADR 0008 extended the governance layer to cover tools as well as models —
+which was a hole neither of us had named.
+
+# What we have tried
+
+A running record of serving-stack and role experiments: what was tried, what
+it measured, and why it stayed or went. Newest last. Add a row whenever an
+ADR lands or a bench run changes a decision.
+
+Model names stay out of this file (hard rule 1) — which weights each role
+used is in `docs/MODELS.md` (Live / Retired). Raw numbers are in
+`bench/results/<run>/`, committed since 2026-10-31. Runs before that were
+re-checked in and had domain wording in old task prompts and model answers
+redacted (billing/invoice substituted); figures are unchanged.
+
+## Serving stack
+
+| Date | Tried | Result | Outcome | Record |
+|---|---|---|---|---|
+| 2026-08-01 | Inherited setup: Ollama + LiteLLM, ad-hoc model names | Worked, no role discipline, no privacy boundary | Rebuilt around roles and scoped keys | ADR 0001 |
+| 2026-08-02 | Postgres + Prisma for LiteLLM virtual keys | Per-key scope; leak test passes | Kept until 0016 | ADR 0002 |
+| 2026-08-02 | Ollama bound to localhost; LAN via gateway only | LAN probe unreachable | Kept until 0016 | ADR 0003 |
+| 2026-08-02 | Agents under `sandboxed.sh`, egress only to the gateway | Probe proves nothing else reachable | Kept; target port moves to `:1234` | ADR 0007 |
+| 2026-08-02 | MCP tools through the gateway, deny by default, scoped by key | Works; adds gateway coupling | Superseded by 0016 (MCP moves to the client) | ADR 0008 |
+| 2026-09-04 | Context capped at 64K for local roles | Fits the RAM envelope | Kept | ADR 0010 |
+| 2026-09-04 | Ollama memory knobs: flash attention, q8_0 KV, 1 loaded model, 1 parallel | One slot for every client; any role switch evicts the agent model | Superseded by 0016 (F1, F2) | ADR 0011 |
+| 2026-09-06 | `local-big` on Rapid-MLX `:8000` | Tool smoke 2.6 s vs 12–18 s on Ollama | Superseded by 0013 (second server to supervise) | ADR 0012, `2026-09-06-1229-tool-smoke` |
+| 2026-10-22 | `local-big` on Ollama's MLX runner, one inference server | ~111 tok/s; Zed agent loops still stall under load | Superseded by 0016 | ADR 0013, `2026-10-22-0816` |
+| 2026-10-31 | Stall handling: 90 s timeout, no retries, `mlx-watchdog` kills a stuck runner | Treats the symptom (F7) | Superseded by 0016 | ADR 0015 |
+| 2026-10-31 | Phase 0 concurrency baseline on that stack | c1 TTFT p95 21.0 s; c3 p95 65.8 s, strictly serialised; no failures, peak 37 GB | Numbers to beat | `2026-10-31-phase0` |
+| 2026-10-31 | D6 switched to the LM Studio app owning the server | llmster and the app cannot share `~/.lmstudio`; app costs ~1.1 GB | Kept | ADR 0016 |
+| 2026-10-31 | Podman VM died after login | launchd kills a job's leftover processes when it exits; reproduced with a test job | `AbandonProcessGroup` on `com.hearth.boot`; VM survives the job | — |
+| 2026-10-31 | Phase 4 as an SSH tunnel with tunnel-only keys (D8), not LAN serving | Host unexposed; tested against a throwaway sshd: `restrict` alone still ran remote commands, a forced command fixed it | Kept; laptop gate pending | ADR 0016, `docs/LAPTOP.md` |
+| 2026-10-31 | Zed picker labels generated from roles.tsv (`zed-sync.sh`) | Clients still call `local-big`; label cannot go stale | Kept; rule 1 amended for generated labels | — |
+| 2026-10-31 | Phase 5 scripts against LM Studio; weight hashing (D4); login agent | healthcheck 10 pass / 1 warn, preflight 29 pass; negative controls fail as designed; found saved settings drifted to 0.0.0.0 + CORS, and unknown model names served by local-big | Kept | ADR 0016 |
+| 2026-10-31 | Old stack deleted without a soak | Ports 4000/5433/11434 free; tool-smoke and sandbox-probe still pass | No rollback; backups in `~/hearth-backups/` | ADR 0016 |
+| 2026-10-31 | Phase 1: llmster direct, `local-big` 3 parallel × 64K | c3 TTFT p95 59.9 s (was 65.8); prefill still serialised, all three finish at ~61 s; peak 29.7 GB; 3/40 wrong-tool picks | Accepted by operator; no further bench | ADR 0016, `2026-10-31-phase1` |
+| 2026-10-31 | `local-big` context raised to 128K, still 3 slots | Model card asks for ≥128K so thinking holds. Reload honored 131072 (not 262144). Idle footprint 20.7 GB; c3 bench not re-run | Kept | ADR 0017 |
+| 2026-11-01 | Draft MTP on for `local-big` | Same weights. Speeds decode, not the prefill wait. `lms load` accepted the flag; the server log does not name the drafter, and `lms ps` cannot show it | Flag set | — |
+| 2026-11-01 | Drop `local-embed` | Nothing requested embeddings except healthcheck. Weights stay on disk, unloaded | Removed | ADR 0018 |
+| 2026-11-01 | `local-big` c3 re-run at 128K; then 1 slot vs 3 | 128K costs nothing over 64K at ~30K prompts (29.7 GB peak). 1 slot: median finish 48 s vs 63 s, but p95 72 s vs 66 s and 12% less throughput | Kept 3 slots | `2026-11-01-128k` |
+| 2026-11-01 | Notify when a prompt is trimmed to fit the context window | The server drops the middle and still returns a normal reply, so an agent thread repeats work it can no longer see | Notification names the role, prompt size, and tokens dropped. The turn still runs | `scripts/context-watch.sh` |
+| 2026-11-04 | oMLX trial on `:1234` with RAM and SSD prefix cache | Same 30,260-token prompt: 23.4 s then 3.0 s to the first token. A changed prefix stayed at ~25 s. Thinking parsed, tool-smoke passed. Footprint 24 GB. A pasted laptop token is a sub-key: it can call the model and cannot log in as admin. Login boot still starts LM Studio | Trial only | ADR 0025, `scripts/omlx-try.sh` |
+| 2026-11-04 | Boot oMLX; resident weights copied to `~/.hearth/models` | Repeat of the same 30,244-token prompt: 26.1 s then 4.6 s. Cold prefill matches the 2026-11-01 LM Studio run. `local-deep` still needs LM Studio and the port | Login serves oMLX. `omlx-try.sh down` is the rollback | ADR 0026, `bench/results/2026-11-04-2150-omlx-cache` |
+| 2026-11-04 | `local-deep` weights copied; GPU wired limit raised to 56 GB | `ask-deep` swaps inside oMLX. The two roles are still not loaded together. 62259 MB was left unused because it leaves ~3 GB for macOS | Kept | ADR 0027 |
+| 2026-11-04 | Drop the LM Studio rollback; load both roles together | `down` stops oMLX and leaves the port empty. `local-deep` loads beside `local-main`. The 49.9 GB peak from 2026-11-01 fits under the 56 GB cap | Kept | ADR 0028 |
+| 2026-11-04 | Rename the serving script | `scripts/omlx.sh up` and `down`. Login boot still runs `up` | Kept | — |
+
+## Roles
+
+| Date | Tried | Result | Outcome | Record |
+|---|---|---|---|---|
+| 2026-08-02 | 70B dense model as `local-big` | 42 GB, could not stay resident; 440 s to first reply | Retired | ADR 0004 |
+| 2026-08-02 | 30B MoE as `local-big` / `local-code` | Fits beside other roles; fast | `local-code` kept; `local-big` reassigned | ADR 0004, 0005 |
+| 2026-08-02 | Separate `local-fast` small coder | MoE already generates at small-model speed | Role retired | ADR 0005 |
+| 2026-08-02 | `local-chat` small general model, thinking on | Very verbose: 7–11× the tokens of the coder | Thinking disabled: 29.7 s → 5.1 s | ADR 0005, 0006, `2026-08-02-*` |
+| 2026-09-04 | 27B dense MTP coding model as candidate | 19 tok/s, 14× tokens | Not adopted | `2026-09-04-1948` |
+| 2026-09-06 | 20B reasoning model as `local-big` | Slower tool smoke than the MLX agent model | Retired | ADR 0012 |
+| 2026-10-22 | `cloud-cheap` on a newer Flash tier | Thinks by default; tiny caps return empty | Kept, reasoning advertised | ADR 0014 |
+| 2026-10-31 | Collapse `local-code` / `local-chat` into `local-big` (D1) | Decided; avoids evicting the agent model | Phase 1 onward | ADR 0016 |
+| 2026-11-01 | 27B dense model as `local-big` candidate | Best `bench/tasks` 03 answer, but ~26 tok/s and 2.5–5.5× the tokens: 10–24× the wall time | Not adopted as `local-big` | `2026-11-01-1140` |
+| 2026-11-01 | 26B-A4B MoE (QAT) as `local-big`, thinking off | Fast, but task 04 dropped two keys; a simple sum wrong 3 times | Thinking turned on in the app | `2026-11-01-1243` |
+| 2026-11-01 | Same, thinking on | All four tasks correct, 12–64 s each; 40/40 tool calls; ~15% slower prefill, 25.2 GB c3 peak | Became `local-big` | ADR 0019, `2026-11-01-1307`, `2026-11-01-gemma-concurrency` |
+| 2026-11-01 | The 27B dense model as on-demand `local-deep` beside `local-big` | Loads in ~12 s; 33.3 GB with both idle; **49.9 GB** peak with both busy (over the ceiling, swap ~5 GB), and the 3 `local-big` requests overlapping its 193 s prefill timed out | Swapped in instead of `local-big`, never beside it | ADR 0020 |
+| 2026-11-01 | Rename `local-big` to `local-main` | Size no longer described it (26B resident, 27B on demand); `local-code` rejected as a retired name | Renamed | ADR 0021 |
+| 2026-11-01 | Snyk monitoring of the WebUI and SearXNG images | No manifests in the repo; the containers are the third-party code | Kept, re-run on `up` | `scripts/snyk-monitor.sh` |
+| 2026-11-01 | SearXNG MCP server for the Zed agent, `web` profile | ~12 candidates vetted; one passed. Search only; URL reader off and refuses private addresses | Kept | ADR 0022 |
+| 2026-11-01 | Tunnel keys also forward `:8888` (SearXNG) for laptops | Throwaway sshd: `:8888`/`:1234` forward; commands, `:22`, `-R` refused. Existing key widened in place | Kept | ADR 0022 |
+| 2026-11-01 | Review fixes for the tunnel, `ask-deep`, and the loopback lock | Interrupted `ask-deep` restores the resident role; a partial tunnel is a failure; key update refuses a full-shell `hearth-tunnel-*` line and keeps extra options; boot confirms loopback and CORS from the saved settings | Kept | — |
+| 2026-11-01 | `local-main` rolled back off the 26B-A4B | Zed agent turns kept looping after sampling matched that model's generation config | Previous resident restored, 128K × 3, MTP on. Tool-smoke passed. No new bench | ADR 0023 |
+| 2026-11-01 | `local-main` restored to the 26B-A4B | The looping thread was already past the context window on both residents; a trim is now notified | Bench winner restored, 128K × 3, no draft. Tool-smoke passed. No new bench | ADR 0024 |
+
+# Editors: Zed and aider
+
+Two tools, deliberately. They are good at different halves of the work and both
+address roles rather than model names, so neither needs touching when a model
+changes.
+
+| | aider | Zed |
+|---|---|---|
+| Where | terminal | editor |
+| Unit of work | a diff you approve | inline edits and agent runs |
+| Best for | changes you want to review before they land | exploring, refactoring in place |
+| Agent | n/a — it always shows you the diff | yes, with restrictable tools |
+
+---
+
+## aider
+
+### Config
+
+```yaml
+# ~/.aider.conf.yml
+# Roles, not model names. OPENAI_API_BASE + OPENAI_API_KEY come from
+# scripts/aliases.zsh per invocation. One local model (ADR 0016, D1).
+model: openai/local-main
+weak-model: openai/local-main
+dark-mode: true
+auto-commits: true
+map-tokens: 4096
+```
+
+`weak-model` is used for commit messages and summaries. With one resident
+model there is nothing cheaper to point it at, and nothing to evict.
+`ask-cloud` overrides both with the Gemini id from `config/roles.tsv`, so a
+cloud session never sends its commit messages anywhere else.
+
+### Architect mode
+
+aider can split planning from editing. With one local model both sides are
+`local-main`; the value left is that the design step stays visible.
+
+```bash
+ask-arch    # aider --architect --model openai/local-main --editor-model openai/local-main
+```
+
+`ask-deep` runs aider on `local-deep`, a slower, more careful model, loaded
+beside `local-main` for that session (ADR 0020, 0028). It is also in Zed's
+model picker, labelled "load first": a request to an unloaded role can be
+answered by whatever is loaded, without saying so. To use it from Zed, run
+`scripts/demand-load.sh local-deep up` on the host, and
+`scripts/demand-load.sh local-deep down` when done. `local-main` stays loaded.
+
+### Switching mid-session
+
+```
+/model openai/local-main       the only local role
+                              (cloud: quit and start `ask-cloud` instead —
+                               it uses its own key and endpoint)
+/ask                          question without editing anything
+/architect                    toggle architect mode
+```
+
+`/ask` is worth the habit — it answers without proposing a diff, which keeps you
+deciding what to change.
+
+### Deliberate review
+
+You have `auto-commits: true`, which is convenient and also the setting most
+likely to let a change land without you reading it. For anything touching
+flagged sensitive code:
+
+```bash
+aider --no-auto-commits
+```
+
+---
+
+## Zed
+
+### Point it at oMLX
+
+Directly in `~/.config/zed/settings.json` (ADR 0016). Every model slot —
+agent, inline assistant, commit message, thread summary, compaction,
+subagent — is `hearth/local-main`, so nothing ever asks for a second model.
+**No cloud provider on this host (D3)**: cloud is `ask-cloud` in a terminal.
+
+```json
+{
+  "agent": {
+    "default_model":          { "provider": "hearth", "model": "local-main" },
+    "inline_assistant_model": { "provider": "hearth", "model": "local-main" },
+    "commit_message_model":   { "provider": "hearth", "model": "local-main" },
+    "thread_summary_model":   { "provider": "hearth", "model": "local-main" },
+    "compaction_model":       { "provider": "hearth", "model": "local-main" },
+    "subagent_model":         { "provider": "hearth", "model": "local-main" },
+    "auto_compact":           { "enabled": true, "threshold": 110000 }
+  },
+  "language_models": {
+    "openai_compatible": {
+      "hearth": {
+        "api_url": "http://127.0.0.1:1234/v1",
+        "available_models": [
+          { "name": "local-main", "display_name": "<written by scripts/zed-sync.sh>", "max_tokens": 131072 }
+        ]
+      }
+    }
+  }
+}
+```
+
+Automatic compaction runs at 110,000 tokens. The loaded window is 131,072.
+Past that the server refuses the prompt, and Zed compacts on that error.
+110,000 leaves about 21,000 tokens for the turn that crosses the line and
+for Zed's count running behind the server. Zed's default of 90% (about
+118,000) sits inside that lag. Compaction summarizes the older turns, sends
+that summary plus the recent turns, and leaves the original thread in the
+panel under **Context Compacted**. `/compact` does the same by hand.
+**New From Summary** starts a fresh thread from it. The summary replaces the
+cached prefix, so the next turn reads the new thread from the start.
+
+`name` is the role and is what Zed sends. `display_name` and `max_tokens`
+are generated by `scripts/zed-sync.sh` from `config/roles.tsv`, so the
+window matches the role's context. Preflight warns if they drift. Add a
+new role's entry by hand once; the sync keeps it current.
+
+The token goes in through the UI (Agent panel → settings → `hearth` → API
+key) so it lands in the keychain rather than a dotfile. Use the host token on
+this machine; each laptop gets its own (phase 4).
+
+### MCP example: auslaw
+
+`auslaw` is not installed. `docs/MCP.md` uses its former setup as a worked
+example: a reviewed stdio child, no jade cookie, seven AustLII tools exposed
+only in a Research profile, and confirmation before each call.
+
+Zed's built-in **Write** profile sets `enable_all_context_servers: true`
+(Zed 1.26 defaults), which would expose any configured server in an ordinary
+thread. Settings must redefine Write with that set to `false`. A profile
+override **replaces** the built-in profile (`name` is required, tools are not
+merged), so the override must carry the full intended tool list. Re-check
+Write and Ask after a Zed upgrade: a partial override can fail the whole
+settings load. `tool_permissions.default` is `confirm`, so each MCP call asks
+first.
+
+If auslaw is restored, switching to Research is the act of saying "this query
+goes to AustLII." Follow the prerequisites, UI fields, JSON profile and checks
+in `docs/MCP.md`; do not infer a command from this document.
+
+Write and Ask set `fetch` and `search_web` to false. Zed's built-in Ask
+profile includes both, so Ask is overridden here the same way Write is.
+Search is the Web profile, or Write + search when the thread also edits.
+
+### MCP: searxng
+
+`searxng` is a `context_servers` stdio entry for the pinned SearXNG MCP
+server (`docs/MCP.md`, ADR 0022, 0029). Its search tool sends the query text
+through the host's SearXNG to public engines. Only `searxng_web_search` is
+on. `web_url_read` (any URL) and the other two tools stay off. Each tool
+call asks first.
+
+**Web** has an empty built-in tool map and `default_model` `hearth/local-main`.
+A search result cannot read a file.
+
+**Write + search** (`write-web`) has Write's tools and no pinned model, so
+the thread stays on `local-main` or `local-deep`. It can read files and put
+them into the query. It is not the default profile.
+
+Switching to either profile is the act of saying "this query goes to the
+search engines". Write + search can read a file and put personal information
+from it into that query.
+
+### On a laptop
+
+Through an SSH tunnel to the host — `docs/LAPTOP.md`. Zed points at
+`http://127.0.0.1:1234/v1` exactly as on the host (the tunnel's local end),
+with the **laptop's own** token. Run `ai-tunnel` before opening Zed. A Gemini
+provider is allowed on the laptop (D3). Web stays on `hearth/local-main`.
+Write + search has no pinned model. Do not switch either profile to Gemini.
+
+Zed's SSH remote projects also work: edit files on the host over SSH while
+the model call goes through the tunnel. That needs a normal SSH key, not the
+tunnel-only one.
+
+### Agent profiles — the reason Zed is here
+
+Zed's agent has **profiles with configurable tool access**. You can define one
+that reads and proposes but cannot apply edits or run commands, and a separate
+one that can.
+
+That is the closest thing shipping today to an assistant that helps without
+taking over, and it is why Zed earns its place over JetBrains here — JetBrains
+only supports chat on local models.
+
+Suggested split:
+
+- **explore** — read files, search, discuss. No edits, no terminal. Use when you
+  are trying to understand something.
+- **build** — full tools. Use when you already know what you want.
+
+The distinction is not about safety. It is about which mode you are in.
+
+---
+
+## Why two tools, and why this matters
+
+The 2026 research on AI-assisted development is not comfortable reading.
+Developers using AI assistance scored **17% lower on comprehension** afterwards,
+with the steepest decline among those who fully delegated (Shen and Tamkin,
+2026). The framing that stuck is **output up, capability down** — and the
+distinction between *atrophy*, losing skills you had, and *foreclosure*, never
+building them. Roughly half of programmer actions in LLM-assisted workflows show
+identifiable cognitive bias, mostly anchoring on whatever the model proposed
+first (Zhou et al., 2026).
+
+Nothing ships to address this. The one paper directly on it —
+[Agents That Teach](https://arxiv.org/html/2607.06101) — is a design proposal,
+not a product. The measurement is years ahead of the tooling.
+
+So the mitigations here are choices, not features:
+
+- **aider shows a diff and waits.** That is friction, and the friction is the
+  point. `/ask` and `--no-auto-commits` add more when you want it.
+- **Zed's explore profile can't edit.** Reading and discussing without the option
+  to apply keeps you deciding.
+- **Local models are weaker, and that is quietly protective.** A model that
+  cannot one-shot the answer keeps you in the loop — the opposite of how model
+  quality is usually discussed.
+- **Architect mode separates deciding from typing**, which keeps the design
+  decision visible instead of buried in a diff.
+
+None of this is about distrusting the output. It is about noticing when you have
+stopped thinking, which by definition is not something you notice.
+
+---
+
+## Other editors
+
+Not recommended here, recorded so the question does not come round again.
+
+| Editor | State |
+|---|---|
+| JetBrains | Native LiteLLM support, free tier, but **chat only** on local models — no agent, no next-edit |
+| VS Code + Continue | Works fully, but an extension rather than built in |
+| Cursor | Not used here — rejects non-HTTPS base URLs; agent mode unreliable with custom endpoints |
+
+# Laptop access
+
+**SSH tunnel only.** The host's oMLX stays
+bound to `127.0.0.1:1234`; a laptop forwards a local port to it over SSH. Same
+setup on the LAN and away from it, traffic encrypted, nothing on the host
+exposed to the network.
+
+```mermaid
+flowchart LR
+    subgraph laptop["Laptop"]
+        lz["Zed / aider / ai-*"]
+        lp["127.0.0.1:1234<br/>127.0.0.1:3000<br/>127.0.0.1:8888"]
+    end
+    subgraph host["Host"]
+        sshd["sshd :22<br/>tunnel-only key"]
+        srv["oMLX 127.0.0.1:1234<br/>token per machine"]
+        webui["Open WebUI 127.0.0.1:3000<br/>SearXNG 127.0.0.1:8888"]
+    end
+    gem["Gemini<br/>laptop's own key"]
+    lz --> lp
+    lp -->|"ssh -L"| sshd
+    sshd --> srv
+    sshd --> webui
+    lz -.->|"ask-cloud only"| gem
+```
+
+## What each laptop gets
+
+| Thing | Where | Why |
+|---|---|---|
+| API key `laptop-<name>` | laptop `~/.hearth-key` (mode 600) | revoke one machine without touching the others |
+| SSH key `hearth_tunnel` | laptop `~/.ssh/hearth_tunnel`; host `authorized_keys` with `command="/usr/bin/false",restrict,port-forwarding,permitopen=…,permitlisten="none:1"` | the key can `-L` to `127.0.0.1:1234`, `:3000` and `:8888` only — no shell, no commands, no `-R`, no other ports |
+| Google API key (optional) | laptop `~/.hearth-gemini-key` (mode 600) | `ask-cloud` with the laptop's own key; the host's key never leaves |
+| `client/hearth-client.sh` / `.ps1` | laptop `~/.hearth-client.sh` | `ai-tunnel`, `ai-ping`, `ai-models`, `ai-ask`, `ai-webui`, `ask*`, `ask-deep`, `ask-cloud` |
+
+Secrets are read from files per command and never exported into the
+laptop's shell. A world-readable key file is refused.
+
+## Setup
+
+On the host, `scripts/client-setup.sh <laptop-name>` prints every step with
+this host's name and user filled in (`--windows` for PowerShell). In short:
+
+1. **Host:** with oMLX listening (`scripts/omlx.sh status`), register a
+   laptop key. The prompt does not echo. A reboot runs `scripts/omlx.sh up`,
+   which keeps sub-keys already registered.
+   `scripts/omlx.sh sub-key add laptop-<name>`
+2. **Laptop:** `ssh-keygen -t ed25519 -f ~/.ssh/hearth_tunnel`, and a `Host hearth`
+   entry in `~/.ssh/config` pointing at the host with `IdentitiesOnly yes`.
+3. **Host:** `scripts/client-setup.sh <name> --authorize hearth_tunnel.pub`.
+   It refuses a key that is already authorized without restrictions.
+4. **Laptop:** copy `client/hearth-client.sh` to `~/.hearth-client.sh`,
+   store the token and (optionally) a Google key, add
+   `HEARTH_SSH=hearth`, `HEARTH_CLOUD_MODEL=…` and `source ~/.hearth-client.sh`
+   to the shell rc.
+5. **Laptop:** `ai-tunnel && ai-ping && ai-models`.
+
+`ai-ping` answers: `up`, `BAD TOKEN` (revoked or wrong token), `NO ANSWER`
+(tunnel up but host asleep or oMLX down — on the host, `scripts/boot.sh`),
+or `DOWN` (no tunnel — `ai-tunnel`).
+If something else is already listening on `127.0.0.1:1234`, the client refuses and does not send the token.
+
+## AI-assisted setup
+
+For an AI assistant (Claude Code, Cursor, …) running **on the laptop** in a
+clone of this repo. The assistant is probably a cloud model: anything it reads
+or prints goes to its vendor. That decides every rule below.
+
+**Never:** read, print, grep, copy or edit `~/.hearth-key`,
+`~/.hearth-gemini-key` or `~/.ssh/hearth_tunnel` (the private key); ask the
+person to paste a token or key into the chat; run anything in `scripts/`
+(host-only); add a router port-forward; suggest turning on Serve on Local
+Network; configure hearth as a Cursor model provider (see below). Checking a
+secret file's permissions with `ls -l` is fine.
+
+**1. Ask the person for:**
+
+- the host as `user@host.local` (on the host: `id -un` and
+  `scutil --get LocalHostName`);
+- the laptop's name for its token and key comment (letters, digits, `-`, `_`);
+- shell: macOS / Linux (zsh or bash) or Windows PowerShell.
+
+Read the Gemini model id yourself: the `cloud-cheap` row of
+`config/roles.tsv`, column 3. Do not copy it anywhere except the
+`HEARTH_CLOUD_MODEL` line.
+
+**2. You may run** (macOS / Linux; Windows equivalents are in
+`client/hearth-client.ps1`'s header):
+
+```bash
+# Interactive (passphrase prompt) — ask the person to run it, or run it if your
+# terminal is interactive:
+ssh-keygen -t ed25519 -f ~/.ssh/hearth_tunnel -C hearth-tunnel-<name>
+
+# ~/.ssh/config — append only if there is no "Host hearth" entry already
+printf 'Host hearth\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/hearth_tunnel\n  IdentitiesOnly yes\n' <host.local> <user> >> ~/.ssh/config
+
+cp client/hearth-client.sh ~/.hearth-client.sh
+printf 'export HEARTH_SSH=hearth\nexport HEARTH_CLOUD_MODEL=%s\nsource ~/.hearth-client.sh\n' <cloud-cheap id> >> ~/.zshrc   # or ~/.bashrc
+```
+
+Showing the person `~/.ssh/hearth_tunnel.pub` is fine — it is public.
+
+**3. Stop and hand over to the person** for each of these, then wait:
+
+1. *On the host*, while oMLX is listening, the person runs
+   `scripts/omlx.sh sub-key add laptop-<name>` and types the token.
+   Do not ask them to paste it into the chat.
+2. *On the host*, with the `.pub` file copied over:
+   `scripts/client-setup.sh <name> --authorize hearth_tunnel.pub`.
+3. *On the laptop, in their own terminal* (not through you), store the secrets:
+
+   ```bash
+   umask 077
+   read -rs t && printf '%s' "$t" > ~/.hearth-key && unset t          # laptop-<name> token
+   read -rs t && printf '%s' "$t" > ~/.hearth-gemini-key && unset t   # optional: this laptop's OWN Google key
+   ```
+
+Then confirm with `ls -l ~/.hearth-key ~/.hearth-gemini-key`: mode
+`-rw-------`, non-zero size. Nothing more.
+
+**4. Prove it** in a new shell. Both halves are required: the first shows the
+key works, the second that it can do nothing else.
+
+| Command | Expect |
+|---|---|
+| `ai-tunnel` | `tunnel: up` (the first run asks the person to confirm the host fingerprint) |
+| `ai-ping` | `up` |
+| `ai-models` | `local-main` (plus `local-deep` only while the host has it loaded) |
+| `ai-ask "say ok"` | a short reply from local-main |
+| `ssh hearth true; echo $?` | **non-zero**, no shell: the key is tunnel-only |
+| `ask-cloud` (optional) | aider on Gemini with the laptop's own key |
+| `ask-deep` (optional) | refuses with "not loaded on the host" unless the host ran `scripts/demand-load.sh local-deep up`; the laptop cannot load it (tunnel-only key). `local-main` stays loaded beside it |
+
+If `ai-ping` says `BAD TOKEN`, the person re-runs the `read -rs` step with
+the right token; `NO ANSWER` means the host is asleep or oMLX is down
+(fix on the host); `DOWN` means no tunnel. If `ssh hearth true` **succeeds**,
+stop: the key was authorized without restrictions — tell the person, and do
+not continue.
+
+**5. Editors.** Zed: the block in [Zed on the laptop](#zed-on-the-laptop),
+with the laptop's token entered through Zed's UI by the person.
+
+**Cursor cannot use hearth as its model provider.** Cursor's backend makes
+the model call, not the laptop, so a `localhost` base URL never reaches the
+tunnel; the only workaround is a public endpoint, which the *Never* list
+forbids, and prompts would still pass through Cursor's servers (checked
+2026-10-31). Use Zed, aider or `ask` for local-main on the laptop; Cursor
+with its own models only, and not on sensitive repos.
+
+## Zed on the laptop
+
+Same provider as the host, through the tunnel:
+
+```json
+{
+  "language_models": {
+    "openai_compatible": {
+      "hearth": {
+        "api_url": "http://127.0.0.1:1234/v1",
+        "available_models": [
+          { "name": "local-main", "display_name": "local-main", "max_tokens": 131072 }
+        ]
+      }
+    }
+  },
+  "agent": { "default_model": { "provider": "hearth", "model": "local-main" } }
+}
+```
+
+Token through the UI (Agent panel → settings → `hearth` → API key): the
+**laptop's** token, not the host's. Start `ai-tunnel` before Zed, or Zed's
+models show as unavailable.
+
+A Gemini provider **is allowed on the laptop** (D3), with the laptop's own
+key. The host has none. Keep sensitive repos on `hearth/local-main`.
+
+If using the legal-research worked example from `docs/MCP.md`, install and
+review its source on the laptop too; its stdio process runs beside Zed, not on
+the host. The same "Write enables every server" trap applies.
+
+## Open WebUI from the laptop
+
+`ai-webui` opens `http://127.0.0.1:3000` through the tunnel — the host's own
+instance, no login, same history. Nothing to install on the laptop.
+
+## Web search in the laptop's Zed (optional)
+
+The tunnel also forwards the host's SearXNG to `127.0.0.1:8888` (ADR 0022;
+`HEARTH_SEARXNG_PORT` changes the laptop end, `0` leaves it out). To give the
+laptop's Zed agent web search, install the same pinned MCP server there and
+register it the way the host does (`docs/MCP.md`, `docs/IDES.md`):
+
+```bash
+npm install --ignore-scripts --save-exact --prefix ~/.local/share/hearth/mcp-searxng mcp-searxng@2.9.0
+```
+
+Then a `searxng` stdio context server in Zed with
+`SEARXNG_URL=http://127.0.0.1:8888` (or your `HEARTH_SEARXNG_PORT`). Enable
+`searxng_web_search` only, in `web` (no file tools, `default_model`
+`hearth/local-main`) and, for a coding thread, `write-web` (Write's tools,
+no pinned model). Do not switch either profile to Gemini. Run `ai-tunnel`
+before searching. Search queries go to public search engines via the host.
+An agent that can read files can put personal information from them into
+that query.
+
+SearXNG has no login. Once the tunnel is up, any process on the laptop can
+POST a query to `127.0.0.1:8888` and the host will send it to the public
+engines.
+
+**Existing laptops:** the host's tunnel keys were widened with
+`scripts/client-setup.sh --update-keys` (2026-11-01). On the laptop, copy the
+new client (`scripts/client-setup.sh <name> --install user@laptop` from the
+host), then `ai-tunnel-stop && ai-tunnel`. `ai-tunnel` refuses to report the
+tunnel up when `:1234` is open and `:3000` or `:8888` is not, and when `:1234`
+is open but the listener is not this client's ssh.
+
+## Revoking a laptop
+
+1. While oMLX is up: `scripts/omlx.sh sub-key revoke laptop-<name>`.
+2. Host: delete the `hearth-tunnel-<name>` line from `~/.ssh/authorized_keys`.
+
+Removing the tunnel key cuts the path. Revoke the sub-key so a reboot does
+not let it back in.
+
+## Never
+
+- Port-forward `:22`, `:1234`, `:3000` or `:8888` on the router.
+- Turn on Serve on Local Network for a laptop — the tunnel makes it unnecessary,
+  and it would put the token on the LAN in plain HTTP.
+- Copy the host's token or Google key to a laptop.
+
+## Host SSH hardening (recommended, not done for you)
+
+macOS Remote Login accepts passwords by default. With keys in place:
+
+```bash
+echo 'PasswordAuthentication no
+KbdInteractiveAuthentication no' | sudo tee /etc/ssh/sshd_config.d/100-hearth.conf
+sudo launchctl kickstart -k system/com.openssh.sshd
+```
+
+Test a key login from the laptop **before** closing your current session.
+
+# MCP registry
+
+Server → tools → which clients may reach them. This file and the client config
+docs (`docs/IDES.md`) are the only places a concrete MCP server may be named.
+Update both together, plus an ADR. Since ADR 0016 servers live in the client
+(Zed `context_servers`), not the gateway (ADR 0008, superseded).
+
+MCP tools are a **second egress path**. Keeping cloud models off `:1234`
+stops a prompt reaching a cloud *model*; it says nothing about a tool that
+calls the internet on its own account. That is why every server below declares
+where it goes, and why a networked server is enabled only in a profile named
+for that egress.
+
+## Registered
+
+| Server | Transport | Egress | Tools | Clients |
+|---|---|---|---|---|
+| `searxng` | stdio | local SearXNG `127.0.0.1:8888` → public search engines | 1 of 4 | host Zed, `web` and `write-web` (ADR 0022, 0029) |
+
+## Worked example: auslaw (not installed)
+
+`auslaw` shows how to add a networked MCP without making it ambient. It
+provides Australian and NZ case-law and legislation tools through AustLII.
+It was live during migration phase 3, but neither its source nor its Zed
+configuration is currently on this host. The historical source location was
+`~/dev/auslaw-mcp`; this repo does not contain or install it.
+
+**stdio, not HTTP.** Its HTTP mode calls `listen(port)` with no host, so it
+binds every interface with no authentication, and defaults to `:3000` — which
+is Open WebUI. stdio spawns a child process with no listener at all.
+
+### Tools, by where they go
+
+| Tool | Reaches | Exposed |
+|---|---|---|
+| `format_citation` | nothing — pure AGLC4 string formatting | yes |
+| `search_legislation` | AustLII | yes |
+| `search_by_citation` | AustLII | yes |
+| `fetch_document_text` | AustLII | yes |
+| `generate_pinpoint` | AustLII | yes |
+| `validate_citation` | AustLII | yes |
+| `search_cases` | AustLII (+ jade.io, disabled) | yes |
+| `resolve_jade_article` | jade.io | **no** |
+| `jade_citation_lookup` | jade.io | **no** |
+| `search_citing_cases` | jade.io | **no** |
+
+The worked Zed profile below exposes only the seven AustLII tools.
+`JADE_SESSION_COOKIE` is deliberately absent from the child process's
+environment, so the credential to use the three jade.io tools is not present.
+
+Why exclude them: jade.io access is a reverse-engineered GWT-RPC endpoint
+driven by a session cookie lifted from a browser. That is a credential in a
+config file and a fragile contract with a commercial provider. AustLII is free,
+public, and has neither problem. `search_cases` stays because its jade half
+returns an empty array without the cookie while its AustLII half still works.
+
+### Zed setup
+
+Prerequisite: obtain the source from its owner, review it again, install its
+locked dependencies, build it, and confirm that an absolute
+`.../auslaw-mcp/dist/index.js` exists. Do not copy the historical path: it
+belonged to another home directory and no longer exists here.
+
+1. Open **Settings → AI → MCP Servers → Add Server → Add Local Server**.
+2. Enter:
+   - Server Name: `auslaw`
+   - Command: the absolute path to the reviewed Node executable
+   - Arguments: the absolute path to `auslaw-mcp/dist/index.js`
+   - Environment: `MCP_TRANSPORT=stdio`
+   - Timeout: `60`
+3. Do **not** add `JADE_SESSION_COOKIE`. Save, then require a green
+   **Server is active** indicator. A wrong command or argument exits
+   immediately and otherwise looks like an empty tool list.
+4. Open `zed: open settings file`. The server entry should have this shape,
+   with real absolute paths:
+
+```json
+{
+  "context_servers": {
+    "auslaw": {
+      "command": "/absolute/path/to/node",
+      "args": ["/absolute/path/to/auslaw-mcp/dist/index.js"],
+      "env": {
+        "MCP_TRANSPORT": "stdio"
+      }
+    }
+  }
+}
+```
+
+5. Add a profile under `agent.profiles` which has no built-in tools and
+   exposes only the seven AustLII tools:
+
+```json
+{
+  "agent": {
+    "profiles": {
+      "research": {
+        "name": "Research",
+        "tools": {},
+        "enable_all_context_servers": false,
+        "context_servers": {
+          "auslaw": {
+            "tools": {
+              "search_cases": true,
+              "search_legislation": true,
+              "search_by_citation": true,
+              "fetch_document_text": true,
+              "generate_pinpoint": true,
+              "validate_citation": true,
+              "format_citation": true
+            }
+          }
+        }
+      }
+    },
+    "tool_permissions": {
+      "default": "confirm"
+    }
+  }
+}
+```
+
+6. Ensure the ordinary Write and Ask profiles set
+   `enable_all_context_servers` to `false`; profile overrides replace rather
+   than merge with Zed's built-ins. Reload Zed, select **Research**, and check
+   that exactly those seven tools appear. Write and Ask must show none.
+
+Switching to Research is the deliberate act of saying that the query may go
+to AustLII. Keep the profile on `hearth/local-main`; host Zed has no cloud
+provider. The query can carry personal information the agent has just read.
+Send it only when that is intended.
+
+## searxng
+
+Web search for the Zed agent through the host's own SearXNG (ADR 0022).
+Package `mcp-searxng` 2.9.0 (`ihor-sokoliuk/mcp-searxng`, MIT, npm with SLSA
+provenance, no install scripts), installed pinned with `npm install
+--ignore-scripts --save-exact` into `~/.local/share/hearth/mcp-searxng`, run by
+`/opt/homebrew/bin/node` (needs Node ≥ 22). Never `npx`: that would fetch
+whatever is newest on every start. Its lockfile is monitored by Snyk
+(`scripts/snyk-monitor.sh`, project `hearth/mcp-searxng`).
+
+**stdio.** It only listens if `MCP_HTTP_PORT` is set, which Zed's entry does
+not. Env: `SEARXNG_URL=http://127.0.0.1:8888`, `SEARXNG_LITE_TOOLS=true`
+(short schemas for a local model), `SEARXNG_MAX_RESULTS=10`.
+
+### Tools, by where they go
+
+| Tool | Reaches | Exposed |
+|---|---|---|
+| `searxng_web_search` | local SearXNG → Google, Bing and others: **the query text leaves** | yes |
+| `searxng_search_suggestions` | local SearXNG → engines' autocomplete | **no** |
+| `searxng_instance_info` | local SearXNG `/config` only | **no** (not needed) |
+| `web_url_read` | **any public URL** | **no** |
+
+The server has no allow-list: the exclusions are Zed profile settings, not
+server-side. `web_url_read` refuses localhost, RFC1918,
+link-local and private IPv6, including names that resolve to them — checked
+2026-11-01 against `127.0.0.1:1234` and `localhost:8888`, both refused. Kept
+off anyway: an agent that can fetch any page is both an exfiltration channel
+and a prompt-injection feed.
+
+### Who may reach it
+
+Host Zed, two profiles (ADR 0022, 0029). **Web** has an empty built-in tool
+map and `default_model` `hearth/local-main`, so a search result cannot read
+a file. **Write + search** (`write-web`) has Write's tools and no pinned
+model, so a coding thread on `local-main` or `local-deep` can search. The
+query text still leaves, and that profile can put file contents into the
+query. `confirm` on each tool call is the other gate. Write and Ask have
+neither. An agent on Write + search can exfiltrate personal information by
+searching with text it read from a file. See `docs/ROUTING.md`.
+
+Laptops may run the same pinned server against the host's SearXNG through
+the tunnel (`127.0.0.1:8888` on the laptop; tunnel keys allow `:8888` since
+2026-11-01). Same two profiles. Do not switch either to Gemini. SearXNG has
+no authentication, so any process on the laptop can send queries through the
+host once the tunnel is up — `docs/LAPTOP.md`.
+
+## Rules these enforce
+
+**Off by default.** Zed's built-in Write profile enables every context server
+(`enable_all_context_servers: true` in Zed 1.26); host settings redefine
+Write with it `false`. SearXNG is on in `web` and `write-web` only.
+
+**No cloud model alongside a networked tool.** Tool output re-enters the
+prompt. Host Zed has no cloud provider (D3). Web stays on `hearth/local-main`.
+Write + search sets no model, so the thread stays on `local-main` or
+`local-deep`. A laptop may have a Gemini provider for other work; neither
+search profile is switched to it.
+
+**Ask before each call.** `agent.tool_permissions.default` is `confirm`.
+
+## Checks
+
+There is no automated MCP scope audit since the gateway went (ADR 0016).
+By hand, after any Zed upgrade or settings change:
+
+| Check | Proves |
+|---|---|
+| Agent panel → Write profile shows no searxng tools | the default profile cannot search via SearXNG |
+| Web profile shows `searxng_web_search` and not `web_url_read`, and no file tools | a search-only thread cannot read the repo, and the URL reader stays off |
+| Write + search shows `searxng_web_search`, file and edit tools, and not `web_url_read` | a coding thread can search, and the URL reader stays off |
+| Write and Ask show `fetch` and `search_web` off | the built-in web tools stay off |
+
+If following the auslaw worked example, additionally check that Write and Ask
+show no auslaw tools, Research shows exactly the seven listed tools, and
+`grep -c JADE ~/.config/zed/settings.json` returns `0`.
+
+## Adding a server
+
+1. Read its source and establish what it talks to. That is the whole job; the
+   rest is typing.
+2. Add it to Zed `context_servers` (stdio preferred — no listener).
+3. Enable its tools only in a profile named for its egress; never in Write.
+4. Add a row to this file, a note in `docs/IDES.md`, and an ADR.
+
+### Traps
+
+**A wrong path is silent.** A stdio server whose command or script path is
+wrong exits immediately and shows no tools — identical in the UI to a
+correctly scoped profile. After adding one, confirm its tools appear in the
+profile that should have them.
+
+**Zed profile overrides replace, they do not merge.** Overriding a built-in
+profile needs `name` and the full tool list, or the whole settings file fails
+to load (`missing field name`).
+
+# Migration: LiteLLM + Ollama → LM Studio direct
+
+**Status:** in progress — ADR 0016 accepted 2026-10-31.
+**ADR:** `docs/decisions/0016-lmstudio-direct.md`
+**Drafted:** 2026-10-31
+
+## How to use this file (for Cursor, Claude Code, Zed, aider)
+
+- Follow `CLAUDE.md` / `AGENTS.md`. Plan → operator refines → operator approves
+  → build. **One phase at a time.** Do not start a phase until the operator says
+  so in the conversation; do not start the next phase until the current gate
+  passes and the operator confirms.
+- **Stop at every `DECISION` and ask.** Do not pick for the operator.
+- Every phase ends with a gate. Record gate output in
+  `bench/results/<date>-<phase>/report.md` and tick the phase in the status
+  table below in the same commit.
+- LM Studio CLI flags below are written from documentation, not tested on this
+  Mac. **Confirm each flag with `lms <cmd> --help` before using it**, and
+  correct this file if it is wrong.
+- Shell rules still apply: bash 3.2, LF only, no `declare -A` / `mapfile` /
+  `${x^^}`. Preflight scans for these.
+- No secrets in git. Tokens go in `~/.config/hearth/env` (host) and
+  `~/.hearth-key` (clients), never in the repo.
+
+## Status
+
+| Phase | What | State |
+|---|---|---|
+| 0 | Baseline concurrency bench on the current stack | done 2026-10-31 — `bench/results/2026-10-31-phase0/report.md` |
+| 1 | LM Studio beside the current stack, localhost only | done 2026-10-31: accepted by operator; wrong-tool picks (3/40) tracked as a metric, not a blocker; no GGUF bench — `bench/results/2026-10-31-phase1/report.md` |
+| 2 | GPU wired-limit headroom | skipped 2026-10-31: peak 29.7 GB, memory is not the bottleneck (operator) |
+| 3 | Cut host clients over (Zed, aider, WebUI, sandbox, MCP) | done 2026-10-31 — `bench/results/2026-10-31-phase3/report.md` |
+| 4 | LAN access with tokens; laptop clients | host side done 2026-10-31 (SSH tunnel, D8); tunnel tested end to end on the host; **gate pending on the laptop** |
+| 5 | Stop the old stack; rewrite scripts and docs | done 2026-10-31 — reboot gate passed, `bench/results/2026-10-31-phase5/report.md` |
+| 6 | Soak one week, then delete old weights and services | uninstall done 2026-10-31 **without a soak** (operator); backups in `~/hearth-backups/`; ADR 0016 not yet marked accepted-complete |
+
+## Decisions the operator must make
+
+| ID | Question | Recommendation | Answer |
+|---|---|---|---|
+| D1 | Roles after migration: keep `local-code` and `local-chat` as separate models, or collapse to `local-big` + `local-embed`? | **Collapse.** Two heavy models cannot both stay resident with 3 × 64K slots inside the GPU limit, and evictions are failure F2. Keep the names as client-side aliases that resolve to `local-big` | **Collapse** (2026-10-31) |
+| D2 | Slots and context for `local-big` | 3 slots × 64K. Lower to 2 if the phase 1 footprint exceeds the limit | **3 × 64K** (2026-10-31); context raised to 128K by ADR 0017. Idle footprint after that reload was 20.7 GB, so slots stay 3 |
+| D3 | Does Zed **on the host** get a Gemini provider? | No on the host (keeps sensitive work local by default); yes on the laptop | **No on host** (2026-10-31) |
+| D4 | Digest drift detection | Keep: hash the model directory in `config/roles.tsv` and check it in preflight | **Hash the weights** (2026-10-31): `weights` column in roles.tsv, fast check in preflight, `--deep` re-hash |
+| D5 | Keep Open WebUI? | Yes, pointed at `:1234`. It no longer needs the gateway's Postgres | **Keep** (2026-10-31) |
+| D6 | Headless runner: LM Studio app with "run server on login", or `llmster`? | `llmster` if it installs cleanly; the app otherwise | **The app** (changed 2026-10-31). Was `llmster`; it worked and honoured the app-set auth, but the app and llmster cannot share `~/.lmstudio` and the operator wants the GUI. The app runs the server with "Enable Local LLM Service (headless)" on; ~1.1 GB extra for its GUI processes. Removing Ollama.app: done (operator) |
+| D8 | Phase 4: LAN serving or SSH tunnel? | Tunnel: nothing exposed, encrypted, same on/off LAN | **SSH tunnel only** (2026-10-31). Per-laptop token + `restrict`ed tunnel-only key |
+| D7 | Soak length before phase 6 cleanup | — | **No soak** — operator deleted the old stack 2026-10-31 |
+
+## Target
+
+```mermaid
+flowchart LR
+    subgraph host["Mac Studio"]
+        zed["Zed agent"]
+        aider["aider / ask-*"]
+        webui["Open WebUI"]
+        sbx["sandboxed.sh"]
+        lms["LM Studio :1234<br/>local-big, local-embed"]
+    end
+    laptop["LAN laptop"]
+    cloud["Gemini"]
+    zed --> lms
+    aider --> lms
+    webui --> lms
+    sbx --> lms
+    laptop -->|"token"| lms
+    aider -.->|"ask-cloud"| cloud
+```
+
+---
+
+## Phase 0 — Baseline
+
+Purpose: numbers to beat, measured the same way before and after.
+
+1. Write `scripts/concurrency-bench.sh` (bash wrapper) + `bench/concurrency.py`
+   (stdlib only, `python3 -I`).
+   - Args: `--base-url`, `--token-env NAME`, `--model ROLE`, `--concurrency N`
+     (default 3), `--rounds R` (default 10), `--prompt-tokens T` (default
+     30000).
+   - Each request: a realistic agent turn — system prompt + 6 tool schemas
+     (`read_file`, `write_file`, `edit_file`, `list_directory`, `grep`,
+     `run_command`) + filler file content to reach T tokens, `stream: true`,
+     asking for a `read_file` tool call.
+   - Record per request: time to first byte, time to first token, total time,
+     HTTP status, whether a valid tool call came back, finish reason.
+   - Client-side timeout 180 s. A timeout is a recorded failure, not a crash.
+   - Sample the inference process footprint every 2 s
+     (`footprint -p <pid>` or `vmmap --summary`) and record the peak.
+   - Output `raw.tsv` + `report.md` (p50/p95 TTFT, failures, peak footprint).
+2. Run against the current stack: `--base-url http://127.0.0.1:4000/v1`,
+   `--model local-big`, concurrency 1 then 3.
+
+**Gate:** report committed. Failures at concurrency 3 are expected; they are
+the baseline.
+
+## Phase 1 — LM Studio beside the current stack
+
+Localhost only. Nothing else changes yet.
+
+**Checked on this Mac (llmster 0.0.27-1, 2026-10-31):**
+- Installer: `curl -fsSL https://lmstudio.ai/install.sh` → `~/.lmstudio/bin/lms`.
+  Run with `--no-modify-path`; scripts call the full path.
+- `lms load` flags: `--identifier`, `-c/--context-length`, `--gpu max`,
+  `--parallel <n>` (concurrent predictions is a **load** flag), `--ttl`,
+  `--estimate-only`, `-y`.
+- `lms server start` flags: `-p/--port`, `--bind` (default `127.0.0.1`;
+  `0.0.0.0` for LAN), `--cors`. **No auth flag**; auth and tokens are
+  GUI-only (see D6).
+- Runtime: `lms runtime get mlx-llm -y`.
+- Weights: `lms get <hugging face URL> -y` picks an exact build; a bare
+  staff-pick name with `-y` may pick a larger quantisation.
+
+1. Install LM Studio 0.4.x (or `llmster`, per D6). Record the version in
+   `docs/MODELS.md`.
+2. Download the MLX 4-bit build of the current `local-big` weights and the
+   embedding model. Exact model keys go in `config/roles.tsv` and
+   `docs/MODELS.md` only.
+3. Create `config/roles.tsv` (tab-separated, `#` comments allowed):
+   ```
+   # role        backend    model_key                 ctx    slots
+   local-big     lmstudio   <mlx model key>           131072 3
+   local-embed   lmstudio   <embedding model key>     2048   1
+   cloud-cheap   gemini     <gemini model id>         -      -
+   ```
+4. Write `scripts/lms-load.sh`: reads `config/roles.tsv`, unloads anything not
+   listed, loads each `lmstudio` row with `--identifier <role>` and
+   `--context-length <ctx>` and GPU offload max. Set concurrent predictions to
+   `slots` (confirm whether that is a load flag or a server setting).
+   Idempotent.
+5. Server settings: port 1234, **serve on local network OFF** for now, require
+   authentication **ON**, CORS **OFF**, JIT model loading **OFF**, auto-unload
+   **OFF**, "allow calling servers from mcp.json" **OFF**.
+6. Create a host token; store it as `LMSTUDIO_HOST_TOKEN` in
+   `~/.config/hearth/env` (mode 600).
+7. Run `scripts/tool-smoke.sh` and `scripts/concurrency-bench.sh` against
+   `http://127.0.0.1:1234/v1` at concurrency 1 and 3.
+8. Stop Ollama's runner while benching (`ollama stop` or unload) so both
+   servers are not competing for GPU memory; note it in the report.
+
+**Gate (all must hold):**
+- tool-smoke passes.
+- Concurrency 3 × 10 rounds: zero timeouts, zero invalid tool calls.
+- p95 TTFT at concurrency 3 is better than the phase 0 baseline.
+- Peak footprint stays at least 4 GB under the current wired limit. If not,
+  drop to 2 slots (D2) and rerun.
+- A request with no token gets 401.
+
+## Phase 2 — GPU headroom (optional, measure)
+
+1. Read the current limit: `sysctl iogpu.wired_limit_mb` (0 means the default,
+   ~75% of RAM).
+2. Try `sudo sysctl iogpu.wired_limit_mb=56000` and rerun the phase 1
+   concurrency bench.
+3. If it helps, add a root launchd daemon `com.hearth.wired-limit` that sets
+   it at boot (`scripts/install-wired-limit.sh --apply/--check/--remove`). It
+   resets on reboot otherwise.
+
+**Gate:** bench numbers recorded with and without. Keep only if better and
+the system stays responsive with Zed, a browser and the bench running.
+
+## Phase 3 — Host clients
+
+1. **Zed (`settings.json`)** — replace the `hearth` provider:
+   ```json
+   "language_models": {
+     "openai_compatible": {
+       "hearth": {
+         "api_url": "http://127.0.0.1:1234/v1",
+         "available_models": [
+           { "name": "local-big", "display_name": "local-big", "max_tokens": 131072 }
+         ]
+       }
+     }
+   }
+   ```
+   Token goes in through the Zed UI (keychain). Set the agent default, thread
+   summary model, commit message model and inline assistant model to
+   `hearth/local-big` so nothing asks for another model. Remove `cloud-cheap`
+   from the host per D3. Update `docs/IDES.md`.
+2. **MCP** — move `auslaw` from `litellm/config.yaml` into Zed
+   `context_servers` as a stdio server with the same allowed tools and without
+   the jade cookie. Update `docs/MCP.md` (registry stays; "keys" column becomes
+   "clients").
+3. **aider / aliases** — rewrite `scripts/aliases.zsh`:
+   - `HEARTH_LOCAL=http://127.0.0.1:1234/v1`, token from
+     `LMSTUDIO_HOST_TOKEN`, injected per invocation (keep the no-export rule).
+   - `ask`, `ask-local`, `ask-big`, `ask-chat`, `ask-fast` all →
+     `openai/local-big` (D1). `ask-arch` becomes `--architect` with both models
+     `local-big` (same model, no eviction).
+   - `ask-cloud` reads the Gemini model id from `config/roles.tsv` and uses
+     `GOOGLE_API_KEY` directly. It is the only alias that can leave the host.
+   - `ai-loaded` → `lms ps`. `ai-restart` → restart LM Studio's server.
+4. **Open WebUI** (`scripts/webui.sh`) — point at
+   `http://host.containers.internal:1234/v1` with the host token. Confirm
+   containers can reach the host port with "serve on local network" still off;
+   if not, note it and revisit in phase 4.
+5. **Sandbox** — `scripts/sandboxed.sh` and `scripts/sandbox-probe.sh`: egress
+   allow-list changes from `127.0.0.1:4000` to `127.0.0.1:1234`. The probe must
+   still prove that nothing else is reachable.
+
+**Gate:** a real Zed agent session (≥ 20 tool calls, two threads at once)
+completes with no stall; aider `ask` and `ask-cloud` work; sandbox-probe
+passes; WebUI answers.
+
+## Phase 4 — LAN
+
+**Decided 2026-10-31 (D8): SSH tunnel only.** The steps below describe LAN
+serving and are kept for the record; what was built instead:
+
+- Host stays bound to `127.0.0.1` (Serve on Local Network off).
+- `scripts/client-setup.sh <name>` prints laptop steps; `--authorize` adds the
+  laptop's key to `authorized_keys` as
+  `command="/usr/bin/false",restrict,port-forwarding,permitopen="127.0.0.1:1234",permitopen="127.0.0.1:3000",permitlisten="none:1"`.
+  `permitlisten` was added the same day after review: `permitopen` limits `-L` only, and `port-forwarding` had re-enabled `-R`.
+  OpenSSH 10.5 rejects a port of 0 in that option (`invalid permission port`), so the dummy listen is `none:1`, a host the client never sends.
+  The earlier throwaway-sshd test still holds for the forced command (shell refused, `-L` to :8888 refused, :1234 and :3000 work). `permitlisten="none:1"` was retested the same way: `-R` is refused and `-L` to :1234 still works.
+- `client/hearth-client.sh` / `.ps1`: `ai-tunnel`, `ai-ping`, `ai-models`,
+  `ai-ask`, `ai-webui`, `ask*` → `local-big`, `ask-cloud` with the laptop's
+  own key. Secrets read from mode-600 files per command, never exported.
+  `client/hearth-webui.sh` removed — the laptop uses the host's WebUI.
+- `docs/LAPTOP.md` rewritten.
+
+**Gate (adjusted for the tunnel):** from the laptop — `ai-ping` up, a wrong
+token refused, `ai-models` lists the roles, a Zed agent session works,
+`ask-cloud` works with the laptop's key, the tunnel key cannot open a shell.
+From the host — `healthcheck.sh` section 5 still reports no LAN answer.
+
+
+1. LM Studio: serve on local network **ON**. Authentication stays on.
+2. One token per machine: `laptop-<name>`. Store on the laptop in
+   `~/.hearth-key` (mode 600).
+3. macOS firewall: allow LM Studio incoming. Never port-forward 1234.
+4. Rewrite `client/hearth-client.sh`, `client/hearth-client.ps1`,
+   `client/hearth-webui.sh`, `scripts/client-setup.sh`:
+   - `HEARTH_GATEWAY` → `HEARTH_HOST` (e.g. `http://192.168.1.10:1234`); keep
+     reading the old variable name for one release.
+   - `ai-ping` checks `/v1/models` with the token (200 = up, 401 = bad token,
+     no answer = host asleep).
+   - `ai-models` lists identifiers from `/v1/models`.
+   - `ask-cloud` on the laptop uses the laptop's own `GOOGLE_API_KEY`.
+5. Off-LAN: document `ssh -N -L 1234:127.0.0.1:1234 USER@HOST`.
+6. Rewrite `docs/LAPTOP.md` (Zed block, aider block, tunnel).
+
+**Gate:** from the laptop — `ai-ping` up, request without token refused,
+Zed agent session works, `ask-cloud` works with the laptop's key. From the
+host — `nc -z <lan-ip> 1234` answers and an unauthenticated request is 401.
+
+## Phase 5 — Retire the old stack, rewrite tooling
+
+**Done early (2026-10-31, operator):** Ollama stopped (`launchctl bootout`) and
+disabled (`launchctl disable gui/<uid>/com.colinnevin.ollama`); `Ollama.app` in
+the Trash. Plist and model weights untouched. Rollback: Put Back the app,
+`launchctl enable …`, then `launchctl bootstrap gui/<uid>
+~/Library/LaunchAgents/com.colinnevin.ollama.plist`.
+
+1. Stop and disable (do not uninstall yet): LiteLLM launchd agent, Ollama
+   launchd service, `com.hearth.mlx-watchdog`, the Postgres container. Back up
+   the Postgres volume to `~/hearth-backups/` first.
+2. Delete scripts that only exist for the gateway or Ollama:
+   `create-keys.sh`, `db.sh`, `setup-prisma.sh`, `deploy.sh`,
+   `audit-fallbacks.sh`, `audit-mcp-scope.sh`, `bisect-config.sh`,
+   `install-ollama-service.sh`, `lock-ollama.sh`, `mlx-watchdog.sh`,
+   `apply-nothink.sh`, `test-nothink.sh`, `usage.sh`.
+3. Rewrite against LM Studio and `config/roles.tsv`:
+   `lib.sh`, `boot.sh`, `install-autostart.sh`, `status.sh`, `diagnose.sh`,
+   `healthcheck.sh`, `preflight.sh`, `bench.sh`, `tool-smoke.sh`,
+   `pin-digests.sh` (per D4), `swap-role.sh`, `pull-candidates.sh`
+   (`lms get`), `mlx-bench.sh`.
+   - `healthcheck.sh` must check: server up; each role answers; request
+     without token → 401; LAN interface answers only with token; nothing but
+     LM Studio listens on 1234; JIT loading is off (a request for an unlisted
+     model fails rather than loading it).
+     *Measured 2026-10-31: it does not fail — LM Studio answers an unknown
+     model name with the loaded LLM. Nothing loads; healthcheck warns.*
+   - `preflight.sh` keeps CRLF / bash-3.2 scans; replaces config checks with
+     `config/roles.tsv` ↔ `docs/MODELS.md` consistency and the D4 drift check.
+4. Keep unchanged: `searxng.sh`, `install-global-rules.sh`.
+5. Remove `litellm/` from the tree (history keeps it).
+6. Docs: rewrite `README.md`, `docs/ARCHITECTURE.md`, `docs/ROUTING.md`,
+   `docs/RUNBOOK.md`, `docs/MODELS.md`, `docs/THREAT-MODEL.md` (privacy is now
+   "local server holds only local models" + sandbox egress, not key scope).
+   Mark ADRs 0002, 0003, 0008, 0011, 0013, 0015 superseded by 0016.
+7. `CLAUDE.md` hard rules:
+   - Rule 1: concrete names in `config/roles.tsv` and `docs/MODELS.md`;
+     MCP servers in Zed config docs and `docs/MCP.md`.
+   - Rule 2: no router means no fallbacks. Replace with "LM Studio never holds
+     a cloud model, and no script adds a remote backend to `config/roles.tsv`
+     except under `backend: gemini` (or another explicit cloud backend)".
+   - Rule 3: restate as above.
+   - Rule 6: per D4.
+   - Rule 7: update the resident set figure from the phase 1 measurement.
+
+**Gate:** `preflight.sh` and `healthcheck.sh` pass on a clean reboot with
+only LM Studio running. `grep -rn '4000\|11434\|litellm\|ollama'` over
+`scripts/ client/ docs/*.md` returns only intentional historical mentions.
+
+## Phase 6 — Soak and clean up
+
+After the soak agreed in D7 with no stall:
+
+1. Uninstall LiteLLM (pipx), Ollama, the Podman Postgres container and volume
+   (backup kept), and delete Ollama model weights.
+2. Remove the stopped launchd plists.
+3. Mark ADR 0016 accepted; update `docs/PLAN.md`.
+
+If a stall recurs during the soak: capture `lms log stream` output, footprint,
+and the concurrency bench at the failing settings before changing anything.
+
+# MLX stage-1 bench (Ollama vs Rapid-MLX)
+
+> **Historical.** Rapid-MLX vs Ollama (ADR 0012/0013). Local inference is oMLX — ADR 0026.
+
+Compare **agent tool loops** — not raw tok/s. Zed needs read → tool result →
+write with messy file content. Code bench (`scripts/bench.sh`) does not catch
+the Qwen XML failure mode.
+
+**Date drafted:** 2026-09-06. **2026-10-22:** `local-big` moved back to Ollama's
+MLX runner after the same tool-smoke passed there (ADR 0013). This file is for
+a side experiment. It is not how the role is served.
+
+## Envelope (this Mac)
+
+| Constraint | Value |
+|---|---|
+| Unified RAM | 64 GB |
+| GPU-accessible | ~48 GB |
+| Hot models | 1 Ollama model (ADR 0011). A Rapid-MLX process beside it spends the GPU budget |
+
+| MLX alias (Rapid-MLX) | Weights (approx) | Role |
+|---|---|---|
+| `qwen3.6-35b-4bit` | ~20 GB | bench only — role is the Ollama tag in `docs/MODELS.md` |
+| `gpt-oss-20b` | ~13 GB | bench / break-glass |
+| `gemma-4-12b-4bit` | ~8 GB | candidate — not promoted |
+
+## Install Rapid-MLX
+
+```bash
+scripts/mlx-bench.sh --install-rapid
+scripts/mlx-bench.sh --serve qwen3.6-35b-4bit   # foreground, :8000, not launchd
+```
+
+Stop it when the experiment is done so it does not sit beside Ollama.
+
+**Gemma 4** MLX weights need the vision stack:
+
+```bash
+pipx inject rapid-mlx 'mlx-vlm==0.6.17'
+```
+
+## Tool smoke (automated)
+
+Latest results: `bench/results/2026-09-06-1229-tool-smoke/`
+
+```bash
+scripts/tool-smoke.sh openai http://127.0.0.1:8000/v1 qwen3.6-35b-4bit
+scripts/tool-smoke.sh ollama gpt-oss:20b
+scripts/tool-smoke.sh ollama qwen3-coder:30b
+```
+
+Pass = **turn 2 emits `write_file` or `edit_file`** with `<` in content.
+
+## Zed
+
+Use the **`hearth`** provider — agent default `local-big`, which is Ollama
+(ADR 0013).
+
+For raw MLX A/B (bypass gateway):
+
+```json
+"mlx": {
+  "api_url": "http://127.0.0.1:8000/v1",
+  "available_models": [
+    { "name": "qwen3.6-35b-4bit", "display_name": "qwen3.6-35b-4bit (MLX direct)", "max_tokens": 65536 }
+  ]
+}
+```
+
+## Decision rules
+
+| Outcome | Action |
+|---|---|
+| Candidate fails tool smoke | Do not promote |
+| Passes + Zed manual OK | ADR + `docs/MODELS.md` + config. Qwen3.6 is already `local-big` via Ollama (ADR 0013) |
+
+Nothing else becomes a role until `scripts/swap-role.sh` + ADR.
+
+# Model registry
+
+Role → model. This file and `config/roles.tsv` are the only places a concrete
+model name is written by hand. Update both together, plus an ADR. Generated
+copies: Zed `display_name` labels (`scripts/zed-sync.sh`) and the key plus
+weights path in `pins/digests.tsv` (`scripts/pin-digests.sh`). (Before ADR 0016
+the second file was `litellm/config.yaml`.)
+
+**Hardware envelope:** 64 GB unified. macOS's default GPU cap is ~75% above 36 GB
+(~48 GB). This host sets `iogpu.wired_limit_mb` to 57344, so the ceiling is **56 GB**
+(RAM minus 8) and the oMLX guard matches it (ADR 0027). The resident set matters more than any single
+model's size — see the measurement below.
+
+## Live — oMLX (ADR 0026)
+
+oMLX serves these from `~/.hearth/models`. Machine-read copy:
+`config/roles.tsv`. The `weights` directory names are the source repos.
+
+| Role | Model key | Source | Size | Load | Set | Why |
+|---|---|---|---|---|---|---|
+| `local-main` | `gemma-4-26b-a4b-it-qat-mlx` | `lmstudio-community/gemma-4-26B-A4B-it-QAT-MLX-4bit` @ `aa5e2e5` | 15.6 GB | 128K × 3 parallel, no draft, **thinking on (set by `scripts/omlx.sh`)** | 2026-11-01 | MoE, ~4B active, Google QAT 4-bit. Beat the Qwen3.6 build on `bench/tasks` 03 and matched it on 01/02/04 in fewer tokens; 40/40 valid tool calls under concurrency; ~15% slower prefill, 3–4.5 GB less memory. Restored after the looping thread turned out to be context trim, on both models (ADR 0024). Native window 262,144 |
+| `local-deep` | `qwen3.8-27b-mlx` | `lmstudio-community/Qwen3.8-27B-MLX-4bit` @ `6067b15` | 16.1 GB | 64K × 1, **on demand**: `ask-deep` loads it beside `local-main` and unloads it on the way out | 2026-11-01 | Dense 27B. Best `bench/tasks` 03 answer of the three benched; ~26 tok/s and 2.5–5.5× the tokens of the 26B-A4B, so 10–24× slower. For hard one-off questions, never agent loops. Thinks by default (its template). Beside the resident, both peaked at 49.9 GB on 2026-11-01, over the old ~48 GB cap, and the resident's requests timed out during a long prefill. The cap is now 56 GB, so the two may be loaded together (ADR 0028). ADR 0020 |
+| `cloud-cheap` | `gemini-3.6-flash` | Google, `ask-cloud` only | — | — | 2026-10-22 | 1M ctx, 65K output. ADR 0014 |
+
+**Resident set:** concurrency-3 peak 25.2 GB at 128K × 3, ~30K-token prompts
+(`bench/results/2026-11-01-gemma-concurrency`, footprint includes the app).
+The Qwen3.6 build that held this role for part of the same day peaked at
+29.7 GB (`bench/results/2026-11-01-128k`).
+
+**Thinking is set by `scripts/omlx.sh`.** `local-main` gets `enable_thinking`
+and the gemma reasoning parser; sampling is temperature 1.0, top-k 64, top-p
+0.95, repetition penalty 1.0. Lower temperature or a repeat penalty makes its
+thinking loop (seen in Zed agent turns, 2026-11-01). Zed also pins
+`temperature: 1.0` for `local-main` in `agent.model_parameters`.
+
+`scripts/omlx.sh up` writes those settings again. `scripts/healthcheck.sh` fails if
+`local-main` returns no `reasoning_content` or leaks thought markers into the
+answer. Without thinking it answered a simple change sum wrongly three times.
+
+`local-code` and `local-chat` were collapsed into `local-big` (now `local-main`, ADR 0021) on 2026-10-31
+(D1). The Ollama weights were deleted the same day with the rest of the old
+stack.
+
+**Weight drift:** recorded and checked — see Weight pinning below (D4).
+
+**Bench candidate (not a role):** `qwen3.6:27b-coding-mtp-q4_K_M` on Ollama
+(~18 GB) — rejected for verbosity vs `qwen3-coder:30b` (ADR 0005 era bench).
+
+## Dormant
+
+No keys. In the gateway era these were commented-out blocks in `config.yaml`;
+after ADR 0016 a cloud role would be a `gemini` (or other explicit cloud
+backend) row in `config/roles.tsv` plus an alias that passes its own key —
+never an `omlx` row. A remote model on `:1234` would break the boundary.
+
+| Role | Model | Blocked on |
+|---|---|---|
+| `cloud-code` | `claude-sonnet-5` | Anthropic API key — **deliberately unset**. A Console key bills separately from any Claude subscription. Only worth opening if aider, Zed or a laptop should reach Claude through the gateway |
+| `cloud-frontier` | `kimi-k3` via OpenRouter | OpenRouter key. Primary frontier route |
+| `cloud-frontier-direct` | `kimi-k3` via Moonshot | Moonshot key. Same price, best K3 caching |
+| `cloud-frontier-fast` | `kimi-k3` via Fireworks | Fireworks key. Dearest; throughput or LoRA only |
+
+
+There is **no local Kimi K3**. The smallest community quant is ~540 GB at 1.56
+bits, and Ollama cannot load it — support is an open llama.cpp pull request.
+Frontier is cloud-only by necessity, which is what these roles are for.
+
+## Retired
+
+| Model | Was | Removed | Why |
+|---|---|---|---|
+| `qwen/qwen3.6-35b-a3b` (`lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a`) | `local-main` | 2026-11-01 | Held the role for part of the day after a misdiagnosed loop (ADR 0023). Weaker on `bench/tasks` 03; c3 peak 29.7 GB. Weights kept. ADR 0024 |
+| `qwen3.6:35b-mlx` (Ollama) | `local-big` | 2026-10-31 | Same base model as the MLX 4-bit weights in the row above. ADR 0016 |
+| `qwen3-coder:30b` | `local-code` | 2026-10-31 | Role collapsed into `local-big` (D1). ADR 0016 |
+| `qwen3:8b` | `local-chat` | 2026-10-31 | Role collapsed into `local-big` (D1). ADR 0016 |
+| `nomic-embed-text` (Ollama, then an f16 GGUF) | `local-embed` | 2026-11-01 | Nothing called it. Healthcheck was the only request. ADR 0018 |
+| `gpt-oss:20b` | `local-big` | 2026-09-06 | Slower tool-smoke than the Qwen3.6 agent. ADR 0012, then 0013 |
+| `llama3.3:70b` | `local-big` | 2026-08-02 | 42 GB, could not stay resident. 440 s to first reply. ADR 0004 |
+| `qwen2.5-coder:32b` | `local-code` | 2026-08-02 | Superseded by the 30B MoE at the same size |
+| `qwen2.5-coder:7b` | `local-fast` | 2026-08-02 | Role retired — the MoE made a separate fast coder redundant. ADR 0005 |
+
+Note on the last one: Qwen3-Coder has **no variant below 30B**, so
+`qwen2.5-coder:7b` remained the best sub-10 GB coding model available. It went
+because the role became unnecessary, not because it was outdated. If a small
+dense coder appears, the role can return.
+
+## Verbosity, not speed
+
+Second measurement, from the first real bench run:
+
+| Model | tokens over 4 tasks | wall clock | avg tok/s |
+|---|---|---|---|
+| `qwen3-coder:30b` | 1,218 | 11.2 s | 108.8 |
+| `gpt-oss:20b` | 4,466 (3.7x) | 47.6 s | 93.8 |
+| `qwen3:8b` (thinking on) | 13,840 (11.4x) | 181.4 s | 76.3 |
+
+Throughput barely moves — 65–120 tok/s across everything, because the machine
+is memory-bandwidth bound. **Wall clock is set by how many tokens a model emits,
+not how fast.** A hybrid reasoning model can be the slowest role while being the
+smallest.
+
+Disabling thinking on `local-chat` took it from 2,370 tokens / 29.7 s to
+**386 tokens / 5.1 s** through the gateway. See ADR 0006.
+
+## The measurement that drove all of this
+
+Through the gateway, one short prompt each, from cold:
+
+| Role | Before | Time | After | Time |
+|---|---|---|---|---|
+| `local-code` | qwen2.5-coder:32b | 29 s | qwen3-coder:30b | **6 s** |
+| `local-big` | llama3.3:70b | **440 s** | gpt-oss:20b | **5 s** |
+| `cloud-cheap` | gemini-3.5-flash | 2 s | gemini-3.5-flash | 1 s |
+
+**440 s to 5 s — not a faster model, a resident one.**
+
+The old set needed 65.7 GB against a ~48 GB GPU ceiling, so something was always
+evicted and reaching for `local-big` meant reloading 42 GB from disk. That
+Ollama-era set totalled 37.5 GB. The live resident set is the figure at the
+top of this file.
+
+The lesson worth keeping: on a fixed-memory machine the **resident set** matters
+more than any individual model's quality. A 70B that evicts your coding model is
+slower in practice than a 20B that never leaves RAM, whatever the benchmarks say.
+MoE architectures are what make the newer set fit — ~3B active parameters gives
+near-30B reasoning at 7B speed.
+
+Disk: 63 GB before, ~37 GB after.
+
+## Cost reference
+
+Verified 2026-08-01. LiteLLM auto-syncs its own cost map; this table is for human
+decisions and does **not** update itself. Re-check before relying on it.
+
+| Kimi K3 via | $/M in | $/M out | Note |
+|---|---|---|---|
+| Moonshot (direct) | 3.00 | 15.00 | source of truth |
+| OpenRouter | 3.00 | 15.00 | ~92% cache hit reported → effective input ≈ 0.52 |
+| Fireworks serverless | 3.30 | 16.50 | 10% dearer; buys throughput and LoRA |
+
+- **Fireworks is the dearest of the three.** This stack originally defaulted to it
+  because it was the provider that came to mind first, not because it won on
+  price. That is exactly the failure mode this registry exists to catch.
+- **Output price is the one that bites** — it compounds through agentic loops.
+
+## Weight pinning (D4)
+
+`scripts/pin-digests.sh` hashes each role's `weights` path (column 6 of
+`config/roles.tsv`, under `~/.hearth/models`) into `pins/digests.tsv`:
+file count, bytes, newest mtime, and a sha256 over every file. Git-tracked,
+so drift shows in a diff.
+
+```bash
+scripts/pin-digests.sh                  # record, after a bench you trust (~40 s)
+scripts/pin-digests.sh --check          # fast; preflight runs this
+scripts/pin-digests.sh --check --deep   # re-hash everything
+```
+
+Recorded 2026-10-31. This detects, it does not enforce — oMLX loads
+whatever is on disk. The embedding pin was removed with the role (ADR 0018).
+
+## Changing a role
+
+1. Put the candidate weights under `~/.hearth/models` at the source path in
+   this file
+2. Bench it against the incumbent: `scripts/concurrency-bench.sh` and
+   `bench/tasks/` (rule 5). Same settings as the last baseline
+3. Check the footprint fits under the 56 GB ceiling with `local-main` already resident
+4. Update this table and `config/roles.tsv` together, then `scripts/omlx.sh up`
+   and `scripts/zed-sync.sh`
+5. `scripts/tool-smoke.sh openai http://127.0.0.1:1234/v1 local-main`
+6. Write an ADR in `docs/decisions/` and a row in `docs/HISTORY.md`
+7. Delete the old weights only once the replacement has proven itself
+
+`scripts/bench.sh` runs `bench/tasks` against a resident role. It does not
+load a candidate by itself.
+
+# Build status
+
+> **Historical (gateway era).** Current design: `docs/ARCHITECTURE.md`. What was tried: `docs/HISTORY.md`.
+
+Last updated: 2026-08-02
+
+**Not the source of truth.** Current design: `docs/ARCHITECTURE.md` and
+`docs/MODELS.md`. This file is the gateway-era plan. The original plan is
+preserved in `docs/decisions/0001-inherited-state.md`.
+
+## Where things stand
+
+| Phase | State |
+|---|---|
+| 0 — capture inherited state | done — ADR 0001 |
+| 1 — repo scaffold | done |
+| 2 — role-based gateway config | **deployed and serving** |
+| Postgres via Podman on :5433 | done, running |
+| Virtual keys | done — four created, scoped |
+| Leak test | **passing** — boundary enforced, not just documented |
+| Aliases switched to roles | done |
+| 3 — lock Ollama to localhost | **done** — LAN unreachable, verified |
+| llama3.3:70b retired | done — ADR 0004. 440 s to 5 s |
+| 4 — bench harness | done and run — found the local-chat verbosity problem |
+| local-chat thinking disabled | done — ADR 0006. 29.7 s to 5.1 s |
+| digest pinning | recorded + drift-checked (not enforceable in Ollama) |
+| 5 — auto-update pipeline | deferred |
+| 6 — Open WebUI | **done** — chat UI on :3000, private-scoped, local-chat default |
+| Web search via SearXNG | **done** — opt-in per message, :8888, verified end to end |
+| `usage.sh` visibility | done — role, tier, model, tokens, LOCAL/CLOUD split |
+| 7 — verification tooling | done — preflight, deploy, healthcheck, audit |
+
+## What changed from the original plan
+
+- **Frontier providers: three, not one.** Fireworks was the original default purely
+  because it was the provider first mentioned. Verified 2026-08-01, it is the
+  dearest: $3.30/$16.50 versus $3.00/$15.00 from both OpenRouter and Moonshot
+  direct. OpenRouter is now primary — one key, day-zero access to new models.
+- **`cloud-code` is dormant by choice.** No Anthropic API key. A Console key bills
+  separately from a Claude subscription, so the gateway route only earns its
+  place if aider, Zed or a laptop should reach Claude through the gateway.
+- **Four keys, not three.** Added `lan-cloud` so the laptop can reach cloud models
+  without widening the everyday `lan` key.
+- **Postgres in Podman, not Docker Desktop.**
+- **`ask` now defaults to local.** The old `ask` pointed at Anthropic with no key
+  set, so it was broken. The safe default on a privacy-first stack should be the
+  private one; cloud is now the explicit reach (`ask-cloud`).
+- **Deployment does not touch launchd.** `run-litellm.sh` already loads
+  `~/.config/litellm/config.yaml`, so that path becomes a symlink into the repo.
+  Rollback is one `mv`.
+
+## Bugs the harness caught before deploy
+
+Kept as a record of why the tooling exists.
+
+1. **Fallback leak** in the inherited config — `local-ollama → gemini` meant any
+   Ollama timeout silently sent the prompt to Google.
+2. **`ollama/` vs `ollama_chat/`** — the completion-API prefix causes tool-call
+   loops and dropped context.
+3. **Preflight reported a fake leak** when PyYAML was missing. A check that cannot
+   run must never look like a finding; ERROR and FAIL are now distinct exit codes.
+4. **Env check read the wrong environment** — it consulted the interactive shell,
+   but launchd only sources `~/.config/litellm/env`. A false green.
+5. **Model presence check was tag-naive** — `nomic-embed-text` did not match
+   `nomic-embed-text:latest`.
+6. **launchd detection** used `launchctl list | grep`, which misses gui-domain
+   agents; it reported "not loaded" while the gateway was serving traffic.
+7. **`db.sh` went missing** from disk and nothing noticed. Preflight now verifies
+   every referenced script exists.
+8. **Leak test could false-pass** — it probed a dormant role, where "model not
+   found" also returns 4xx. Now probes a live cloud role and adds a positive
+   control, since a merely broken key also refuses everything.
+9. **`model_info: tier: local`** — `tier` is a real LiteLLM field accepting only
+   `free` or `paid`. Pydantic rejected it and LiteLLM logged "ignoring and
+   continuing with other deployments", silently dropping EVERY model. The
+   gateway started clean, passed readiness, and served nothing.
+10. **bash 4 syntax on bash 3.2** — `declare -A` and unguarded `"${arr[@]}"`
+    pass everywhere except macOS, which is the only place it runs.
+11. **`curl | python - args <<'PY'`** — the heredoc and the pipe both claim
+    stdin, so `json.load(sys.stdin)` reads nothing. Symptom is a bogus
+    "response was not JSON".
+12. **`/key/delete` accepted a token hash and did nothing** — it wants
+    `key_aliases`. A silent no-op that looks like success.
+13. **Open WebUI env vars were overridden by its database.** Env only seeds a
+    fresh DB; the persisted volume kept the first run's settings. `podman exec
+    ... env` showed the feature enabled while the UI had it off.
+
+## Next
+
+1. **Re-run `bench.sh`** now that thinking is off, so the recorded numbers
+   match reality, then **read the task 03 output.** `gpt-oss:20b` earned `local-big` on
+   capacity, not quality — nothing has yet confirmed it reasons well. Task 03
+   hides a float-for-currency bug in money arithmetic; a model that fixes
+   the obvious `range(len())` and misses that is the wrong tool for
+   production financial code. Syntax checks cannot answer this. It needs a human read.
+2. **Record digests after that read**, with `scripts/pin-digests.sh`, so drift
+   is detectable from a known-good state rather than an arbitrary one.
+3. **Live with it for a week** before building the auto-updater. It is the
+   piece most likely to be overbuilt for a problem that turns out to be small.
+
+**Gaps identified 2026-08-02** by comparing against other setups
+(`docs/COMPARISON.md`):
+
+- ~~**No sandboxing.**~~ **Closed 2026-08-02** — `scripts/sandboxed.sh` denies
+  egress to everything but the gateway and confines writes to the working
+  directory. Verified on macOS 26.4, 10/10 checks. ADR 0007.
+- ~~**No prompt-injection threat model.**~~ **Written** — `docs/THREAT-MODEL.md`.
+  Conclusion: detection does not work, so the model exists to say which
+  capabilities to cut rather than what to filter.
+- **Untrusted MCP servers are unaudited.** Any MCP that fetches from the open
+  web and sits next to real client data needs a tool-surface audit before an
+  agent is allowed to call it. Highest value per effort of anything left.
+- **No confirmation gates** on consequential actions beyond git commits. Costs
+  nothing today because nothing in the stack can send mail or move money.
+- **No local embeddings.** `local-embed` was removed 2026-11-01 (ADR 0018).
+  A reference corpus would be a new role, benched first.
+
+Optional, when the need arises:
+
+- Enable `cloud-code` if aider, Zed or a laptop should reach Claude — needs a
+  Console API key, which bills separately from any subscription.
+- Enable `cloud-frontier` (OpenRouter) for Kimi K3 and day-zero access to new
+  models. There is no local K3 at any quantisation.
+- A second Open WebUI without search configured, if you want "no web search on
+  sensitive work" to be structural rather than remembered.
+
+# Review handoff: the 2026-10-31 server cut
+
+> **Historical.** Do not follow this as current setup. Serving is oMLX: `docs/ARCHITECTURE.md` and `docs/RUNBOOK.md`.
+
+For an AI reviewer (Cursor, Zed, Claude Code) working in a clone of this repo.
+Written 2026-10-31. **Review only: change nothing, run nothing that mutates
+state.** Report findings; the operator decides what gets fixed.
+
+## Scope
+
+```bash
+git log --oneline 8e9ecf2..HEAD     # ~20 commits, all 2026-10-31
+git diff --stat 8e9ecf2 HEAD        # bench/results/ is most of the line count — skim it
+```
+
+The hearth stack moved from **LiteLLM + Ollama + Postgres** (a gateway on
+`:4000`) to **the LM Studio app serving directly on `127.0.0.1:1234`**. The
+old stack is deleted, the scripts are rewritten, host clients are cut over,
+and laptops reach the host over an SSH tunnel only. Read these first, in this
+order:
+
+1. `CLAUDE.md` — the hard rules. Everything is reviewed against them.
+2. `docs/decisions/0016-lmstudio-direct.md` — the decision.
+3. `docs/MIGRATION-LMSTUDIO.md` — phases, status table, decisions D1–D8.
+4. `docs/ARCHITECTURE.md`, `docs/ROUTING.md`, `docs/THREAT-MODEL.md`.
+
+## What to review, highest risk first
+
+| # | Area | Files | Questions |
+|---|---|---|---|
+| 1 | **Privacy by placement** | `config/roles.tsv`, `scripts/omlx.sh`, `scripts/aliases.zsh`, `client/*`, `scripts/webui.sh`, `scripts/sandboxed.sh` | Can anything sent to `:1234` reach a cloud model? Does any path other than `ask-cloud` carry a cloud key? Can a sandboxed agent reach anything but `127.0.0.1:1234`? |
+| 2 | **Secrets** | `scripts/lib.sh` (`ai_load_env`, `hearth_http`), `client/hearth-client.sh` / `.ps1`, `scripts/aliases.zsh`, `scripts/preflight.sh` | Is a token or key ever exported, put on a command line (visible in `ps`), logged, or written somewhere other than a mode-600 file? `hearth_http` passes it via `curl -K -` for this reason. The `.ps1` sets `$env:` vars for the child — is the cleanup sound? |
+| 3 | **Laptop access (D8)** | `scripts/client-setup.sh`, `docs/LAPTOP.md`, the `CLAUDE.md` "Which machine" block | The `authorized_keys` line is `command="/usr/bin/false",restrict,port-forwarding,permitopen=...`. Is the key really tunnel-only? Does `--authorize` refuse and back up correctly? Are the AI-assisted setup instructions safe for a cloud assistant (never sees a secret)? |
+| 4 | **Server exposure** | `scripts/boot.sh`, `scripts/healthcheck.sh` | LM Studio rewrites its saved settings on `lms server start`. Is `127.0.0.1` + no CORS enforced on every start path, and checked? Does each negative test (401, no LAN, no CORS, JIT off) have a positive control? |
+| 5 | **Login autostart** | `scripts/install-autostart.sh`, `scripts/boot.sh` | launchd `RunAtLoad` + `AbandonProcessGroup` (without it, launchd killed the Podman VM). Failure modes if LM Studio is slow to start, or Podman is missing? |
+| 6 | **Exit codes** | every script | `0` pass, `1` real problem, `2` could not run. Can a missing dependency ever report as `1`, or a failure as `0`? |
+| 7 | **Portability** | `scripts/*.sh`, `client/hearth-client.sh` | macOS `/bin/bash` 3.2: no `declare -A`, `mapfile`, `${x^^}`; empty arrays guarded under `set -u`. `client/hearth-client.sh` must run in bash *and* zsh on macOS and Linux. Python in heredocs: no heredoc + pipe both on stdin. |
+| 8 | **Model-name rule** | everything | Concrete model names only in `config/roles.tsv` and `docs/MODELS.md` (plus generated Zed labels and redacted bench results). `grep` for any that leaked. |
+| 9 | **Weight pinning (D4)** | `scripts/pin-digests.sh`, `pins/digests.tsv` | Does `--check` really detect a changed file? Does any doc imply roles are *immutable* rather than drift-detected? |
+| 10 | **Docs drift** | `README.md`, `docs/*.md` | Any instruction still pointing at `:4000`, `:11434`, LiteLLM, virtual keys, Postgres, Ollama or `llmster` *as current*? Superseded ADRs and docs marked **Historical** are expected to mention them. Do the docs match what the scripts actually do? |
+| 11 | **Benches** | `bench/concurrency.py`, `scripts/concurrency-bench.sh`, `bench/results/2026-10-31-*` | Do the reports' conclusions follow from the numbers? Is the c3 TTFT comparison (LM Studio vs Ollama) like for like? |
+
+## Known and accepted — don't report these as new
+
+- No soak week before deleting the old stack (operator's call). Rollback is
+  not possible; ADR 0016 says so.
+- With JIT off, an unknown model name is answered by `local-big` instead of
+  refused. `healthcheck.sh` warns about it.
+- LM Studio auth and tokens are GUI-only; there is no CLI (lmstudio-ai/lms#489).
+- Prefill is serialised even with `--parallel 3`; recorded in the phase 0/1 reports.
+- Phase 4's laptop gate has not been run yet.
+- Cursor cannot use hearth as a model provider (its backend makes the calls).
+
+## Also changed, outside the repo (host only)
+
+Described so you don't have to look. Ask the operator before opening any of
+these, and never open the ones in the next section.
+
+- `~/.config/zed/settings.json` — `hearth` provider at `127.0.0.1:1234`,
+  every model slot `hearth/local-main`. The legal-research profile recorded
+  during phase 3 is no longer installed; `docs/MCP.md` preserves it as a
+  worked setup example.
+- `~/.aider.conf.yml` — `openai/local-big` for model and weak model.
+- `~/.zshrc` — sources `scripts/aliases.zsh`; Ollama exports removed.
+- `~/Library/LaunchAgents/com.hearth.boot.plist` — written by `install-autostart.sh`.
+- `~/.ssh/authorized_keys` — gets one restricted line per laptop.
+
+## Off limits
+
+You are probably a cloud model; whatever you read goes to your vendor.
+**Never open, print, grep or copy:**
+
+- `~/.config/hearth/env` — LM Studio token and Google key
+- `~/.zshenv.local*` — a backup there still holds a key
+- `~/hearth-backups/` — old database dumps
+- `~/.lmstudio/.internal/` — server settings, token hashes
+- `~/.hearth-key`, `~/.hearth-gemini-key`, `~/.ssh/` on any machine
+
+## What you may run
+
+Read-only, on the host only, all safe to repeat (exit codes as above):
+
+```bash
+scripts/preflight.sh
+scripts/healthcheck.sh
+scripts/install-autostart.sh --check
+scripts/omlx.sh status
+scripts/pin-digests.sh --check
+scripts/zed-sync.sh --check
+bash -n scripts/*.sh client/hearth-client.sh
+```
+
+**Don't run:** `boot.sh`, `omlx.sh up`,
+`install-autostart.sh --apply/--remove`, `client-setup.sh --authorize/--install`,
+`bench.sh`, `concurrency-bench.sh`,
+`pin-digests.sh` (without `--check`), `zed-sync.sh` (without `--check`),
+`podman`, `launchctl` or `sudo`.
+On a laptop, run none of `scripts/`.
+
+If you're Zed on `local-big` (128K context, ADR 0017), review one area from the table
+per thread rather than the whole diff at once.
+
+## How to report
+
+One finding per item, most severe first:
+
+- **Severity:** critical (privacy or secret leak) / high (wrong result,
+  broken check) / medium / low (docs, style)
+- **Where:** `path:line`
+- **What:** one sentence
+- **Failure scenario:** concrete inputs or state → what goes wrong
+- **Confidence:** confirmed (you ran or traced it) / plausible
+
+Say which areas you reviewed and which you didn't. "No findings" for an area
+is a useful answer, but only with a line on what you checked.
+
+# Routing rules
+
+The decision table. When in doubt, local.
+
+## What must stay local
+
+Route to `local-*` roles (oMLX, `:1234`), always:
+
+- Any repo or path you have flagged as holding sensitive or private data
+- Names, addresses, contact details, financial figures, ID documents
+- Anything covered by applicable privacy obligations
+- Credentials, keys, `.env` contents, database dumps
+- Anything you would not paste into a public forum
+
+## What can go to cloud
+
+- Open-source repos and public code
+- Synthetic or anonymised examples
+- Language, framework, and API questions with no data attached
+- Architecture and design discussion in the abstract
+- This repo itself
+
+## Roles
+
+| Role | Use for | Reached by | State |
+|---|---|---|---|
+| `local-main` | everything local: code, agent, chat, long context | oMLX `:1234` | live |
+| `cloud-cheap` | bulk non-sensitive work, big context | `ask-cloud` → Gemini directly | live |
+| `local-embed` | — | — | removed 2026-11-01, nothing called it (ADR 0018) |
+| `local-code`, `local-chat` | — | alias names only; mean `local-main` (D1) | collapsed |
+| `cloud-code`, `cloud-frontier*` | — | — | dormant, no keys |
+
+## Enforcement
+
+There is no gateway and no key scope (ADR 0016). The boundary is structural
+in a different way:
+
+| Path | Can it leave the host? | Why |
+|---|---|---|
+| Anything to `127.0.0.1:1234` | **no** | oMLX holds only local models |
+| Zed on this host | **no** model egress | no cloud provider configured (D3). Tool egress: SearXNG in the `web` and `write-web` profiles. Write and Ask have `fetch` and `search_web` off |
+| `ask`, `ask-*` except `ask-cloud` | **no** | point at `:1234` with the host token |
+| `ask-cloud` | **yes** | the only alias with a provider key; it is explicit by name |
+| Sandboxed agents | **no** | egress allowed to `127.0.0.1:1234` only |
+| Open WebUI | model: **no**. Search query: **yes if enabled** | see below |
+
+What is lost against the gateway: nothing refuses a cloud request you make
+on purpose. Choosing `ask-cloud` on sensitive work is no longer stopped — it
+is only made explicit.
+
+**Never add a cloud model to oMLX**, and never give a remote backend an
+`omlx` row in `config/roles.tsv`. That single rule is what makes `:1234`
+safe for anything.
+
+## Web search punctures the boundary
+
+Open WebUI can give local models web search via self-hosted SearXNG
+(`scripts/searxng.sh`). The model, the conversation and your documents all stay
+on this machine. **The search query does not.**
+
+SearXNG stops Google, Bing and DuckDuckGo seeing your IP or building a profile —
+it queries them on your behalf. That is a genuine improvement over searching
+directly. It is not privacy. The search terms still leave.
+
+| Safe with web search on | Never with web search on |
+|---|---|
+| "How does framework X handle refresh tokens?" | "Search for <person name> <address>" |
+| "What changed in the 2026 API spec?" | Anything quoting a name, address, or account figure |
+| Framework and API questions | Anything you would not type into Google |
+
+Web search is opt-in per conversation. Leave it off by default. An agent that
+can read files can place personal information from those files into the next
+query, and that query leaves. A thread that already holds names, addresses,
+or documents should not have search on.
+
+Zed follows the same rule on two profiles (ADR 0022, 0029). **Web** sends
+`searxng_web_search` to public engines, has no file tools, and stays on
+`local-main`. **Write + search** has Write's tools and no pinned model, so
+a thread on `local-main` or `local-deep` can search and can read files into
+the query. Each tool call asks first (`confirm`). Write and Ask do not
+include SearXNG, or Zed's built-in `fetch` and `search_web`. `docs/MCP.md`
+uses the former legal-research profile as a setup example; it is not installed.
+
+## No fallbacks
+
+There is no router, so nothing can quietly reroute a request to a cloud
+model. If `local-main` is not loaded, a request for it can be answered by
+whatever model is loaded, under the name you asked for. That is a wrong
+local answer, not a leak. `ask-deep` and the
+laptop clients refuse to call `local-deep` unless it is actually loaded, for
+this reason. The earlier rule ("local roles never fall back to cloud")
+existed because the inherited gateway had `local → gemini` fallbacks; see
+`docs/HISTORY.md`.
+
+## Break-glass
+
+There is no second local server (ADR 0028).
+If oMLX is wedged: `scripts/omlx.sh down`, then `scripts/omlx.sh up`.
+Before changing anything, capture `~/Library/Logs/hearth-omlx.log`, the
+footprint of the listener, and the concurrency bench at the failing settings.
+
+# Runbook
+
+Start, stop, diagnose. oMLX serves `127.0.0.1:1234` from `~/.hearth/models`
+(ADR 0026). `scripts/omlx.sh down` stops oMLX and leaves the port empty
+(ADR 0028).
+
+## Layout of the running system
+
+| Piece | Where | Notes |
+|---|---|---|
+| Server | `127.0.0.1:1234` | oMLX, `scripts/omlx.sh up`. `down` stops it |
+| Weights | `~/.hearth/models` | the directories named in `config/roles.tsv` |
+| Roles | `config/roles.tsv` | `local-main` resident, 128K × 3. `local-deep` loads beside it (ADR 0028) |
+| Token | `~/.config/hearth/env`, mode 600 | `OMLX_HOST_TOKEN`. Scripts pass it to the server as `OMLX_API_KEY` |
+| Server settings | `~/.omlx/settings.json` (mode 600) | written by `scripts/omlx.sh up`: loopback, CORS off, no model fallback |
+| Remote Login (sshd) | `:22` | laptops' tunnel; their keys are `restrict`ed to `-L` `:1234`/`:3000`/`:8888`, with `-R` denied (`scripts/client-setup.sh --update-keys` brings old keys up to date) |
+| Open WebUI | Podman, `127.0.0.1:3000` | `scripts/webui.sh` |
+| SearXNG | Podman, `:8888` | `scripts/searxng.sh` |
+
+Removed 2026-10-31: Ollama, LiteLLM, Postgres, Rapid-MLX, llmster and their
+launchd agents. Ports 4000, 5433 and 11434 should be free.
+
+## First-time setup
+
+1. Put each role's weights at `~/.hearth/models/<weights>` using the path in
+   `config/roles.tsv`. Sources are in `docs/MODELS.md`.
+2. Store the API key without echoing:
+   ```bash
+   mkdir -p ~/.config/hearth && umask 077 && \
+     printf 'OMLX_HOST_TOKEN=%s\n' "$(pbpaste)" >> ~/.config/hearth/env && \
+     chmod 600 ~/.config/hearth/env && pbcopy </dev/null
+   ```
+   The value is the oMLX API key.
+3. `scripts/omlx.sh up` writes `~/.omlx/settings.json` (loopback, CORS off,
+   no model fallback), serves `local-main`, and refuses to start if something
+   else holds `:1234`.
+4. Prove auth holds — a positive control first. Do not `source` the env file
+   into a shell you keep; `scripts/healthcheck.sh` reads it itself.
+5. `echo "source $PWD/scripts/aliases.zsh" >> ~/.zshrc`
+
+## Surviving a reboot
+
+`scripts/install-autostart.sh --apply` installs `com.hearth.boot`, a launchd
+agent that runs `scripts/boot.sh` once at login. `boot.sh` runs
+`scripts/omlx.sh up`, then starts the Podman VM, SearXNG and Open WebUI.
+
+The plist sets `AbandonProcessGroup`: without it launchd kills every process
+`boot.sh` leaves behind when it exits — which is the Podman VM, so WebUI and
+SearXNG died minutes after login (seen and reproduced 2026-10-31).
+
+Log: `~/Library/Logs/hearth-boot.log`. Check it with
+`scripts/install-autostart.sh --check`. By hand: `scripts/boot.sh`.
+
+The same install loads `com.hearth.context-watch` (`scripts/context-watch.sh`,
+KeepAlive). It watches `~/Library/Logs/hearth-omlx.log` and notifies if a
+trim line appears. oMLX does not emit that line today, so it stays quiet.
+`scripts/install-autostart.sh --watch` loads only that agent. Notices land in
+`~/Library/Logs/hearth-context-watch.log`.
+
+### oMLX
+
+`scripts/boot.sh` runs `scripts/omlx.sh up`. It serves `local-main` from
+the copy in `~/.hearth/models` on `127.0.0.1:1234`, with the host token, a
+56 GB memory guard, an 8 GB RAM cache, and a 20 GB SSD cache. `ask-deep`
+loads `local-deep` beside `local-main` and unloads `local-deep` on the way
+out. The GPU wired limit is 57344 MB (56 GB), installed by
+`scripts/iogpu-wired.sh`.
+`scripts/omlx.sh bench` checks thinking, tools, and a repeated 30K prompt.
+`scripts/omlx.sh down` stops oMLX and leaves the port empty.
+A reboot starts oMLX again.
+A laptop token is registered with `scripts/omlx.sh sub-key add laptop-<name>`
+(the prompt does not echo) and dropped with `sub-key revoke`. That key can
+call the model and cannot log in as admin. The operator pastes the token.
+`sub-key list` prints names.
+
+### Sleep
+
+A sleeping host means every laptop loses inference. These are printed, not
+run, because silently changing when your machine sleeps is not something a
+script should do:
+
+```bash
+sudo pmset -c sleep 0        # never sleep on AC
+sudo pmset -c disksleep 0
+sudo pmset -a womp 1         # wake on network access
+sudo pmset -c displaysleep 10   # displays can still sleep, that is free
+```
+
+## Everyday
+
+```bash
+ai-status                      # one glance: server, bind, roles, containers, autostart
+ai-health                      # scripts/healthcheck.sh — the real verdict (exit 0/1/2)
+scripts/preflight.sh           # static checks: roles.tsv, rule 1, oMLX settings, secrets, drift
+ai-loaded                      # scripts/omlx.sh status
+ai-load                        # scripts/omlx.sh up
+ai-restart                     # oMLX down, then up, on 127.0.0.1:1234
+ai-log                         # tail -f ~/Library/Logs/hearth-omlx.log
+```
+
+Footprint of the model worker (the number that matters against the 56 GB
+GPU ceiling — RSS understates it):
+
+```bash
+footprint -p "$(cat ~/.omlx/hearth.pid)" | awk '/Footprint:/'
+```
+
+## Chat UI and visibility
+
+```bash
+scripts/webui.sh up            # local only — there is no cloud mode, and no login
+scripts/webui.sh down
+```
+
+The container reaches the host's `127.0.0.1:1234` via
+`host.containers.internal` with "serve on local network" off. `webui.sh up`
+refuses to start unless the host token gets a 200. SearXNG stays published
+on `127.0.0.1:8888` for Zed and laptop tunnels. The WebUI container does not
+use that bind: both containers join the `hearth` Podman network and WebUI
+calls SearXNG by container name on port 8080. `up` writes that URL into the
+WebUI database, which is the value the search toggle actually uses.
+
+**The connection lives in WebUI's database.** Environment variables only seed
+a fresh database. `up` does not rewrite the saved OpenAI URL, and the
+anonymous session cannot open the admin panel. Default and task model are
+`local-main`.
+
+### Using the chat UI from a laptop
+
+Open WebUI is a **web app** — nothing to install on the laptop. **Preferred:
+SSH tunnel**, which keeps the UI localhost-only:
+
+```bash
+ssh -N -L 3000:127.0.0.1:3000 USER@HOST     # then http://127.0.0.1:3000
+```
+
+There is no login: `WEBUI_AUTH` is off, and `webui.sh` refuses `--lan` because
+that would publish the chat UI with nothing in front of it. **Do not
+port-forward :3000 to the internet.** The tunnel is the only remote path.
+
+The anonymous session does not keep chats. Open WebUI creates that user as
+admin, and this image skips temporary-chat enforcement for admins, so
+`webui.sh up` demotes the user, turns chat sharing off, deletes saved chats,
+and refuses new chat rows. A refresh starts empty. The admin panel is not
+available in that session. `up` does not rewrite the saved OpenAI connection;
+that row in the WebUI database is what the model list uses.
+
+### Do not enable tools in Open WebUI without thinking
+
+Web search feeds arbitrary attacker-controlled page text straight into the
+model's context. That is tolerable **only** because the chat model has no tools:
+it can mislead you convincingly, but it cannot act.
+
+Enabling tools, functions, or code execution turns this into the highest-risk
+surface in the stack. Open WebUI stores these settings in its database, where
+they override the environment and survive container recreation. Treat
+enabling them as an ADR-worthy decision. See `docs/THREAT-MODEL.md` §3.
+
+### Web search: the env vars are not enough
+
+Same database-wins trap. The anonymous session cannot open the admin panel,
+so the value already stored in the volume is the one the toggle follows.
+The toggle then appears per message.
+
+### Vulnerability monitoring (Snyk)
+
+Hearth has no dependency manifests, so what Snyk watches is the two container
+images: `scripts/snyk-monitor.sh` exports the image each container is running
+(by ID — the tags move) and records it as Snyk projects `hearth/webui` and
+`hearth/searxng`, plus the Zed SearXNG MCP server's npm lockfile as
+`hearth/mcp-searxng` (ADR 0022). Snyk re-tests those snapshots daily and emails new issues.
+Only the image's package list leaves the machine, not this repo's code.
+
+- One-time: `brew tap snyk/tap && brew install snyk-cli`, then `snyk auth`
+  (browser sign-in; free plan).
+- `scripts/webui.sh up` and `scripts/searxng.sh up` re-run it in the
+  background; output in `~/Library/Logs/hearth-snyk.log`. After pulling a new
+  image, run `scripts/snyk-monitor.sh` by hand if you did not `up`.
+- Exit 2 means it could not run (no CLI, not signed in, Podman down), not that
+  the images are clean.
+
+## Running agents contained
+
+```bash
+scripts/sandboxed.sh aider              # confine to $PWD
+scripts/sandboxed.sh --dir ~/dev/x aider
+scripts/sandboxed.sh --print-profile    # audit the profile
+scripts/sandbox-probe.sh                # re-verify the controls still hold
+```
+
+Inside a sandboxed session the agent can reach **only** `127.0.0.1:1234`.
+`pip install`, `npm install`, `git push` and any `curl` fail by design.
+
+**Re-run `sandbox-probe.sh` after every macOS update.** `sandbox-exec` is
+deprecated and Apple can change or remove it without notice.
+
+If an agent crashes on a permission error naming a path outside the repo, that
+is the sandbox working. Add a preset in `sandboxed.sh` or widen once with
+`--also-write PATH`; every widening is printed at startup.
+
+It does **not** protect against an agent reading your keys or corrupting the
+repo it was invited into. Commit first; `git diff` before accepting.
+
+## Diagnosing
+
+| Symptom | Check | Fix |
+|---|---|---|
+| Every client 401s | `curl` with the host token | token wrong or missing in `~/.config/hearth/env`; Zed keeps its own copy in the keychain |
+| Wrong model answers | `scripts/healthcheck.sh` | An unknown model name can be answered by the loaded role. Check the client's model id is a role |
+| Slow under load | `concurrency-bench.sh` at the failing settings | prefill is serialised; see `docs/ARCHITECTURE.md` |
+| Zed agent stalls | `ai-log`, `scripts/status.sh`, bench | capture them **before** changing anything |
+| Server LAN-visible or CORS on | `ai-status`, `ai-health` | `scripts/boot.sh` restarts it on 127.0.0.1 without CORS |
+| aider errors naming `ollama_chat/…` or `local-code` | an old `.aider.conf.yml` in the repo dir | roles are `openai/local-main` now |
+
+Bench any change the same way as the baseline:
+
+```bash
+scripts/concurrency-bench.sh --base-url http://127.0.0.1:1234/v1 \
+  --token-env OMLX_HOST_TOKEN --model local-main --concurrency 3
+```
+
+## Rollback
+
+There is no old stack to roll back to: it was removed on 2026-10-31 (ADR
+0016, Rollback). Backups are in `~/hearth-backups/` (mode 700). Client config
+backups from 2026-10-31 sit beside the live files with a dated suffix.
+
+## Laptop access
+
+SSH tunnel only; the server stays on `127.0.0.1`. `docs/LAPTOP.md` has the
+whole setup. On the host:
+
+```bash
+scripts/client-setup.sh <laptop-name>                       # print the steps
+scripts/client-setup.sh <laptop-name> --authorize key.pub   # tunnel-only key
+```
+
+`healthcheck.sh` section 5 should say "LAN: no answer" — a LAN answer means
+the server is not bound to loopback. Revoke a laptop with
+`scripts/omlx.sh sub-key revoke laptop-<name>` and delete its
+`hearth-tunnel-<name>` line in `~/.ssh/authorized_keys`.
+**Never port-forward `:22`, `:1234` or `:3000`.**
+
+# hearth — what it solves, what it measured, what's next
+
+> **Historical (gateway era).** Describes the LiteLLM + Ollama stack; superseded by ADR 0016.
+
+Written 2026-08-02. All figures below are measured on the machine, not estimated.
+
+---
+
+## 1. The problems this actually solves
+
+### Privacy that survives forgetting
+
+The real risk was never "I might paste client data into ChatGPT." It was that
+in a hurry, on a deadline, the fast option and the safe option are different
+buttons — and eventually the wrong one gets pressed.
+
+So the boundary is **structural, not advisory**. Client work uses a `private`
+API key whose model list contains no cloud models. Ask it for Gemini and the
+gateway returns 403. There is no prompt that talks its way around a key scope.
+
+The inherited config had a fallback rule sending `local → gemini` on any Ollama
+timeout. Every slow local response was silently shipping the prompt to Google.
+Nothing in the setup would ever have told me. **Across a privacy boundary a
+fallback is a leak, not resilience** — `audit-fallbacks.sh` now fails the build
+if that pattern reappears.
+
+### One place to change models instead of four
+
+Before: aider pointed at Ollama, Cursor at cloud providers, scripts elsewhere.
+Changing model meant editing four things and missing one.
+
+Now everything asks for a **role** — `local-chat`, `local-code`, `local-big`,
+`local-embed`, `cloud-cheap`. Concrete model names live in exactly two files.
+Swapping a model is one config edit, no client changes. Given how fast this
+field moves, that indirection is the single most valuable design choice here.
+
+### Knowing where requests went, and what they cost
+
+`usage.sh --summary` gives the LOCAL vs CLOUD token split — the proportion of
+work that never left the machine. Virtual keys carry spend caps that act as
+fuses: a leaked key or a runaway overnight loop hits a wall instead of a card.
+
+### Containment for agents (added today)
+
+Coding agents run with full user permissions and read whatever you point them
+at. The gateway governs where data goes *on purpose*; it has no jurisdiction
+over a compromised agent, which would just call `curl` directly and never touch
+LiteLLM at all.
+
+Current state of the field, 2026: prompt injection **cannot be reliably
+detected** — adaptive attacks bypass essentially every published defence, and
+the best of them still miss around one in ten. OWASP has it as the leading
+agentic-AI failure in production, with coding agents driving most of the volume.
+
+So there is nothing to filter. The only thing that works is cutting capability.
+`scripts/sandboxed.sh` runs an agent with egress denied to everything except
+the gateway. It read a secret? Fine — there's no channel to send it down.
+
+Verified on macOS 26.4, 10 checks passed. It proved itself within seconds of
+first use: aider's startup call to pypi.org was refused by the sandbox.
+
+**Deliberately not solved:** reads stay unrestricted (restricting them breaks
+every language runtime), and an agent can still corrupt the repo it was invited
+into. That second one is handled by committing before a session and reading
+`git diff` after — a workflow habit, not a control.
+
+---
+
+## 2. Routerly comparison
+
+[github.com/Inebrio/Routerly](https://github.com/Inebrio/Routerly), AGPL-3.0.
+It targets the exact thing that is most annoying about the current setup.
+
+| | Routerly | LiteLLM (what I run) |
+|---|---|---|
+| Database | **none** — JSON files | Postgres + Prisma, 64 tables |
+| Native Anthropic `/v1/messages` | **yes** | no — OpenAI shape only |
+| Per-project tokens + budgets | yes | yes (virtual keys) |
+| Routing policies | 9, incl. LLM-picks-the-model | static fallbacks |
+| Providers | 8 | 100+ |
+| Maturity | v0.1.5 · 43 stars · 3 contributors | widely deployed |
+
+**The genuine unlock is native Anthropic format.** Claude Code is currently a
+documented exception in my stack because LiteLLM only speaks OpenAI shape.
+Routerly handles `/v1/messages` natively, so Claude Code could route through
+the gateway and pick up spend tracking and logging. That is a real capability
+gain, not a tidiness argument.
+
+**Why I am not switching:**
+
+- v0.1.5, one release, three contributors. This is pre-1.0 software that would
+  hold my provider keys and enforce my privacy boundary. LiteLLM's 64 tables
+  are ugly; **ugly is not the same as risky.**
+- The cost of switching is the *verification*, not the config. Leak test,
+  fallback audit, digest pinning, every script touching `/key/*` — all would
+  need redoing and re-proving. That is the expensive part, and it buys removing
+  a container I never look at.
+- AGPL plus a commercial-licensing contact is an open-core shape. Worth
+  watching whether the free tier narrows.
+
+Revisit at 1.0, or the first time Postgres causes an actual problem rather than
+merely offending my sense of proportion.
+
+---
+
+## 3. Token speed on a 64 GB Mac — the counter-intuitive part
+
+### Throughput is not the number that matters
+
+Benched three models across four fixed tasks, through the gateway:
+
+| Model | tokens emitted | wall clock | avg tok/s |
+|---|---|---|---|
+| `qwen3-coder:30b` | 1,218 | 11.2 s | 108.8 |
+| `gpt-oss:20b` | 4,466 (3.7x) | 47.6 s | 93.8 |
+| `qwen3:8b` (thinking on) | 13,840 (11.4x) | 181.4 s | 76.3 |
+
+Throughput barely moves — **65–120 tok/s across everything**, because the
+machine is memory-bandwidth bound. The 8B model is not meaningfully faster per
+token than the 30B one.
+
+**Wall clock is set by how many tokens a model emits, not how fast it emits
+them.** The smallest model was the slowest overall, by 16x, because it is a
+hybrid reasoning model that thinks out loud by default. On one task it spent
+**100 seconds and 7,548 tokens** where the coding model took 1.6 s and 192
+tokens — forty times the output for the same question.
+
+Fix: Ollama's `think: false` parameter. `local-chat` went from **2,370 tokens /
+29.7 s to 386 tokens / 5.1 s** through the gateway. From slowest role to
+fastest.
+
+Worth noting I got this wrong twice and measurement corrected me both times. I
+doubted `think: false` would work — it did. I was confident `/no_think` in the
+prompt would work — it was silently ignored, 2,236 tokens before and 2,261
+after.
+
+### Residency beats model quality
+
+The old `local-big` was llama3.3:70b at 42 GB. Cold, through the gateway:
+
+| Role | Model | Time to first reply |
+|---|---|---|
+| `local-code` | qwen2.5-coder:32b | 29 s |
+| `local-big` | **llama3.3:70b** | **440 s** |
+| `cloud-cheap` | gemini-3.5-flash | 2 s |
+
+Seven and a half minutes. Not because the model is slow — because at 42 GB it
+could not stay resident alongside anything else, so every switch meant
+reloading 42 GB from disk. Replaced with `gpt-oss:20b`: **440 s → 5 s.** Not a
+faster model, a resident one.
+
+### The real memory ceiling is not 64 GB
+
+macOS caps GPU-accessible unified memory at ~75% above 36 GB — so **~48 GB on a
+64 GB machine**, not 64. I had ~54 GB written in the docs and it was wrong.
+
+| | Old set | Current set |
+|---|---|---|
+| Weights resident | 65.7 GB (impossible) | **37.5 GB** |
+| Against ceiling | ~48 GB | ~48 GB |
+| Disk | 63 GB | ~37 GB |
+
+Current: `qwen3:8b` 5.2 GB + `qwen3-coder:30b` 19 GB + `gpt-oss:20b` 13 GB +
+`nomic-embed-text` 0.3 GB. All four stay loaded; switching roles evicts nothing.
+
+**MoE models are what make this work.** `qwen3-coder:30b` is 30B parameters but
+activates ~3B per token, so it runs at roughly 7B speed while fitting in 19 GB.
+
+### On switching to llama-server
+
+Looked at it after seeing Vitalik Buterin's writeup. **Expected saving: about
+zero.** His gain came from a hard VRAM wall on a discrete 24 GB GPU, where a
+model either fits or collapses to CPU offload. Unified memory has no such
+cliff, and Ollama on Apple Silicon now runs on MLX — Apple's own framework for
+this architecture. Cost would be ~15 scripts and ~60 call sites, to probably go
+slower. Not doing it.
+
+---
+
+## 4. What's left
+
+1. **Audit untrusted MCP servers** — the one remaining unknown. Fetches from the
+   open web, sits next to real client data, nobody has asked what tools it hands
+   a model.
+2. **Re-bench with thinking off** and actually *read* the task 03 output.
+   `gpt-oss:20b` earned `local-big` on capacity, not quality — nothing has yet
+   confirmed it reasons well. Task 03 hides a float-for-currency bug in
+   money arithmetic. A syntax check cannot answer that; it needs a human.
+3. **Record model digests** from a verified state, so drift is detectable.
+4. **Local reference corpus** via `local-embed`, so the queries most worth
+   not leaking never reach a search engine at all.
+5. **Confirmation gates** — costs nothing today because nothing in the stack can
+   send mail or move money. Matters the day something can.
+
+### Sharing the repo
+
+Close. No secrets in any tracked file, and no hardcoded home paths in
+executable code — 68 uses of `$HOME` instead. What remains is naming: a LAN IP
+as a default in the client scripts, a personal launchd label, business-specific
+rules in the agent instructions, and no LICENSE. Roughly half a day.
+
+One item there is a real bug rather than cosmetic: `healthcheck.sh` probes a
+hardcoded LAN address to confirm Ollama is *not* reachable. On any other
+machine that address is unreachable anyway, so the check passes and reports the
+hole closed on a box where it may be wide open. Same false-pass shape as the
+leak test bug — unreachable and secure produce identical output.
+
+---
+
+## The pattern worth keeping
+
+Nearly every real problem here was found by measurement, not reasoning:
+
+- The fallback leak — found by reading config, not by it failing.
+- `model_info: tier: local` — a valid-looking field that made LiteLLM silently
+  drop **every model** while still passing its own readiness check.
+- The leak test that passed against a dormant model, where "model not found"
+  also returns 4xx. A broken key and a perfectly scoped key looked identical.
+- The 70B — retired on a 440-second measurement, not on an opinion about 70B
+  models.
+- `/no_think` — confidently predicted to work, silently ignored.
+
+The recurring shape: **a check that cannot run must never look like a check
+that passed.** Preflight now separates ERROR (couldn't run) from FAIL (real
+problem), and every security test pairs a positive control with the negative
+one. That single distinction has caught more genuine problems than any
+individual feature in the stack.
+
+# Prompt injection threat model
+
+Last updated: 2026-11-05. Controls in §4 verified on macOS 26.4 by
+`scripts/sandbox-probe.sh` (10 passed, 0 failed). Write + search (ADR 0029)
+is listed in §2 and §3; it is outside that sandbox.
+
+## 1. The claim this document rests on
+
+**Prompt injection cannot be detected reliably, and we do not try.**
+
+As of 2026 the strongest published defences still miss roughly one in ten
+optimisation-based attacks, and adaptive attacks bypass essentially every
+recommended defence. OWASP's 2026 data has prompt injection as the leading
+agentic-AI security failure in production, with coding agents driving most of
+the new attack volume — **aider is named among the five agents responsible**,
+and it is the one used daily here.
+
+The consequence for design: there is no filter to install, no delimiter scheme
+to adopt, and no classifier worth running. The only defences that hold are
+**capability restrictions** — reducing what an agent is able to do, so that a
+successful injection has nowhere to go.
+
+Anything in this repo that looks like injection *detection* is a bug.
+
+## 2. Why the existing privacy boundary does not help
+
+This is the important structural point, and it is easy to get wrong.
+
+Model placement is the control for **where data goes on purpose**. oMLX
+on `:1234` holds only local models, and only `ask-cloud` carries a cloud key, so
+a prompt sent to a local role cannot route personal information to Google. That boundary
+is real and it works (ADR 0016; before that it was gateway key scope).
+
+Injection attacks do not use that path at all.
+
+```mermaid
+flowchart TB
+    subgraph inputs["Untrusted inputs into the agent"]
+        web["web pages via SearXNG"]
+        repo["repo files / vendored deps"]
+        mcpsrc["untrusted MCP - UNAUDITED"]
+    end
+
+    subgraph sandbox["sandbox-exec - one egress allowed"]
+        agent["aider / Zed agent"]
+        wd["working dir - writable"]
+    end
+
+    secrets["~/.ssh, .env, keychain<br/>readable - accepted"]
+
+    gw{{"oMLX 127.0.0.1:1234<br/>local models only, token required"}}
+    localm["local models"]
+    cloudm["cloud models"]
+    outside["blocked: github / pypi / attacker"]
+
+    web --> agent
+    repo --> agent
+    mcpsrc --> agent
+    secrets -.-> agent
+
+    agent -->|"only permitted egress"| gw
+    agent --> wd
+    agent -.->|"blocked by sandbox"| outside
+
+    gw --> localm
+    cloudm -.-|"not served by oMLX"| gw
+
+    classDef okCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
+    classDef badCls fill:#FBE9E7,stroke:#A32B18,color:#7A1F11
+    classDef warnCls fill:#FAEEDA,stroke:#854F0B,color:#633806
+    classDef boxCls fill:#EEEDFE,stroke:#534AB7,color:#3C3489
+
+    class gw,localm okCls
+    class outside badCls
+    class secrets,mcpsrc warnCls
+    class agent,wd boxCls
+```
+
+Two boundaries, doing different jobs:
+
+- **`sandbox-exec`** wraps the agent. One arrow leaves it, to `127.0.0.1:1234`.
+  Everything else — `github`, `pypi`, an attacker's host, DNS itself — is cut.
+- **oMLX** is the only thing at the end of that arrow, and it holds only
+  local models, so even intended traffic cannot reach a cloud model.
+
+An injection that lands still reads whatever it likes (the dashed arrow from
+secrets is deliberate) and can still write into the working directory. What it
+cannot do is get anything out.
+
+An injected agent that reads `~/.ssh/id_rsa` and POSTs it to an attacker
+**never touches the model server**. Which models are loaded has no bearing on
+that path.
+
+So: the privacy boundary governs *intentional* routing. The containment
+boundary in §4 governs *everything else*. They are different axes and neither
+substitutes for the other.
+
+| Threat | Model placement | Sandbox |
+|---|---|---|
+| A prompt sends personal information to a cloud model | **caught** (unless you run `ask-cloud`) | not caught |
+| An injected agent exfiltrates a key via curl | not caught | **caught**, if the agent was started with `scripts/sandboxed.sh` |
+| Write + search puts file text into a SearXNG query | not caught | not caught. Zed is not sandboxed. `confirm` shows the query before it leaves |
+| An injected agent reads a file it shouldn't | not caught | not caught |
+| An injected agent rewrites source in the repo | not caught | not caught |
+
+Note the bottom two rows. They are not oversights; see §5.
+
+## 3. Surfaces, ranked by capability rather than likelihood
+
+Ranking by likelihood invites guessing. Rank by *what an injection could do if
+it landed*, which is knowable.
+
+| # | Surface | Untrusted content arrives via | If injected, it can | Risk |
+|---|---|---|---|---|
+| 1 | **aider** | files you `/add`, vendored deps, cloned repos, sample data | edit source, run commands, reach the network | **high** |
+| 2 | **Zed agents** | same, plus tool results. Write and Ask have `fetch` and `search_web` off. **Web** is search only. **Write + search** has Write's tools and `searxng_web_search` (ADR 0029) | edit or read in Write; send the query out from Web or Write + search. Write + search can put file text into that query. `confirm` is the gate | **high** |
+| 3 | **untrusted MCP** | fetched docs / tools from a server not in `docs/MCP.md` | depends entirely on what the MCP exposes | unknown |
+| 4 | **SearXNG** | arbitrary web pages; the query text leaves | Open WebUI can mislead you and, when search is on, send a query. Zed's `web` profile can search and cannot read files. **Write + search** can read files and search in one thread. The tunnel publishes SearXNG with no login, so any process on a laptop can send a query | medium |
+
+**Surface 3 is a server that is not registered in `docs/MCP.md`.** The live
+web-search MCP server is registered there, with the tool it exposes written
+down. The legal-research server is a worked setup example, not an installed
+server. Anything else is still unknown.
+
+**Surface 4.** Open WebUI's search is opt-in per message. The Zed `web`
+profile can search and cannot read files. **Write + search** can do both,
+so a file the agent reads can leave as the query. `confirm` on each tool
+call is the gate: the query text is on screen before it is sent. SearXNG
+does not keep a log of successful queries. `podman logs hearth-searxng`
+shows a query only when an upstream engine logs an error. **The moment Open WebUI gains tools, functions, or code
+execution, that UI becomes surface 1 with a web feed attached.** Treat
+enabling them as a decision requiring an ADR, not a settings toggle.
+
+## 4. What is actually enforced
+
+`scripts/sandboxed.sh` runs an agent under a `sandbox-exec` profile. Verified
+on macOS 26.4, 2026-08-02:
+
+| Control | State |
+|---|---|
+| Egress to anything but `127.0.0.1:1234` | **blocked** — verified against 1.1.1.1 and the old `:4000` (2026-10-31) |
+| DNS resolution | **blocked** — hostnames do not resolve |
+| Writes outside the working directory | **blocked** — verified against `$HOME` |
+| Writes inside the working directory | allowed |
+| Reads | **unrestricted, deliberately** |
+
+Usage:
+
+```bash
+scripts/sandboxed.sh aider                 # confine to $PWD
+scripts/sandboxed.sh --dir ~/dev/x aider   # confine to a named repo
+scripts/sandboxed.sh --print-profile       # audit the profile, any machine
+scripts/sandbox-probe.sh                   # re-verify the controls hold
+```
+
+Re-run the probe after any macOS update. `sandbox-exec` is deprecated and Apple
+could remove or change it without notice; the probe is how you find out that
+happened deliberately rather than by being breached.
+
+### Why reads are open
+
+Restricting reads breaks dylib loading and every language runtime, and read
+confinement is not what stops the attack. An agent under this profile **can
+still read your SSH keys, `.env` files, and browser cookies.** It cannot send
+them anywhere. Inside this profile, exfiltration needs a channel, and there
+is exactly one open channel — oMLX on `:1234`, which holds only local models.
+Zed is not started under this profile. Write + search is a second channel,
+and this sandbox does not cover it.
+
+This is a deliberate trade, not a limitation we failed to notice. Anyone
+reading this document should be able to state it back: *the sandbox protects
+against exfiltration, not against reading.*
+
+### Why the working directory is writable
+
+An agent that cannot write is not an agent. The residual risk is that an
+injected agent **corrupts the repo it was invited into** — plausible, and not
+mitigated by the sandbox. It is mitigated by git: commit before starting an
+agent session, and `git diff` before accepting anything. That is a workflow
+control and it depends on you, which is why it is written down here rather than
+assumed.
+
+### What the sandbox is not
+
+`sandbox-exec` is deprecated, has known weaknesses, and this profile allows
+broad `mach-lookup` and `process-exec` because nothing runs without them. A
+determined attacker with code execution may find leverage there.
+
+This is **not** a VM and not a security boundary of that grade. It raises the
+cost of an attack and closes the one channel that turns a compromise into a
+loss. Do not extend trust to it beyond that. If the threat model ever includes
+a motivated attacker specifically targeting this machine, the answer is a Lima
+VM or a separate user account, not a better SBPL profile.
+
+## 5. Accepted, unmitigated risk
+
+Recorded so nobody mistakes silence for safety.
+
+1. **An injected agent can read any file the user can.** Mitigated only by the
+   absence of an egress channel. If a future change opens egress — even to a
+   package registry — this becomes live. That is why `--also-write` and any
+   network widening need justification.
+2. **An injected agent can corrupt its own repo.** Mitigated by git hygiene,
+   not by the sandbox.
+3. **Untrusted MCP servers are unaudited.** Unknown capability, real-data adjacency.
+4. **No confirmation gates** beyond git commits. This costs nothing today
+   because nothing in the stack can send mail or move money. It becomes urgent
+   the day something can.
+
+## 6. Cheapest next checks
+
+In order of value per effort:
+
+1. Audit what tools each MCP exposes to a model. Surface 3 is the only
+   unknown on the list.
+2. Run aider under the sandbox for a week of real work and record what it
+   needed widened. A profile nobody can work under gets switched off.
+3. Confirm Open WebUI still has tools disabled after any upgrade — its settings
+   live in a database that overrides the environment, a trap already documented
+   in `RUNBOOK.md`.
+4. Known vulnerabilities in the Open WebUI and SearXNG images are monitored by
+   Snyk (`scripts/snyk-monitor.sh`, RUNBOOK). That covers published CVEs in
+   their packages, not their configuration or oMLX itself.
+
+## Sources
+
+- [Prompt injection still drives most agentic AI security failures in production — Help Net Security / OWASP, June 2026](https://www.helpnetsecurity.com/2026/06/11/owasp-prompt-injection-ai-security-failures/)
+- [Adaptive Evaluation of Out-of-Band Defenses Against Prompt Injection in LLM Agents (arXiv)](https://arxiv.org/pdf/2606.26479)
+- [Prompt Injection Prevention for Coding Agents: Defenses That Hold in Production — Fiddler AI](https://www.fiddler.ai/blog/prompt-injection-prevention-coding-agents)
+- [Clarify `sandbox-exec` deprecation timeline — apple/containerization issue #737](https://github.com/apple/containerization/issues/737)
+- [Sandboxing Claude Code on macOS: What I Actually Found — Infralovers, Feb 2026](https://www.infralovers.com/blog/2026-02-15-sandboxing-claude-code-macos/)
+
+
+---
+
+You will be given a long file. Answer only from the file — do not use general
+knowledge, and say "not in the file" if the answer is not there.
+
+Questions:
+1. What is the fallback chain for `cloud-frontier`?
+2. Which roles are dormant, and what is each blocked on?
+3. What port is Postgres bound to, and why that port specifically?
+
+This task exists to separate models that genuinely use long context from ones
+that skim the start and confabulate the rest. Run it with the repo's own docs
+concatenated as input — see scripts/bench.sh.

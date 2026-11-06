@@ -1,0 +1,15 @@
+1. **Not in the file as a specific `cloud-frontier` fallback chain.**  
+   The current routing doc says there are **no fallbacks**: “There is no router, so nothing can quietly reroute a request to a cloud model,” and the server settings list **Model fallback: off**.  
+   The file does list separate dormant frontier roles — `cloud-frontier` via OpenRouter, `cloud-frontier-direct` via Moonshot, and `cloud-frontier-fast` via Fireworks — but it does not describe them as a fallback chain.
+
+2. **Dormant roles and what each is blocked on** (from the model registry):
+
+   | Role | Blocked on |
+   |---|---|
+   | `cloud-code` | Anthropic API key — deliberately unset; a Console key bills separately from any Claude subscription |
+   | `cloud-frontier` | OpenRouter key; primary frontier route |
+   | `cloud-frontier-direct` | Moonshot key; same price, best K3 caching |
+   | `cloud-frontier-fast` | Fireworks key; dearest; throughput or LoRA only |
+
+3. **Postgres port:** `:5433`.  
+   **Why that port specifically: not in the file.** The file records that the gateway-era stack ran Postgres on `:5433`, and that the port should now be free after removal, but it does not explain why `5433` was chosen.

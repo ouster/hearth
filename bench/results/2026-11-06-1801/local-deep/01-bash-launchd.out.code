@@ -1,0 +1,34 @@
+#!/bin/bash
+set -euo pipefail
+
+service="com.example.service"
+
+list_output="$(launchctl list 2>/dev/null || :)"
+
+if printf '%s\n' "$list_output" | awk -v label="$service" '
+    $3 == label { found = 1 }
+    END { if (found) exit 0; exit 1 }
+'; then
+    printf 'LaunchAgent already loaded: %s\n' "$service"
+    exit 0
+fi
+
+if [ -z "${HOME:-}" ]; then
+    printf 'Error: HOME is not set.\n' >&2
+    exit 1
+fi
+
+plist="$HOME/Library/LaunchAgents/$service.plist"
+
+if [ ! -f "$plist" ]; then
+    printf 'Error: LaunchAgent plist does not exist: %s\n' "$plist" >&2
+    exit 1
+fi
+
+if ! launchctl load "$plist"; then
+    printf 'Error: failed to load LaunchAgent: %s\n' "$service" >&2
+    exit 1
+fi
+
+printf 'LaunchAgent loaded: %s\n' "$service"
+exit 0

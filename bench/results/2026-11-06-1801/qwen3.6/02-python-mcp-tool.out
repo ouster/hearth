@@ -1,0 +1,28 @@
+```python
+import sqlite3
+
+def search_cases(query: str, limit: int = 10) -> list[dict]:
+    conn = sqlite3.connect('cases.db')
+    try:
+        # Construct a search pattern for substring matching (case-insensitive)
+        search_pattern = f"%{query}%"
+        
+        # Execute a parameterized query to prevent SQL injection.
+        # LOWER() ensures case-insensitive matching on citation and summary.
+        # Results are ordered by year descending and limited.
+        cursor = conn.execute(
+            "SELECT id, citation, court, year, summary FROM cases WHERE LOWER(citation) LIKE ? OR LOWER(summary) LIKE ? ORDER BY year DESC LIMIT ?",
+            (search_pattern, search_pattern, limit)
+        )
+        
+        # Extract column names from the cursor description
+        columns = [desc[0] for desc in cursor.description]
+        
+        # Fetch all rows and convert to a list of dictionaries
+        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+        return results
+    finally:
+        # Ensure the connection is closed on both success and failure
+        conn.close()
+```

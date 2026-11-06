@@ -1,0 +1,82 @@
+### Identified Bugs
+
+1.  **The Floating-Point Precision Error (Critical):**
+    The function uses Python's `float` type for currency. Floats use binary floating-point arithmetic (IEEE 754), which cannot exactly represent many decimal fractions (like `0.1` or `0.2`).
+    *   **What breaks:** In a billing system, infinitesimal errors accumulate.
+    *   **Example Input:** `items=[{'price': 0.1, 'qty': 1}, {'price': 0.2, 'qty': 1}], discount_pct=0`. 
+    *   **Expected Result:** `0.3`
+    *   **Actual Result:** `0.30000000000000004` (which can cause equality checks like `total == 0.3` to fail).
+
+2.  **Logical Guard Clause Error:**
+    The `if discount_pct > 0:` condition is problematic for two reasons:
+    *   **Redundancy:** Mathematically, if `discount_pct` is `0`, the formula `total - (total * 0 / 100)` results in `total`. The `if` statement is unnecessary.
+    *   **Negative Values:** In many billing systems, a negative discount is used to represent a **surcharge**. Because of this `if` check, a negative discount will be ignored, returning the original total instead of increasing it.
+
+3.  **Potential `KeyError`:**
+    The function assumes every dictionary in the `items` list contains exactly the keys `'price'` and `'qty'`.
+    *   **What breaks:** If an item is passed as `{'price': 10.0}` (missing `qty`), the program crashes with a `KeyError`.
+
+4.  **Rounding Strategy (Precision Loss):**
+    The function performs all arithmetic on floats and only rounds at the very end. While rounding at the end is generally preferred to minimize error, doing it on a value that has already been corrupted by floating-point inaccuracies means you are "rounding the error" rather than rounding the true value.
+
+---
+
+### Corrected Version
+
+To handle money correctly, you must use the `decimal` module, which provides support for fast, correctly rounded decimal floating-point arithmetic.
+
+```python
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+
+def apply_discount(items, discount_pct):
+    """
+    Calculates the total price after discount using Decimal for financial accuracy.
+    
+    :param items: List of dicts containing 'price' (numeric) and 'qty' (int/float)
+    :param discount_pct: Numeric percentage (e.g., 10 for 10%)
+    :return: Decimal rounded to two decimal places
+    """
+    total = Decimal('0.00')
+    
+    try:
+        # Convert discount to Decimal once
+        discount_factor = Decimal(str(discount_pct)) / Decimal('100')
+        
+        for item in items:
+            # Use str() conversion to ensure Decimal captures the exact decimal representation
+            price = Decimal(str(item['price']))
+            qty = Decimal(str(item['qty']))
+            total += price * qty
+        
+        # Apply discount (works for positive, zero, and negative/surcharge)
+        total -= (total * discount_factor)
+        
+        # Quantize to 2 decimal places using ROUND_HALF_UP (standard commercial rounding)
+        return total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    except (KeyError, InvalidOperation, TypeError) as e:
+        # In a real system, log this error properly
+        raise ValueError(f"Invalid input provided to billing calculation: {e}")
+
+# --- Test Cases ---
+if __name__ == "__main__":
+    # Test Case 1: Floating point precision test
+    # Float would give 0.30000000000000004
+    items_1 = [{'price': 0.1, 'qty': 1}, {'price': 0.2, 'qty': 1}]
+    print(f"Precision Test: {apply_discount(items_1, 0)}") 
+
+    # Test Case 2: Negative discount (Surcharge)
+    items_2 = [{'price': 100, 'qty': 1}]
+    print(f"Surcharge Test: {apply_discount(items_2, -10)}") # Expected: 110.00
+
+    # Test Case 3: Standard discount
+    items_3 = [{'price': 19.99, 'qty': 2}, {'price': 5.50, 'qty': 1}]
+    print(f"Standard Test: {apply_discount(items_3, 10)}") # Expected: 40.48
+```
+
+### Key Improvements:
+1.  **`decimal.Decimal`**: Used for all calculations to ensure `0.1 + 0.2 == 0.3`.
+2.  **`quantize(Decimal('0.01'), ...)`**: Uses the `ROUND_HALF_UP` method, which is the standard "round half up" method used in most commercial transactions (unlike Python's built-in `round()`, which uses "round to even").
+3.  **Removed `if discount_pct > 0`**: Now correctly handles surcharges via negative numbers and simplifies the logic.
+4.  **Robustness**: Added a `try/except` block to handle `KeyError` (missing data) and `InvalidOperation` (non-numeric data).
+5.  **String Conversion**: Converting inputs to `str` before passing them to `Decimal` is the safest way to prevent the `Decimal` constructor from inheriting existing float inaccuracies.

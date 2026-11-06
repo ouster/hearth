@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PLIST_PATH="$HOME/Library/LaunchAgents/com.example.service.plist"
+LABEL="com.example.service"
+
+if [ ! -f "$PLIST_PATH" ]; then
+    echo "Error: Plist file not found at $PLIST_PATH" >&2
+    exit 1
+fi
+
+if ! launchctl list "$LABEL" >/dev/null 2>&1; then
+    launchctl load -w "$PLIST_PATH"
+else
+    echo "$LABEL is already loaded."
+fi
