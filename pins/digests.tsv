@@ -2,5 +2,6 @@
 # Written by scripts/pin-digests.sh (D4). Hash of the weights on disk
 # under ~/.hearth/models. Detects drift; does not enforce.
 local-main	qwen3.6-35b-a3b-mlx	lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit	15	20429174878	1793406921	e26e5ac44ab378917283d187930c9169894798b6402be5b9d4f2fc95fc2ab01e	2026-11-07
+local-main	qwen3.6-35b-a3b-mlx	mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit	54	23536604440	1794026278	3f54db869ffb65bd313d0bbe6b684618d9da1af6351e470654db914dc62a51d3	2026-11-07
 local-deep	qwen3.8-27b-mlx	lmstudio-community/Qwen3.8-27B-MLX-4bit	13	16081498220	1793492942	307e598371c31fab173957bf25a7d90ef3faf2dfc98c1bc932bcb19eae0dd2f7	2026-11-07
 local-edit	sweep-next-edit-1.5b-mlx-8bit	hearth/sweep-next-edit-1.5B-MLX-8bit	7	1538662431	1794004091	fa87c475b61dc11675d57a7e2dc116a56d165ef265b55ac9f80bc8b9670f547e	2026-11-07

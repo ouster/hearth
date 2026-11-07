@@ -17,7 +17,7 @@
 # min_ram (GB of RAM) at or below its own. "-" on cloud rows. A tier gets a
 # row only after it is benched on that hardware; candidates live in MODELS.md.
 # No local-main row fits under 48 GB, so a smaller host fails loudly.
-local-main	omlx	qwen3.6-35b-a3b-mlx	131072	3	lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit	-	resident	48
+local-main	omlx	qwen3.6-35b-a3b-mlx	131072	3	mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit	-	resident	48
 local-deep	omlx	qwen3.8-27b-mlx	65536	1	lmstudio-community/Qwen3.8-27B-MLX-4bit	-	swap	48
 local-edit	omlx	sweep-next-edit-1.5b-mlx-8bit	8192	2	hearth/sweep-next-edit-1.5B-MLX-8bit	-	edit	48
 cloud-cheap	gemini	gemini-3.6-flash	-	-	-	-	-	-
