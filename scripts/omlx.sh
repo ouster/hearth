@@ -36,13 +36,29 @@ CMD="${1:-status}"
 
 fail() { echo "omlx: $*" >&2; exit 1; }
 
+# Prefer the DMG CLI when present (~/.omlx/bin → oMLX.app), then a headless
+# venv / Homebrew install. Either path is fine; `up` adapts parser names to
+# whatever the chosen binary's xgrammar registry exposes.
 find_omlx() {
-  local c
-  for c in /opt/homebrew/bin/omlx "${HOME}/.omlx/bin/omlx" "${HOME}/.omlx/venv/bin/omlx"; do
-    [ -x "$c" ] && { printf '%s' "$c"; return 0; }
+  local c ver
+  for c in \
+      "${HOME}/.omlx/bin/omlx" \
+      "/Applications/oMLX.app/Contents/MacOS/omlx-cli" \
+      /opt/homebrew/bin/omlx \
+      "${HOME}/.omlx/venv/bin/omlx"
+  do
+    [ -x "$c" ] || continue
+    # Skip a stale DMG wrapper whose app was removed.
+    ver="$("$c" --version 2>/dev/null | head -n1)" || continue
+    [ -n "$ver" ] || continue
+    printf '%s' "$c"
+    return 0
   done
   c="$(command -v omlx 2>/dev/null || true)"
-  [ -n "$c" ] && [ -x "$c" ] && { printf '%s' "$c"; return 0; }
+  if [ -n "$c" ] && [ -x "$c" ]; then
+    ver="$("$c" --version 2>/dev/null | head -n1)" || ver=
+    [ -n "$ver" ] && { printf '%s' "$c"; return 0; }
+  fi
   return 1
 }
 
@@ -109,6 +125,9 @@ PY
   launchctl kickstart "gui/$(id -u)/${LABEL}"
 }
 
+# Merge Hearth's host policy into ~/.omlx/settings.json. Never replace the
+# file: UI prefs, aliases, MCP, and other app keys stay. Only the keys below
+# are written (loopback, CORS off, no fallback, RAM envelope, host token).
 write_settings() {
   [ -n "${OMLX_HOST_TOKEN:-}" ] || fail "OMLX_HOST_TOKEN is not set"
   mkdir -p "$OMLX_HOME" "$MODEL_DIR" "${OMLX_HOME}/cache" "$(dirname "$LOG")"
@@ -125,81 +144,104 @@ write_settings() {
   OMLX_GUARD="$GUARD_GB" \
   /usr/bin/python3 -I - <<'PY'
 import json, os
+
 path = os.environ["OMLX_SETTINGS"]
-kept_sub = []
-kept_secret = None
+model_dir = os.environ["OMLX_MODEL_DIR"]
+doc = {}
 if os.path.isfile(path):
     try:
-        old = json.load(open(path))
+        loaded = json.load(open(path))
+        if isinstance(loaded, dict):
+            doc = loaded
     except ValueError:
-        old = {}
-    auth_old = old.get("auth") if isinstance(old, dict) else None
-    if isinstance(auth_old, dict):
-        secret = auth_old.get("secret_key")
-        if isinstance(secret, str) and secret:
-            kept_secret = secret
-        subs = auth_old.get("sub_keys")
-        if isinstance(subs, list):
-            for sk in subs:
-                if not isinstance(sk, dict):
-                    continue
-                key = sk.get("key")
-                if not isinstance(key, str) or not key:
-                    continue
-                name = sk.get("name") if isinstance(sk.get("name"), str) else ""
-                created = sk.get("created_at") if isinstance(sk.get("created_at"), str) else ""
-                kept_sub.append({"key": key, "name": name, "created_at": created})
-auth = {
-    "api_key": os.environ["OMLX_API_KEY"],
-    "skip_api_key_verification": False,
-    "allow_unauthenticated_inference": False,
-    "sub_keys": kept_sub,
-}
-if kept_secret is not None:
-    auth["secret_key"] = kept_secret
-doc = {
-  "version": "1.0",
-  "server": {
-    "host": "127.0.0.1",
-    "port": int(os.environ["OMLX_PORT"]),
-    "log_level": "info",
-    "cors_origins": [],
-  },
-  "model": {
-    "model_dirs": [os.environ["OMLX_MODEL_DIR"]],
-    "model_dir": os.environ["OMLX_MODEL_DIR"],
-    "model_fallback": False,
-  },
-  "memory": {
-    "prefill_memory_guard": True,
-    "memory_guard_tier": "custom",
-    "memory_guard_custom_ceiling_gb": float(os.environ["OMLX_GUARD"]),
-  },
-  "scheduler": {"max_concurrent_requests": int(os.environ["OMLX_SLOTS"])},
-  "cache": {
-    "enabled": True,
-    "hot_cache_only": False,
-    "ssd_cache_dir": os.environ["OMLX_CACHE_DIR"],
-    "ssd_cache_max_size": os.environ["OMLX_SSD"],
-    "hot_cache_max_size": os.environ["OMLX_HOT"],
-  },
-  "sampling": {
-    "max_context_window": int(os.environ["OMLX_CTX"]),
-    "max_context_window_policy": int(os.environ["OMLX_CTX"]),
-    "max_tokens": 65536,
-    "temperature": 1.0,
-    "top_p": 0.95,
-    "top_k": 64,
-    "repetition_penalty": 1.0,
-  },
-  "auth": auth,
-  "mcp": {"config_path": None, "expose_tools": False},
-  "huggingface": {"endpoint": "", "hf_cache_enabled": False},
-}
+        doc = {}
+
+def ens(key):
+    cur = doc.get(key)
+    if not isinstance(cur, dict):
+        cur = {}
+        doc[key] = cur
+    return cur
+
+server = ens("server")
+server["host"] = "127.0.0.1"
+server["port"] = int(os.environ["OMLX_PORT"])
+server["cors_origins"] = []
+# App and Hearth share this file; false stops the Mac app fighting for :1234.
+server["auto_start_on_launch"] = False
+
+model = ens("model")
+dirs = model.get("model_dirs")
+if not isinstance(dirs, list):
+    dirs = []
+dirs = [d for d in dirs if isinstance(d, str) and d]
+if model_dir not in dirs:
+    dirs.insert(0, model_dir)
+model["model_dirs"] = dirs
+model["model_dir"] = model_dir
+model["model_fallback"] = False
+
+memory = ens("memory")
+memory["prefill_memory_guard"] = True
+memory["memory_guard_tier"] = "custom"
+memory["memory_guard_custom_ceiling_gb"] = float(os.environ["OMLX_GUARD"])
+
+ens("scheduler")["max_concurrent_requests"] = int(os.environ["OMLX_SLOTS"])
+
+cache = ens("cache")
+cache["enabled"] = True
+cache["hot_cache_only"] = False
+cache["ssd_cache_dir"] = os.environ["OMLX_CACHE_DIR"]
+cache["ssd_cache_max_size"] = os.environ["OMLX_SSD"]
+cache["hot_cache_max_size"] = os.environ["OMLX_HOT"]
+
+sampling = ens("sampling")
+ctx = int(os.environ["OMLX_CTX"])
+sampling["max_context_window"] = ctx
+sampling["max_context_window_policy"] = ctx
+
+auth = ens("auth")
+auth["api_key"] = os.environ["OMLX_API_KEY"]
+auth["skip_api_key_verification"] = False
+auth["allow_unauthenticated_inference"] = False
+subs = auth.get("sub_keys")
+if not isinstance(subs, list):
+    auth["sub_keys"] = []
+
+if "version" not in doc:
+    doc["version"] = "1.0"
+
 with open(path, "w") as f:
     json.dump(doc, f, indent=2)
     f.write("\n")
 os.chmod(path, 0o600)
+PY
+}
+
+# Clear a leftover local-edit pin before start so 0.7.4 does not preload it
+# (ADR 0033 amend: host does not serve edit prediction).
+unpin_local_edit_on_disk() {
+  local ms="${OMLX_HOME}/model_settings.json"
+  [ -f "$ms" ] || return 0
+  /usr/bin/python3 -I - "$ms" <<'PY'
+import json, os, sys
+path = sys.argv[1]
+with open(path) as f:
+    doc = json.load(f)
+models = doc.get("models")
+if not isinstance(models, dict) or "local-edit" not in models:
+    raise SystemExit(0)
+edit = models["local-edit"]
+if not isinstance(edit, dict):
+    raise SystemExit(0)
+if edit.get("is_pinned") is not True:
+    raise SystemExit(0)
+edit["is_pinned"] = False
+edit["is_default"] = False
+with open(path, "w") as f:
+    json.dump(doc, f, indent=2)
+    f.write("\n")
+print("omlx: cleared local-edit pin in model_settings.json")
 PY
 }
 
@@ -228,6 +270,12 @@ configure_model() {
   OMLX_API_KEY="$OMLX_HOST_TOKEN" \
   OMLX_PORT="$HEARTH_PORT" \
   OMLX_CTX="$CTX" \
+  OMLX_SLOTS="$SLOTS" \
+  OMLX_HOT="$HOT_CACHE" \
+  OMLX_SSD="$SSD_CACHE" \
+  OMLX_GUARD="$GUARD_GB" \
+  OMLX_MODEL_DIR="$MODEL_DIR" \
+  OMLX_CACHE_DIR="${OMLX_HOME}/cache" \
   OMLX_ROLES_TSV="$(hearth_resolved_roles)" \
   /usr/bin/python3 -I - <<'PY'
 import json, os, time, urllib.error, urllib.request, http.cookiejar
@@ -258,6 +306,46 @@ code, _ = call("POST", "/admin/api/login", {"api_key": key})
 if code != 200:
     raise SystemExit("admin login failed (%s)" % code)
 
+# Live global policy when attaching to an already-running server (DMG-first).
+# Disk merge covers next start; this covers the process that is up now.
+# host/port/CORS need a restart to rebind — we do not take over the process.
+guard = os.environ.get("OMLX_GUARD", "")
+slots = os.environ.get("OMLX_SLOTS", "")
+hot = os.environ.get("OMLX_HOT", "")
+ssd = os.environ.get("OMLX_SSD", "")
+cache_dir = os.environ.get("OMLX_CACHE_DIR", "")
+model_dir = os.environ.get("OMLX_MODEL_DIR", "")
+live = {
+    "auto_start_on_launch": False,
+    "model_fallback": False,
+    "memory_prefill_memory_guard": True,
+    "memory_guard_tier": "custom",
+}
+if guard:
+    live["memory_guard_custom_ceiling_gb"] = float(guard)
+if slots:
+    live["max_concurrent_requests"] = int(slots)
+# Do not POST model_dirs here — that would replace the live list and drop
+# app-added folders; disk merge already ensures MODEL_DIR is present.
+if model_dir:
+    live["model_dir"] = model_dir
+if cache_dir:
+    live["ssd_cache_dir"] = cache_dir
+if ssd:
+    live["ssd_cache_max_size"] = ssd
+if hot:
+    live["hot_cache_max_size"] = hot
+    live["cache_enabled"] = True
+    live["hot_cache_only"] = False
+code, body = call("POST", "/admin/api/global-settings", live)
+if code != 200:
+    print(
+        "omlx: live global-settings apply failed (%s): %s — disk merge still written"
+        % (code, str(body.get("detail", body))[:200])
+    )
+else:
+    print("applied hearth global policy to live server")
+
 roles = {}
 for line in os.environ["OMLX_ROLES_TSV"].splitlines():
     f = line.split("\t")
@@ -285,9 +373,31 @@ common = {
     "top_k": 64,
     "repetition_penalty": 1.0,
 }
+# Headless 0.7.3 still registers "qwen"; the DMG 0.7.4+ xgrammar registry
+# renamed it (qwen_3_5 for Qwen3.5/3.6 MoE). Pick from the live server.
+code, parsers = call("GET", "/admin/api/grammar/parsers")
+available = set()
+if code == 200 and isinstance(parsers, list):
+    for p in parsers:
+        if isinstance(p, dict) and p.get("value"):
+            available.add(p["value"])
+parser = None
+for cand in ("qwen_3_5", "qwen_3", "qwen"):
+    if cand in available:
+        parser = cand
+        break
+if parser is None and not available:
+    parser = "qwen"  # older builds with no discovery endpoint
+if parser is None:
+    raise SystemExit(
+        "no Qwen reasoning_parser in server registry (%s)"
+        % (", ".join(sorted(available)) or "empty")
+    )
+print("reasoning_parser=%s" % parser)
+
 main = dict(common)
 main.update({
-    "reasoning_parser": "qwen",
+    "reasoning_parser": parser,
     "top_k": 20,
     "max_context_window": ctx,
     "max_tokens": 65536,
@@ -304,6 +414,21 @@ if "local-deep" in ids and "local-deep" in roles:
         "is_default": False,
     })
     apply("local-deep", deep)
+# Host does not serve local-edit (ADR 0033 amend). Clear a leftover pin from
+# an earlier load or the Mac app so startup does not preload it.
+if "local-edit" in ids:
+    code, body = call("PUT", "/admin/api/models/local-edit/settings", {
+        "enable_thinking": False,
+        "chat_template_kwargs": {"enable_thinking": False},
+        "temperature": 0.0,
+        "max_tokens": 512,
+        "is_pinned": False,
+        "is_default": False,
+    })
+    if code != 200:
+        print("local-edit unpin failed (%s): %s — may still preload" % (code, str(body.get("detail", ""))[:200]))
+    else:
+        print("unpinned local-edit (laptop-only)")
 code, body = call("POST", "/admin/api/models/local-main/load", None, timeout=600)
 detail = str(body.get("detail", ""))
 if code not in (200, 409):
@@ -342,17 +467,23 @@ cmd_up() {
   # (ADR 0033 amend); sharing the host scheduler failed the 2026-11-07 gate.
 
   who="$(listener || true)"
+  already=""
   case "$who" in
     "" ) ;;
-    omlx|Python|python* ) echo "oMLX already listening on ${HEARTH_PORT}"; exit 0 ;;
+    omlx|Python|python* ) already=1 ;;
     * ) fail "port ${HEARTH_PORT} is held by ${who}. Stop that process, then re-run." ;;
   esac
 
   write_settings
   link_weights
+  unpin_local_edit_on_disk
 
-  echo "starting oMLX on 127.0.0.1:${HEARTH_PORT} (memory guard ${GUARD_GB} GB, hot cache ${HOT_CACHE}, SSD cache ${SSD_CACHE}, ${SLOTS} request slots)"
-  start_omlx
+  if [ -n "$already" ]; then
+    echo "oMLX already listening on ${HEARTH_PORT} — configuring in place (not taking over the process)"
+  else
+    echo "starting oMLX on 127.0.0.1:${HEARTH_PORT} (memory guard ${GUARD_GB} GB, hot cache ${HOT_CACHE}, SSD cache ${SSD_CACHE}, ${SLOTS} request slots)"
+    start_omlx
+  fi
 
   code=000
   i=0
@@ -364,25 +495,32 @@ cmd_up() {
   done
   if [ "$code" != "401" ]; then
     echo "oMLX did not require a token (last status ${code})" >&2
-    stop_omlx
+    [ -z "$already" ] && stop_omlx
     exit 1
   fi
   code="$(hearth_http /models "$OMLX_HOST_TOKEN" || true)"
   if [ "$code" != "200" ]; then
     echo "host token was refused (${code})" >&2
-    stop_omlx
+    [ -z "$already" ] && stop_omlx
     exit 1
   fi
 
   if ! configure_model; then
     echo "model setup failed" >&2
-    tail -n 40 "$LOG" >&2 || true
-    stop_omlx
+    [ -z "$already" ] && { tail -n 40 "$LOG" >&2 || true; stop_omlx; }
     exit 1
   fi
+  # configure_model's live global-settings POST makes oMLX rewrite
+  # settings.json from in-memory schema. Merge again so Hearth keys
+  # (CORS, loopback, …) win without dropping app keys the save restored.
+  write_settings
   echo "http://127.0.0.1:${HEARTH_PORT}/v1"
-  echo "log: ${LOG}"
-  echo "stop with: scripts/omlx.sh down"
+  if [ -n "$already" ]; then
+    echo "attached to existing oMLX; settings merged, models configured"
+  else
+    echo "log: ${LOG}"
+    echo "stop with: scripts/omlx.sh down"
+  fi
 }
 
 cmd_down() {

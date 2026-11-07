@@ -137,7 +137,8 @@ listen=$(lsof -nP -iTCP:"$HEARTH_PORT" -sTCP:LISTEN 2>/dev/null | awk '
 if [ -z "$listen" ]; then
   er "nothing listening, or lsof could not see it"
 else
-  others=$(printf '%s\n' "$listen" | cut -f1 | grep -viE '^(Python|python|omlx)$' || true)
+  # lsof truncates names (python3.11 → python3.1); oMLX.app's CLI is a Python.
+  others=$(printf '%s\n' "$listen" | cut -f1 | grep -viE '^(Python|python|omlx)' || true)
   if [ -n "$others" ]; then
     bad "something else listens on :${HEARTH_PORT}: ${others}"
   else

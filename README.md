@@ -63,59 +63,80 @@ flowchart LR
 ## Requirements
 
 - macOS on Apple Silicon (the reference host is 64 GB)
-- oMLX, started with `scripts/omlx.sh up`. Weights live in `~/.hearth/models`
+- [oMLX](https://omlx.ai) — macOS app ([DMG releases](https://github.com/jundot/omlx/releases)) and/or a headless CLI; Hearth starts or attaches with `scripts/omlx.sh up`
+- Role weights under `~/.hearth/models` (see [`docs/MODELS.md`](docs/MODELS.md))
 - [Podman](https://podman.io) for Open WebUI / SearXNG
 
-## oMLX on the host
+## Install oMLX (either order)
 
-[oMLX](https://github.com/jundot/omlx) serves the local models on the Studio.
-Zed on that machine calls `http://127.0.0.1:1234/v1`. The native kernels need full Xcode, then the Metal toolchain component.
-Current Xcode does not include that component in the base install. Homebrew's
-`python@3.11` bottle also requires the separate Command Line Tools package at
-`/Library/Developer/CommandLineTools`. Xcode.app does not satisfy that check.
+Hearth and oMLX share `~/.omlx/settings.json`. `scripts/omlx.sh up` **merges**
+host policy into that file (loopback, CORS off, `auto_start_on_launch: false`,
+RAM envelope, host token) and does **not** wipe app UI / aliases / MCP prefs.
+If oMLX is already listening on `:1234`, `up` configures that process in place
+and does not take it over.
+
+Project: [omlx.ai](https://omlx.ai) · source: [github.com/jundot/omlx](https://github.com/jundot/omlx) ·
+DMG: [Releases](https://github.com/jundot/omlx/releases).
+
+### A — oMLX app first, then Hearth
+
+1. Install the [oMLX DMG](https://github.com/jundot/omlx/releases) → Applications.
+   Open the app once so it creates `~/.omlx/` and `~/.omlx/bin/omlx`.
+2. Copy this repo, put role weights in `~/.hearth/models/…`, store the oMLX
+   API key as `OMLX_HOST_TOKEN` in `~/.config/hearth/env` (mode 600).
+3. `scripts/omlx.sh up` — attaches if the app is already serving `:1234`,
+   otherwise starts the CLI under Hearth’s launchd agent. Sets
+   `auto_start_on_launch: false` so the app does not fight for the port later.
+4. Keep the Mac app as a settings / status panel. Ops: [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+
+### B — Hearth first, then the oMLX app
+
+1. Install a headless CLI (Homebrew formula below, or a venv under
+   `~/.omlx/venv`), clone this repo, weights + `OMLX_HOST_TOKEN` as above.
+2. `scripts/omlx.sh up` — starts oMLX on `127.0.0.1:1234` via launchd.
+3. Later, install the [DMG](https://github.com/jundot/omlx/releases) if you want
+   the menu-bar UI. Next `up` prefers `~/.omlx/bin/omlx` (app CLI), merges
+   settings, and leaves an already-running server alone aside from policy.
+
+### C — Headless only (no Mac app)
+
+Native kernels need full Xcode, then the Metal toolchain. Current Xcode does
+not ship that component in the base install. Homebrew’s `python@3.11` bottle
+also needs Command Line Tools at `/Library/Developer/CommandLineTools`.
 
 ```bash
 xcode-select --install
 sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
 xcodebuild -runFirstLaunch
 xcodebuild -downloadComponent MetalToolchain
-```
 
-The Metal download is also Xcode → Settings → Components → Metal Toolchain.
-`xcodebuild -runFirstLaunch` installs the packages Xcode needs before it can
-download a component. Without that, `xcodebuild` fails to load a required
-plug-in. If the download then fails fetching the catalog, run the same
-download command again. `xcrun -sdk macosx metal --version` prints the
-compiler version once the toolchain is installed. The `metal` binary inside
-Xcode stays a stub until then. The `xcode-select --switch` after `--install`
-matters: the tools installer can move the active directory onto Command Line
-Tools, and the kernel build then cannot see `metal`.
-
-```bash
 brew tap jundot/omlx https://github.com/jundot/omlx
 brew trust --formula jundot/omlx/omlx
 brew install jundot/omlx/omlx --with-custom-kernel
-omlx start
 ```
 
-`brew trust` is required: Homebrew refuses the formula until that tap is
-trusted. `omlx start` registers a user LaunchAgent, so the server starts at
-login and launchd restarts it if it dies. It does not run while the Mac is
-sitting at the login window. Settings (model directory `~/.omlx/models`,
-port 1234) live in `~/.omlx/settings.json`. Do not also run the oMLX menu-bar
-app; both bind port 1234.
+Then use Hearth’s agent, not `omlx start` alone:
+
+```bash
+scripts/omlx.sh up
+```
+
+`brew trust` is required before the formula installs. Metal download is also
+Xcode → Settings → Components → Metal Toolchain. After `xcode-select --install`,
+switch back to Xcode.app so `metal` is visible. Confirm with
+`xcrun -sdk macosx metal --version`.
 
 ## Quick start
 
 ```bash
 git clone <this-repo> hearth && cd hearth
 
-# 1. Server. Weights are the directories named in config/roles.tsv,
-#    under ~/.hearth/models. See docs/RUNBOOK.md.
-scripts/omlx.sh up
-
-# 2. Token — the oMLX API key, stored mode 600
+# 0. oMLX — DMG and/or headless (sequences A–C above)
+# 1. Weights named in config/roles.tsv → ~/.hearth/models/…
+# 2. Token — the oMLX API key, mode 600
 #    ~/.config/hearth/env:  OMLX_HOST_TOKEN=...
+
+scripts/omlx.sh up
 
 # 3. Shell aliases
 echo "source $PWD/scripts/aliases.zsh" >> ~/.zshrc

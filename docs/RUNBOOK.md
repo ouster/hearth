@@ -31,12 +31,25 @@ launchd agents. Ports 4000, 5433 and 11434 should be free.
      chmod 600 ~/.config/hearth/env && pbcopy </dev/null
    ```
    The value is the oMLX API key.
-3. `scripts/omlx.sh up` writes `~/.omlx/settings.json` (loopback, CORS off,
-   no model fallback), serves `local-main`, and refuses to start if something
-   else holds `:1234`.
-4. Prove auth holds — a positive control first. Do not `source` the env file
+3. Install oMLX either way — Hearth works with both, and does not wipe the
+   app's existing `~/.omlx/settings.json`:
+   - **Headless:** a venv at `~/.omlx/venv` with `omlx` on that PATH (typical
+     early host setup).
+   - **DMG:** install `oMLX.app`; it drops `~/.omlx/bin/omlx` → the app CLI.
+     Before or after Hearth is fine. `scripts/omlx.sh up` prefers the DMG CLI
+     when it runs, falls back to the venv, **merges** host policy into the
+     shared settings (loopback, CORS off, `auto_start_on_launch: false`, RAM
+     envelope, host token) while leaving UI / aliases / MCP / other app keys
+     alone, and picks `local-main`'s `reasoning_parser` from the live
+     `/admin/api/grammar/parsers` list (`qwen_3_5` on 0.7.4+, `qwen` on
+     0.7.3). If the app is already serving `:1234`, `up` configures that
+     process in place (admin API) and does not take it over.
+4. `scripts/omlx.sh up` merges settings, links role weights, serves or
+   attaches to `local-main`, and refuses only if a non-oMLX process holds
+   `:1234`.
+5. Prove auth holds — a positive control first. Do not `source` the env file
    into a shell you keep; `scripts/healthcheck.sh` reads it itself.
-5. `echo "source $PWD/scripts/aliases.zsh" >> ~/.zshrc`
+6. `echo "source $PWD/scripts/aliases.zsh" >> ~/.zshrc`
 
 ## Surviving a reboot
 
@@ -62,14 +75,18 @@ trim line appears. oMLX does not emit that line today, so it stays quiet.
 `scripts/boot.sh` runs `scripts/omlx.sh up`. It serves `local-main` from
 the copy in `~/.hearth/models` on `127.0.0.1:1234`, with the host token, a
 memory guard of RAM minus 8 GB, an 8 GB RAM cache (4 GB below 64 GB RAM),
-and a 20 GB SSD cache. It does not load `local-edit` (ADR 0033 amend: laptop
-oMLX only). `ask-deep` evicts `local-main` for the session and unloads
-`local-deep` on the way out (ADR 0031, 0033). The GPU wired limit is the
-same RAM minus 8 (57344 MB on 64 GB, 40960 MB on 48 GB), installed by
-`scripts/iogpu-wired.sh`. Preflight warns if either differs.
-`scripts/omlx.sh bench` checks thinking, tools, and a repeated 30K prompt.
-`scripts/omlx.sh down` stops oMLX and leaves the port empty.
-A reboot starts oMLX again.
+and a 20 GB SSD cache — or, if oMLX is already listening (app-first install),
+merges the same policy into the shared settings and applies it live without
+replacing the process. It does not load `local-edit` (ADR 0033 amend: laptop
+oMLX only); a leftover pin in `~/.omlx/model_settings.json` is cleared on
+`up` so a post-DMG install cannot preload it. `ask-deep` evicts
+`local-main` for the session and unloads `local-deep` on the way out
+(ADR 0031, 0033). The GPU wired limit is the same RAM minus 8 (57344 MB on
+64 GB, 40960 MB on 48 GB), installed by `scripts/iogpu-wired.sh`. Preflight
+warns if either differs. `scripts/omlx.sh bench` checks thinking, tools,
+and a repeated 30K prompt. `scripts/omlx.sh down` stops a Hearth-started
+oMLX (launchd) and leaves the port empty; it does not kill an app-owned
+server. A reboot runs `up` again. The Mac app may stay as a settings panel.
 A laptop token is registered with `scripts/omlx.sh sub-key add laptop-<name>`
 (the prompt does not echo) and dropped with `sub-key revoke`. That key can
 call the model and cannot log in as admin. The operator pastes the token.
