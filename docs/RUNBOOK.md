@@ -44,9 +44,10 @@ launchd agents. Ports 4000, 5433 and 11434 should be free.
      `/admin/api/grammar/parsers` list (`qwen_3_5` on 0.7.4+, `qwen` on
      0.7.3). If the app is already serving `:1234`, `up` configures that
      process in place (admin API) and does not take it over.
-4. `scripts/omlx.sh up` merges settings, links role weights, serves or
-   attaches to `local-main`, and refuses only if a non-oMLX process holds
-   `:1234`.
+4. `scripts/omlx.sh up` merges settings, links weights as the org/leaf path
+   from `roles.tsv` (discovery id = leaf; `model_alias` = role so clients
+   still call `local-main`, ADR 0034), serves or attaches, and refuses only
+   if a non-oMLX process holds `:1234`.
 5. Prove auth holds — a positive control first. Do not `source` the env file
    into a shell you keep; `scripts/healthcheck.sh` reads it itself.
 6. `echo "source $PWD/scripts/aliases.zsh" >> ~/.zshrc`
@@ -77,9 +78,11 @@ the copy in `~/.hearth/models` on `127.0.0.1:1234`, with the host token, a
 memory guard of RAM minus 8 GB, an 8 GB RAM cache (4 GB below 64 GB RAM),
 and a 20 GB SSD cache — or, if oMLX is already listening (app-first install),
 merges the same policy into the shared settings and applies it live without
-replacing the process. It does not load `local-edit` (ADR 0033 amend: laptop
-oMLX only); a leftover pin in `~/.omlx/model_settings.json` is cleared on
-`up` so a post-DMG install cannot preload it. `ask-deep` evicts
+replacing the process. Weights are linked as `~/.omlx/models/<org>/<leaf>`
+so omlx.ai benches and the admin UI show the real leaf; `/v1` exposes the
+role via `model_alias` (ADR 0034). It does not load `local-edit` (ADR 0033
+amend: laptop oMLX only); a leftover pin in `~/.omlx/model_settings.json` is
+cleared on `up` so a post-DMG install cannot preload it. `ask-deep` evicts
 `local-main` for the session and unloads `local-deep` on the way out
 (ADR 0031, 0033). The GPU wired limit is the same RAM minus 8 (57344 MB on
 64 GB, 40960 MB on 48 GB), installed by `scripts/iogpu-wired.sh`. Preflight

@@ -87,6 +87,8 @@ console is the cap.
 ## Process supervision
 
 oMLX serves `local-main` on `127.0.0.1:1234` from `~/.hearth/models` (ADR 0026).
+Weights are linked as org/leaf under `~/.omlx/models`; the role is an oMLX
+`model_alias` so clients and the community board disagree usefully (ADR 0034).
 `ask-deep` loads `local-deep` from the same tree in its place (ADR 0031, 0033).
 Login runs `scripts/boot.sh`, which runs `scripts/omlx.sh up`, then starts
 Podman, SearXNG and Open WebUI. `scripts/omlx.sh down` stops oMLX and

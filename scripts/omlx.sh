@@ -175,8 +175,13 @@ dirs = model.get("model_dirs")
 if not isinstance(dirs, list):
     dirs = []
 dirs = [d for d in dirs if isinstance(d, str) and d]
+# Primary: ~/.omlx/models (role links). Also ~/.hearth/models so display_name
+# / benchmark repo derivation can resolve the symlink to org/leaf (ADR 0034).
+hearth_models = os.path.join(os.path.expanduser("~"), ".hearth", "models")
 if model_dir not in dirs:
     dirs.insert(0, model_dir)
+if hearth_models not in dirs:
+    dirs.append(hearth_models)
 model["model_dirs"] = dirs
 model["model_dir"] = model_dir
 model["model_fallback"] = False
@@ -245,25 +250,46 @@ print("omlx: cleared local-edit pin in model_settings.json")
 PY
 }
 
-link_one() {
-  role="$1"
-  src="${HOME}/.hearth/models/${2}"
-  dest="${MODEL_DIR}/${role}"
+# Symlink weights under the org/leaf path from roles.tsv so oMLX's discovery
+# id is the leaf (comparable on omlx.ai). Clients keep calling the role via
+# model_alias (ADR 0034).
+link_weights_path() {
+  weights="$1"
+  src="${HOME}/.hearth/models/${weights}"
+  dest="${MODEL_DIR}/${weights}"
   [ -d "$src" ] || return 1
+  mkdir -p "$(dirname "$dest")"
   if [ -e "$dest" ] && [ ! -L "$dest" ]; then
     fail "${dest} exists and is not a symlink"
   fi
   ln -sfn "$src" "$dest"
 }
 
+# Flat role directories were the old discovery ids; remove so they are not
+# published beside the leaf.
+remove_flat_role_link() {
+  local role dest
+  role="$1"
+  dest="${MODEL_DIR}/${role}"
+  if [ -L "$dest" ]; then
+    rm -f "$dest"
+    echo "omlx: removed flat role symlink ${role}"
+  elif [ -e "$dest" ]; then
+    echo "omlx: ${dest} exists and is not a symlink — leave it" >&2
+  fi
+}
+
 link_weights() {
   mkdir -p "$MODEL_DIR"
-  link_one local-main "$WEIGHTS" || fail "weights missing: ${HOME}/.hearth/models/${WEIGHTS}"
+  link_weights_path "$WEIGHTS" || fail "weights missing: ${HOME}/.hearth/models/${WEIGHTS}"
+  remove_flat_role_link local-main
   deep=$(hearth_resolved_roles | awk -F'\t' '$1=="local-deep" && ($8=="beside" || $8=="swap") { print $6; exit }')
   if [ -n "$deep" ]; then
-    link_one local-deep "$deep" || echo "omlx: local-deep weights not under ~/.hearth/models — ask-deep cannot load it until the weights are copied" >&2
+    link_weights_path "$deep" || echo "omlx: local-deep weights not under ~/.hearth/models — ask-deep cannot load it until the weights are copied" >&2
+    remove_flat_role_link local-deep
   fi
   # local-edit is laptop-primary (ADR 0033 amend). Host does not link or load it.
+  remove_flat_role_link local-edit
 }
 
 configure_model() {
@@ -325,10 +351,24 @@ if guard:
     live["memory_guard_custom_ceiling_gb"] = float(guard)
 if slots:
     live["max_concurrent_requests"] = int(slots)
-# Do not POST model_dirs here — that would replace the live list and drop
-# app-added folders; disk merge already ensures MODEL_DIR is present.
+# Merge MODEL_DIR + ~/.hearth/models into live model_dirs (keep any extras).
 if model_dir:
     live["model_dir"] = model_dir
+    hearth_models = os.path.join(os.path.expanduser("~"), ".hearth", "models")
+    code_gs, gs = call("GET", "/admin/api/global-settings")
+    cur_dirs = []
+    if code_gs == 200 and isinstance(gs, dict):
+        nested = gs.get("model") if isinstance(gs.get("model"), dict) else {}
+        raw = nested.get("model_dirs") if nested else None
+        if not isinstance(raw, list):
+            raw = gs.get("model_dirs")
+        if isinstance(raw, list):
+            cur_dirs = [d for d in raw if isinstance(d, str) and d]
+    merged = []
+    for d in [model_dir, hearth_models] + cur_dirs:
+        if d and d not in merged:
+            merged.append(d)
+    live["model_dirs"] = merged
 if cache_dir:
     live["ssd_cache_dir"] = cache_dir
 if ssd:
@@ -351,19 +391,54 @@ for line in os.environ["OMLX_ROLES_TSV"].splitlines():
     f = line.split("\t")
     if len(f) < 8 or f[1] != "omlx" or f[5] in ("", "-"):
         continue
-    roles[f[0]] = {"ctx": int(f[3]), "load": f[7]}
+    weights = f[5]
+    leaf = weights.rstrip("/").split("/")[-1]
+    roles[f[0]] = {"ctx": int(f[3]), "load": f[7], "leaf": leaf, "weights": weights}
 
-code, listing = call("GET", "/v1/models")
+if "local-main" not in roles:
+    raise SystemExit("no local-main row in resolved roles")
+main_leaf = roles["local-main"]["leaf"]
+
+# Pick up org/leaf symlinks (and drop removed flat role dirs).
+code, body = call("POST", "/admin/api/reload", None, timeout=120)
 if code != 200:
-    raise SystemExit("/v1/models failed (%s)" % code)
-ids = [m.get("id") for m in listing.get("data") or [] if m.get("id")]
-if "local-main" not in ids:
-    raise SystemExit("local-main was not discovered")
+    print(
+        "omlx: admin reload failed (%s): %s — continuing with current discovery"
+        % (code, str(body.get("detail", body))[:200])
+    )
+else:
+    print("rediscovered models after weight links")
+
+def admin_models():
+    code, body = call("GET", "/admin/api/models")
+    if code != 200:
+        raise SystemExit("admin models failed (%s)" % code)
+    return {m.get("id"): m for m in body.get("models") or [] if m.get("id")}
+
+admin = admin_models()
+if main_leaf not in admin:
+    raise SystemExit(
+        "local-main leaf %r was not discovered under ~/.omlx/models "
+        "(expected org/leaf symlink from roles.tsv)" % main_leaf
+    )
 
 def apply(mid, settings):
     code, body = call("PUT", "/admin/api/models/%s/settings" % mid, settings)
     if code != 200:
         raise SystemExit("model settings failed for %s (%s): %s" % (mid, code, str(body.get("detail", ""))[:300]))
+
+# Clear leftover flat role ids so they are not pinned/preloaded.
+for stale in ("local-main", "local-deep", "local-edit"):
+    if stale in admin and stale not in {r["leaf"] for r in roles.values()}:
+        code, body = call("PUT", "/admin/api/models/%s/settings" % stale, {
+            "is_pinned": False,
+            "is_default": False,
+            "model_alias": None,
+        })
+        if code == 200:
+            print("cleared stale flat discovery id %s" % stale)
+        else:
+            print("stale %s clear failed (%s)" % (stale, code))
 
 common = {
     "enable_thinking": True,
@@ -397,6 +472,7 @@ print("reasoning_parser=%s" % parser)
 
 main = dict(common)
 main.update({
+    "model_alias": "local-main",
     "reasoning_parser": parser,
     "top_k": 20,
     "max_context_window": ctx,
@@ -404,19 +480,25 @@ main.update({
     "is_pinned": True,
     "is_default": True,
 })
-apply("local-main", main)
-if "local-deep" in ids and "local-deep" in roles:
-    deep = dict(common)
-    deep.update({
-        "max_context_window": roles["local-deep"]["ctx"],
-        "max_tokens": 32768,
-        "is_pinned": False,
-        "is_default": False,
-    })
-    apply("local-deep", deep)
-# Host does not serve local-edit (ADR 0033 amend). Clear a leftover pin from
-# an earlier load or the Mac app so startup does not preload it.
-if "local-edit" in ids:
+apply(main_leaf, main)
+print("alias local-main → %s" % main_leaf)
+
+if "local-deep" in roles:
+    deep_leaf = roles["local-deep"]["leaf"]
+    if deep_leaf in admin:
+        deep = dict(common)
+        deep.update({
+            "model_alias": "local-deep",
+            "max_context_window": roles["local-deep"]["ctx"],
+            "max_tokens": 32768,
+            "is_pinned": False,
+            "is_default": False,
+        })
+        apply(deep_leaf, deep)
+        print("alias local-deep → %s" % deep_leaf)
+
+# Host does not serve local-edit (ADR 0033 amend).
+if "local-edit" in admin:
     code, body = call("PUT", "/admin/api/models/local-edit/settings", {
         "enable_thinking": False,
         "chat_template_kwargs": {"enable_thinking": False},
@@ -429,7 +511,28 @@ if "local-edit" in ids:
         print("local-edit unpin failed (%s): %s — may still preload" % (code, str(body.get("detail", ""))[:200]))
     else:
         print("unpinned local-edit (laptop-only)")
-code, body = call("POST", "/admin/api/models/local-main/load", None, timeout=600)
+
+# ~/.hearth/models is on model_dirs for org/leaf display; hide anything that
+# is not a served chat role leaf so /v1 stays role-aliased only. Edit roles
+# are laptop-primary (ADR 0033) — hide their leaf on the host if discovered.
+served_leaves = {
+    r["leaf"] for r in roles.values() if r["load"] in ("resident", "beside", "swap")
+}
+admin = admin_models()
+for mid in admin:
+    if mid in served_leaves:
+        continue
+    code, body = call("PUT", "/admin/api/models/%s/settings" % mid, {
+        "is_hidden": True,
+        "is_pinned": False,
+        "is_default": False,
+    })
+    if code == 200:
+        print("hid non-role discovery %s" % mid)
+    else:
+        print("hide %s failed (%s)" % (mid, code))
+
+code, body = call("POST", "/admin/api/models/%s/load" % main_leaf, None, timeout=600)
 detail = str(body.get("detail", ""))
 if code not in (200, 409):
     raise SystemExit("load failed (%s): %s" % (code, detail[:300]))
@@ -439,18 +542,21 @@ if code == 409 and "already loading" not in detail and "already loaded" not in d
 deadline = time.time() + 300
 loaded = False
 while time.time() < deadline:
-    code, body = call("GET", "/admin/api/models")
-    if code == 200:
-        for m in body.get("models") or []:
-            if m.get("id") == "local-main" and m.get("loaded"):
-                loaded = True
-                break
-    if loaded:
+    m = admin_models().get(main_leaf) or {}
+    if m.get("loaded"):
+        loaded = True
         break
     time.sleep(2)
 if not loaded:
     raise SystemExit("model did not report loaded")
-print("loaded local-main")
+print("loaded %s (alias local-main)" % main_leaf)
+
+code, listing = call("GET", "/v1/models")
+if code == 200:
+    v1_ids = [m.get("id") for m in listing.get("data") or [] if m.get("id")]
+    if "local-main" not in v1_ids:
+        raise SystemExit("/v1/models missing alias local-main (have %s)" % v1_ids)
+    print("clients see local-main via model_alias")
 PY
 }
 

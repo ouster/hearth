@@ -18,9 +18,12 @@ hunt. This stack addresses **roles** instead:
 local-main   cloud-cheap
 ```
 
-Each local role is the model id oMLX serves, so clients ask for
-`local-main`, never a model. Concrete models live in exactly two files —
+Each local role is what clients ask for (`local-main`), never a concrete
+tag in aliases or IDE config. Concrete models live in exactly two files —
 [`config/roles.tsv`](config/roles.tsv) and [`docs/MODELS.md`](docs/MODELS.md).
+oMLX discovers the weights leaf (for omlx.ai benches and Zed’s
+`display_name`); `/v1` still advertises the role via `model_alias`
+(ADR 0034).
 
 ```mermaid
 flowchart LR

@@ -70,11 +70,22 @@ code, _ = call("POST", "/admin/api/login", {"api_key": key})
 if code != 200:
     raise SystemExit("admin login failed (%s)" % code)
 
+# Admin APIs use the discovery leaf (org/leaf basename). Clients use the
+# role via model_alias (ADR 0034).
+role_to_leaf = {}
 residents = []
 for line in os.environ["HEARTH_ROLES_TSV"].splitlines():
     f = line.split("\t")
-    if len(f) >= 8 and f[1] == "omlx" and f[7] == "resident":
-        residents.append(f[0])
+    if len(f) < 8 or f[1] != "omlx" or f[5] in ("", "-"):
+        continue
+    leaf = f[5].rstrip("/").split("/")[-1]
+    role_to_leaf[f[0]] = leaf
+    if f[7] == "resident":
+        residents.append(leaf)
+
+leaf = role_to_leaf.get(role)
+if not leaf:
+    raise SystemExit("could not run: %s has no weights path in roles.tsv" % role)
 
 def listing():
     code, body = call("GET", "/admin/api/models")
@@ -113,23 +124,26 @@ def load(mid):
     if not wait_until(mid, True, 300):
         raise SystemExit("%s did not report loaded" % mid)
 
-if role not in listing():
-    raise SystemExit("could not run: %s is not discovered. Copy its weights under ~/.hearth/models and run scripts/omlx.sh up after a restart." % role)
+if leaf not in listing():
+    raise SystemExit(
+        "could not run: %s (leaf %s) is not discovered. Copy its weights under "
+        "~/.hearth/models and run scripts/omlx.sh up after a restart." % (role, leaf)
+    )
 
 if action == "down":
-    unload(role)
+    unload(leaf)
     for mid in residents:
         load(mid)
     raise SystemExit(0)
 
-if loaded(role):
+if loaded(leaf):
     print("already")
     raise SystemExit(0)
 if evict:
     sys.stderr.write("unloading resident roles for this session (Zed, aider and laptops have no local-main until down)…\n")
     for mid in residents:
         unload(mid)
-load(role)
+load(leaf)
 print("loaded")
 PY
     exit $?

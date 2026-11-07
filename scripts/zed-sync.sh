@@ -1,7 +1,8 @@
 #!/bin/bash
 # Write each local role's label and context into Zed's settings, from
 # config/roles.tsv. Clients still call the role (`local-main`). The label
-# is the role, regenerated whenever roles change, so it cannot go stale.
+# is `role — <weights-leaf>` so the picker shows the backing model (ADR 0034),
+# regenerated whenever roles change so it cannot go stale.
 #
 #   scripts/zed-sync.sh            # update ~/.config/zed/settings.json
 #   scripts/zed-sync.sh --check    # report drift, change nothing
@@ -32,10 +33,12 @@ edit = set(sys.argv[5].split())
 rows = [l.split("\t") for l in roles_tsv.splitlines() if l.strip()]
 text = open(zed).read()
 new, rc = text, 0
-for role, _backend, key, ctx, _slots, *_ in rows:
+for role, _backend, key, ctx, _slots, *rest in rows:
     if "embed" in key or role in edit:
         continue  # Zed's model picker lists chat models only
-    label = role
+    weights = rest[0] if rest else ""
+    leaf = weights.rstrip("/").split("/")[-1] if weights and weights != "-" else ""
+    label = "%s — %s" % (role, leaf) if leaf else role
     if role in demand:
         label += " — load first: scripts/demand-load.sh " + role + " up"
     # The entry: "name": "<role>", then its fields up to the closing brace.
