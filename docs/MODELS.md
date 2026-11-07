@@ -10,9 +10,9 @@ the second file was `litellm/config.yaml`.)
 **56 GB** on the 64 GB host, **40 GB** on a 48 GB host. `iogpu.wired_limit_mb`
 and the oMLX guard both follow it. macOS's default GPU cap (~75% of RAM)
 applies until `scripts/iogpu-wired.sh` runs. `local-deep` evicts
-`local-main` for its session on every tier (ADR 0033); `local-edit` stays
-loaded. The resident set matters more than any single
-model's size — see the measurement below.
+`local-main` for its session on every tier (ADR 0033). `local-edit` runs on
+a laptop's own oMLX, not on the host. The resident set matters more than any
+single model's size — see the measurement below.
 
 ## Live — oMLX (ADR 0026)
 
@@ -23,7 +23,7 @@ oMLX serves these from `~/.hearth/models`. Machine-read copy:
 |---|---|---|---|---|---|---|
 | `local-main` | `qwen3.6-35b-a3b-mlx` | `lmstudio-community/Qwen3.6-35B-A3B-MLX-4bit` @ `0c4a20a` | 20.4 GB | 128K × 3 parallel, no draft, **thinking on (set by `scripts/omlx.sh`)** | 2026-11-06 | MoE, ~3B active, 4-bit. Returned after the 2026-11-06 benches: faster decode, the better long-context answer, c3 30/30 with TTFT p50 60.7 s against the previous resident's 79.2 s. Short tasks emit about 2.2× the tokens. Peak 34.0 GB. ADR 0030. Native window 262,144 |
 | `local-deep` | `qwen3.8-27b-mlx` | `lmstudio-community/Qwen3.8-27B-MLX-4bit` @ `6067b15` | 16.1 GB | 64K × 1, **on demand**: `ask-deep` loads it beside `local-main` and unloads it on the way out | 2026-11-01 | Dense 27B. Best `bench/tasks` 03 answer of the three benched; ~26 tok/s and 2.5–5.5× the tokens of the 26B-A4B, so 10–24× slower. For hard one-off questions, never agent loops. Thinks by default (its template). Beside the resident, both peaked at 49.9 GB on 2026-11-01, over the old ~48 GB cap, and the resident's requests timed out during a long prefill. The cap is now 56 GB, so the two may be loaded together on 64 GB (ADR 0028). On a 48 GB host (40 GB ceiling) `ask-deep` evicts `local-main` instead (ADR 0031). ADR 0020 |
-| `local-edit` | `sweep-next-edit-1.5b-mlx-8bit` | `sweepai/sweep-next-edit-1.5B` @ `4090165` (`sweep-next-edit-1.5b.q8_0.v2.gguf`, sha256 `1321ea5e…`), tokenizer rebuilt from the GGUF's pruned 43,839-token vocabulary (template `Qwen/Qwen2.5-Coder-1.5B` @ `df3ce67`), converted to MLX 8-bit at `~/.hearth/models/hearth/sweep-next-edit-1.5B-MLX-8bit` | 1.4 GB | 8K × 2, **edit**: kept loaded, `/v1/completions` only, greedy, 512 max tokens | 2026-11-07 | Editor edit prediction (Zed `open_ai_compatible_api`, prompt format `sweep`). Apache 2.0, Qwen2.5-Coder base. Vendor benchmark 67.8% against 43.3% for Zed's hosted model. Laptop bench 2026-11-07 on its own oMLX: p50 350 / p95 398 ms, expected edit 24/30 (misses `02-add-field`). **Host gate not run yet**: `scripts/edit-bench.sh`, alone and beside `concurrency-bench.sh`. ADR 0033 |
+| `local-edit` | `sweep-next-edit-1.5b-mlx-8bit` | `sweepai/sweep-next-edit-1.5B` @ `4090165` (`sweep-next-edit-1.5b.q8_0.v2.gguf`, sha256 `1321ea5e…`), tokenizer rebuilt from the GGUF's pruned 43,839-token vocabulary (template `Qwen/Qwen2.5-Coder-1.5B` @ `df3ce67`), converted to MLX 8-bit at `~/.hearth/models/hearth/sweep-next-edit-1.5B-MLX-8bit` | 1.4 GB | 8K × 2, **edit**: laptop oMLX only, `/v1/completions`, greedy, 512 max tokens | 2026-11-07 | Editor edit prediction (Zed `open_ai_compatible_api`, prompt format `sweep`). Apache 2.0, Qwen2.5-Coder base. Laptop bench 2026-11-07: p50 350 / p95 398 ms, 24/30 (misses `02-add-field`). Host alone p95 281 ms; beside c3 p95 5747 ms and `local-main` TTFT p95 89.7 s — **host does not load it** (ADR 0033 amend). Paid Zed Zeta is a separate cloud opt-in (`docs/IDES.md`) |
 | `cloud-cheap` | `gemini-3.6-flash` | Google, `ask-cloud` only | — | — | 2026-10-22 | 1M ctx, 65K output. ADR 0014 |
 
 **Resident set:** concurrency-3 peak 34.0 GB at 128K × 3, ~30K-token prompts
@@ -62,7 +62,7 @@ detected size. Ceiling is RAM minus 8 (ADR 0031).
 | RAM | Ceiling | `local-main` | `local-deep` | Status |
 |---|---|---|---|---|
 | < 48 GB | — | none: `omlx.sh up` refuses | — | no tier benched |
-| 48 GB and up | RAM − 8 | `qwen3.6-35b-a3b-mlx`, 128K × 3 | `qwen3.8-27b-mlx`, **swap** | live on 64 GB. 48 GB waits on a c3 bench on 48 GB hardware with the host's `\.omlx/` matcher: 30/30, peak ≤ 36 GB. `local-edit` (~1.4 GB) is loaded beside `local-main` on every tier (ADR 0033) |
+| 48 GB and up | RAM − 8 | `qwen3.6-35b-a3b-mlx`, 128K × 3 | `qwen3.8-27b-mlx`, **swap** | live on 64 GB. 48 GB waits on a c3 bench on 48 GB hardware with the host's `\.omlx/` matcher: 30/30, peak ≤ 36 GB. `local-edit` is laptop-only (ADR 0033 amend) |
 
 ### Candidates by RAM (unbenched)
 
@@ -154,9 +154,9 @@ client/edit-model.sh convert sweepai/sweep-next-edit-1.5B 409016591c6c1a94f545f2
   sweep-next-edit-1.5b.q8_0.v2.gguf Qwen/Qwen2.5-Coder-1.5B df3ce67c0e24480f20468b6ef2894622d69eb73b
 ```
 
-Then on the host: `scripts/pin-digests.sh`, `scripts/omlx.sh down && scripts/omlx.sh up`,
-`scripts/healthcheck.sh`, `scripts/edit-bench.sh`. On a laptop:
-`client/edit-model.sh laptop-up`, then `client/edit-model.sh bench`.
+Then pin on the host (`scripts/pin-digests.sh`) so digests stay shared. Serve
+and bench on a laptop: `client/edit-model.sh laptop-up`, then
+`client/edit-model.sh bench`. Host `omlx.sh up` does not load `local-edit`.
 
 ### Edit prediction candidates (unbenched)
 

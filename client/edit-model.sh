@@ -1,8 +1,8 @@
 #!/bin/bash
-# Build and serve the edit-prediction role (local-edit, ADR 0033). Safe on
-# the host and on a laptop: it writes only under ~/.hearth/models and, for
-# `laptop-up`, the laptop's own oMLX. It never touches the host's oMLX,
-# launchd, keys or authorized_keys.
+# Build and serve the edit-prediction role (local-edit, ADR 0033). Laptop
+# primary: host oMLX does not load this role. Writes only under
+# ~/.hearth/models and, for `laptop-up`, the laptop's own oMLX. Never
+# touches the host's oMLX, launchd, keys or authorized_keys.
 #
 #   client/edit-model.sh convert <gguf-repo> <gguf-rev> <gguf-file> <tok-repo> <tok-rev>
 #       Download a Qwen2-architecture GGUF at a pinned revision, check its
@@ -14,15 +14,13 @@
 #       (rule 1: no model names here).
 #   client/edit-model.sh laptop-up
 #       Laptop only: link the weights into this machine's own oMLX
-#       (~/.omlx/models/local-edit), pin and load it. The host does this in
-#       scripts/omlx.sh up instead.
+#       (~/.omlx/models/local-edit), pin and load it.
 #   client/edit-model.sh bench [--duration S]
-#       bench/edit_bench.py against this machine's own oMLX, results under
-#       bench/results/<stamp>-edit-laptop. The host uses scripts/edit-bench.sh.
+#       Gate for laptop local-edit: bench/edit_bench.py against this
+#       machine's own oMLX, results under bench/results/<stamp>-edit-laptop.
 #   client/edit-model.sh check
 #       One timed completion in the edit format against this machine's own
-#       oMLX (URL and key from ~/.omlx/settings.json). The host's role is
-#       checked by scripts/healthcheck.sh.
+#       oMLX (URL and key from ~/.omlx/settings.json).
 #
 # Exit 0 ok, 1 failed, 2 could not run.
 

@@ -38,7 +38,7 @@ in a different way:
 | Path | Can it leave the host? | Why |
 |---|---|---|
 | Anything to `127.0.0.1:1234` | **no** | oMLX holds only local models |
-| Zed on this host | **no** model egress | no cloud provider configured (D3). Tool egress: SearXNG in the `web` and `write-web` profiles. Write and Ask have `fetch` and `search_web` off |
+| Zed on this host | **no** model egress | no cloud language-model provider (D3). Edit prediction stays `"none"` or laptop `local-edit`; paid Zed Zeta (`"provider": "zed"`) is cloud and trips `zed-sync --check` (ADR 0033). Tool egress: SearXNG in the `web` and `write-web` profiles. Write and Ask have `fetch` and `search_web` off |
 | `ask`, `ask-*` except `ask-cloud` | **no** | point at `:1234` with the host token |
 | `ask-cloud` | **yes** | the only alias with a provider key; it is explicit by name |
 | Sandboxed agents | **no** | egress allowed to `127.0.0.1:1234` only |

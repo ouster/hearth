@@ -112,16 +112,10 @@ elif any(t in c for t in ("<think>", "</think>", "<|channel>", "<channel|>")): p
   done <<EOF
 $(hearth_resident_roles)
 EOF
-  # Edit prediction roles answer /v1/completions only (ADR 0033).
-  for r in $(hearth_edit_roles | cut -f1); do
-    body=$(/usr/bin/python3 -I -c 'import json,sys; print(json.dumps({"model": sys.argv[1], "max_tokens": 64, "temperature": 0, "stop": ["<|file_sep|>"], "prompt": "<|file_sep|>original/a.py\ndef add(a, b):\n    return a + b\n<|file_sep|>current/a.py\ndef add(a, b):\n    return a + b\n\ndef sub(a, b):\n<|file_sep|>updated/a.py\n"}))' "$r")
-    c=$(post /completions "$body" 60)
-    if [ "$c" = "200" ] && /usr/bin/python3 -I -c 'import json,sys; t=json.load(open(sys.argv[1]))["choices"][0]["text"]; assert "def sub" in t' "$TMPD/out" 2>/dev/null; then
-      ok "${r}: edit-format completion returned"
-    else
-      bad "${r}: completions → ${c} $(head -c 160 "$TMPD/out" 2>/dev/null) — weights built? client/edit-model.sh convert"
-    fi
-  done
+  # local-edit is laptop-primary (ADR 0033 amend). Host does not load it.
+  if hearth_edit_roles | grep -q .; then
+    echo "        local-edit: laptop oMLX only — not called on the host (client/edit-model.sh bench)"
+  fi
   # Calling an unloaded demand role would be answered by local-main (JIT off).
   for r in $(hearth_demand_roles); do
     echo "        ${r}: loaded on demand by ask-deep — not called here"

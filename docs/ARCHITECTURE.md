@@ -15,10 +15,10 @@ flowchart TB
         scripts["scripts / benches"]
         webui["Open WebUI :3000<br/>(Podman)"]
         sbx["sandboxed.sh agents"]
-        srv["oMLX 127.0.0.1:1234<br/>local-main: 128K x 3<br/>local-edit: edit prediction<br/>local-deep: swaps with local-main<br/>token required"]
+        srv["oMLX 127.0.0.1:1234<br/>local-main: 128K x 3<br/>local-deep: swaps with local-main<br/>token required"]
     end
 
-    laptop["Laptop<br/>SSH tunnel, own token"]
+    laptop["Laptop<br/>SSH tunnel, own token<br/>optional local-edit on own oMLX"]
     cloud["Gemini<br/>ask-cloud only, tool's own key"]
 
     aider --> srv
@@ -44,7 +44,7 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 |---|---|---|
 | `local-main` | oMLX | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0030) |
 | `local-deep` | oMLX | slower, more careful model for hard one-off questions. Evicts `local-main` for its session on every tier (ADR 0031, 0033). `ask-deep` unloads it on the way out and `local-main` is loaded again. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up`) |
-| `local-edit` | oMLX | editor edit prediction: `/v1/completions` only, kept loaded, 8K × 2. Never a chat or agent model (ADR 0033) |
+| `local-edit` | laptop oMLX | editor edit prediction: `/v1/completions` only, 8K × 2, on the laptop's own oMLX. Never a chat or agent model; host does not load it (ADR 0033) |
 | `cloud-cheap` | Gemini | reached directly by `ask-cloud`; never loaded into oMLX |
 
 `local-code` and `local-chat` were collapsed into `local-main` (D1): two heavy

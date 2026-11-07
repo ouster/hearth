@@ -80,7 +80,7 @@ stop_omlx() {
 start_omlx() {
   mkdir -p "${HOME}/Library/LaunchAgents" "$(dirname "$LOG")"
   /usr/bin/python3 -I - "$PLIST" "$OMLX" "$HEARTH_PORT" "$MODEL_DIR" "$GUARD_GB" \
-    "${OMLX_HOME}/cache" "$SSD_CACHE" "$HOT_CACHE" "$SCHED_SLOTS" "$LOG" "$LABEL" <<'PY'
+    "${OMLX_HOME}/cache" "$SSD_CACHE" "$HOT_CACHE" "$SLOTS" "$LOG" "$LABEL" <<'PY'
 import plistlib, sys
 path, omlx, port, model_dir, guard, cache, ssd, hot, slots, log, label = sys.argv[1:]
 doc = {
@@ -119,7 +119,7 @@ write_settings() {
   OMLX_CACHE_DIR="${OMLX_HOME}/cache" \
   OMLX_PORT="$HEARTH_PORT" \
   OMLX_CTX="$CTX" \
-  OMLX_SLOTS="$SCHED_SLOTS" \
+  OMLX_SLOTS="$SLOTS" \
   OMLX_HOT="$HOT_CACHE" \
   OMLX_SSD="$SSD_CACHE" \
   OMLX_GUARD="$GUARD_GB" \
@@ -221,9 +221,7 @@ link_weights() {
   if [ -n "$deep" ]; then
     link_one local-deep "$deep" || echo "omlx: local-deep weights not under ~/.hearth/models — ask-deep cannot load it until the weights are copied" >&2
   fi
-  if [ -n "$EDIT_WEIGHTS" ]; then
-    link_one local-edit "$EDIT_WEIGHTS" || echo "omlx: local-edit weights not under ~/.hearth/models — build them with client/edit-model.sh convert (docs/MODELS.md); edit prediction is off until then" >&2
-  fi
+  # local-edit is laptop-primary (ADR 0033 amend). Host does not link or load it.
 }
 
 configure_model() {
@@ -306,18 +304,6 @@ if "local-deep" in ids and "local-deep" in roles:
         "is_default": False,
     })
     apply("local-deep", deep)
-if "local-edit" in ids and "local-edit" in roles:
-    # Edit prediction (ADR 0033): completions only, greedy, short, pinned.
-    apply("local-edit", {
-        "enable_thinking": False,
-        "chat_template_kwargs": {"enable_thinking": False},
-        "temperature": 0.0,
-        "max_context_window": roles["local-edit"]["ctx"],
-        "max_tokens": 512,
-        "is_pinned": True,
-        "is_default": False,
-    })
-
 code, body = call("POST", "/admin/api/models/local-main/load", None, timeout=600)
 detail = str(body.get("detail", ""))
 if code not in (200, 409):
@@ -340,14 +326,6 @@ while time.time() < deadline:
 if not loaded:
     raise SystemExit("model did not report loaded")
 print("loaded local-main")
-
-if "local-edit" in ids and "local-edit" in roles:
-    code, body = call("POST", "/admin/api/models/local-edit/load", None, timeout=300)
-    detail = str(body.get("detail", ""))
-    if code not in (200, 409):
-        print("local-edit load failed (%s): %s — edit prediction is off" % (code, detail[:200]))
-    else:
-        print("loaded local-edit")
 PY
 }
 
@@ -360,13 +338,8 @@ cmd_up() {
   WEIGHTS="$(printf '%s' "$row" | cut -f3)"
   case "$CTX" in ''|*[!0-9]*) fail "context is not an integer" ;; esac
   case "$SLOTS" in ''|*[!0-9]*) fail "slots is not an integer" ;; esac
-  # Edit prediction role (ADR 0033): its slots add to the scheduler so
-  # predictions do not take agent slots.
-  erow="$(hearth_edit_roles | awk -F'\t' '$1 == "local-edit" {print $5 "\t" $6; exit}')"
-  EDIT_SLOTS="$(printf '%s' "$erow" | cut -f1)"
-  EDIT_WEIGHTS="$(printf '%s' "$erow" | cut -f2)"
-  case "$EDIT_SLOTS" in ''|*[!0-9]*) EDIT_SLOTS=0 ;; esac
-  SCHED_SLOTS=$(( SLOTS + EDIT_SLOTS ))
+  # Host slots are local-main only. local-edit runs on a laptop's own oMLX
+  # (ADR 0033 amend); sharing the host scheduler failed the 2026-11-07 gate.
 
   who="$(listener || true)"
   case "$who" in
@@ -378,7 +351,7 @@ cmd_up() {
   write_settings
   link_weights
 
-  echo "starting oMLX on 127.0.0.1:${HEARTH_PORT} (memory guard ${GUARD_GB} GB, hot cache ${HOT_CACHE}, SSD cache ${SSD_CACHE}, ${SCHED_SLOTS} request slots)"
+  echo "starting oMLX on 127.0.0.1:${HEARTH_PORT} (memory guard ${GUARD_GB} GB, hot cache ${HOT_CACHE}, SSD cache ${SSD_CACHE}, ${SLOTS} request slots)"
   start_omlx
 
   code=000

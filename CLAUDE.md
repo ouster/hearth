@@ -19,7 +19,7 @@ the port empty. Cloud (Gemini) is reached by each tool with its own key.
 
 Read `docs/ROUTING.md` before suggesting any routing change.
 
-**Serving:** login boot starts oMLX (ADR 0026, 0028) with `local-main` and `local-edit`. `ask-deep` evicts `local-main`, loads `local-deep`, and on the way out unloads it and loads `local-main` again (ADR 0031, 0033).
+**Serving:** login boot starts oMLX (ADR 0026, 0028) with `local-main`. `ask-deep` evicts `local-main`, loads `local-deep`, and on the way out unloads it and loads `local-main` again (ADR 0031, 0033). `local-edit` is laptop oMLX only (ADR 0033 amend).
 
 Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgres is the removed gateway — never suggest commands against it. `docs/MIGRATION-LMSTUDIO.md` is the record of the earlier cut onto LM Studio, which oMLX replaced.
 
@@ -37,8 +37,8 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
 
    Live: `local-main` (oMLX identifier, resident), `local-deep` (loaded for an
    `ask-deep` session; `load` is `beside` or `swap` per RAM tier, ADR 0020, 0028, 0031, 0032 — never call it
-   unless loaded), `local-edit` (editor edit prediction,
-   `/v1/completions` only, kept loaded, ADR 0033), `cloud-cheap`
+   unless loaded), `local-edit` (editor edit prediction on a laptop's own
+   oMLX, `/v1/completions` only, ADR 0033; host does not load it), `cloud-cheap`
    (Gemini, `ask-cloud` only). `local-code` / `local-chat` are alias names that
    mean `local-main` (D1). Dormant: `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`, `cloud-frontier-fast` — no keys.
 
@@ -73,7 +73,7 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
    applies until `scripts/iogpu-wired.sh` runs. Roles are tiered by RAM
    (`min_ram` in `roles.tsv`, ADR 0032); only benched tiers have rows, and
    candidates for other sizes are in `docs/MODELS.md`.
-   `local-main` (ADR 0030) peaks at 34.0 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-06, oMLX process footprint). `local-deep` swaps it out on every tier (ADR 0033); `local-edit` (~1.4 GB) stays loaded beside it. Say when a suggestion will not fit, or
+   `local-main` (ADR 0030) peaks at 34.0 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-06, oMLX process footprint). `local-deep` swaps it out on every tier (ADR 0033). `local-edit` (~1.4 GB) is laptop-only after the host paired gate failed (edit p95 5747 ms beside c3). Say when a suggestion will not fit, or
    will evict something that needs to stay loaded — on this machine the resident
    set matters more than any one model's quality.
 

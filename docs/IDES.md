@@ -194,25 +194,29 @@ then send effort `none`. Do not add it.
 
 ### Edit prediction
 
-Zed's default edit prediction provider is its hosted model (`"provider":
-"zed"`). For a signed-in user it sends the text around the cursor to Zed's
-service, which rule 3 forbids. On the Free plan the service refuses with
-403, but the request has already left: this laptop's Zed log shows one on
-2026-10-31. Turn it off on every machine (Zed 1.27 key):
+Three choices. Default is off. Host oMLX does not serve edit prediction
+(ADR 0033 amend: the 2026-11-07 paired gate failed).
+
+**1. Off (default).** Safe for every buffer. Zed 1.27 key:
 
 ```json
 { "edit_predictions": { "provider": "none" } }
 ```
 
-**`local-edit`** (ADR 0033) is the local prediction model. Build it first
-(`docs/MODELS.md` → *Building `local-edit`*). Then, once
-`scripts/edit-bench.sh` passes:
+On the Free plan, `"provider": "zed"` still posts to Zed and gets 403 — the
+request has already left (this laptop's Zed log, 2026-10-31). Keep `none`
+until you pick an option below.
+
+**2. Laptop `local-edit` (local).** Build weights
+(`docs/MODELS.md` → *Building `local-edit`*), then
+`client/edit-model.sh laptop-up` and `client/edit-model.sh bench`. Point Zed
+at the laptop's own oMLX (port 8000 by default):
 
 ```json
 "edit_predictions": {
   "provider": "open_ai_compatible_api",
   "open_ai_compatible_api": {
-    "api_url": "http://127.0.0.1:1234/v1/completions",
+    "api_url": "http://127.0.0.1:8000/v1/completions",
     "model": "local-edit",
     "prompt_format": "sweep",
     "max_output_tokens": 512
@@ -221,22 +225,21 @@ service, which rule 3 forbids. On the Free plan the service refuses with
 ```
 
 The key goes in through the UI (status bar edit-prediction menu → Configure
-Providers → OpenAI-compatible API key), so it lands in the keychain. Use the
-host token on the host. `scripts/zed-sync.sh --check` (and preflight) fail
-if the provider is anything else but `none`.
+Providers → OpenAI-compatible API key), so it lands in the keychain — use the
+laptop oMLX's own key. Works with the tunnel down. Do not point this at the
+host through the tunnel: host `:1234` does not load `local-edit`, and when it
+did, agent c3 starved predictions.
 
-**From a laptop**, two ways, both local:
+**3. Paid Zed Zeta (cloud).** With a paid Zed plan, `"provider": "zed"` uses
+Zed's hosted Zeta. Cursor context leaves the machine. Allowed only for
+buffers that `docs/ROUTING.md` would send to cloud — never for sensitive,
+PII, credentials, or flagged repos (rule 3). `scripts/zed-sync.sh --check`
+(and preflight) still report DRIFT for `"zed"` on purpose: enabling it is
+an operator override, not a green path. Do not add Zeta (or any other cloud
+model) as a host Zed language-model provider.
 
-| | Host through the tunnel | The laptop's own oMLX |
-|---|---|---|
-| `api_url` | `http://127.0.0.1:1234/v1/completions` (`ai-tunnel` first) | `http://127.0.0.1:<its port>/v1/completions` (8000 by default) |
-| Key | the laptop's own `laptop-<name>` key | the laptop oMLX's own key |
-| Setup | none beyond the host's | `client/edit-model.sh convert …` then `laptop-up` |
-| Cost | a LAN round trip per prediction; shares the host's slots | ~1.4 GB of the laptop's RAM; works with the tunnel down |
-| Bench | `scripts/edit-bench.sh` on the host | `client/edit-model.sh bench` |
-
-`client/edit-model.sh` is the one script a laptop runs: it writes only
-`~/.hearth/models` and the laptop's own oMLX.
+`client/edit-model.sh` is the one script a laptop runs for option 2: it
+writes only `~/.hearth/models` and the laptop's own oMLX.
 
 ### Sandbox (Zed 1.14)
 

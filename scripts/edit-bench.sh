@@ -1,15 +1,16 @@
 #!/bin/bash
-# Edit-prediction latency bench for local-edit on the host (ADR 0033).
-# Runs bench/edit_bench.py against oMLX on :1234 with the host token.
+# Host re-bench for local-edit (ADR 0033). Laptop is primary:
+# client/edit-model.sh bench. The host does not load local-edit in omlx.sh
+# up after the 2026-11-07 paired gate failed; this script only works if
+# someone loads the role by hand for a retry.
 #
 #   scripts/edit-bench.sh                     # 6 rounds of bench/edit/
 #   scripts/edit-bench.sh --duration 600      # loop, to run beside:
 #   scripts/concurrency-bench.sh --base-url http://127.0.0.1:1234/v1 \
 #       --token-env OMLX_HOST_TOKEN --model local-main --concurrency 3
 #
-# Pass: p95 ≤ 500 ms with no errors alone, and local-main's TTFT within
-# 10% of its last concurrency baseline while the loop runs.
-# A laptop runs the same bench on its own oMLX: client/edit-model.sh bench.
+# Pass (if re-enabled on the host): p95 ≤ 500 ms alone, and local-main's
+# TTFT within 10% of its last c3 baseline while the loop runs.
 #
 # Exit 0 no errors, 1 errors, 2 could not run.
 
