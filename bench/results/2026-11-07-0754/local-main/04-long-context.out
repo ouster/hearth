@@ -1,0 +1,11 @@
+Based strictly on the provided file:
+
+1. **Fallback chain for `cloud-frontier`:** Not in the file. The architecture explicitly rejects fallback chains, stating: *"There is no fallbacks."* and *"There is no router, so nothing can quietly reroute a request to a cloud model."*
+
+2. **Dormant roles and blocks:** (From `docs/MODELS.md` → `## Dormant`)
+   - `cloud-code` → Blocked on **Anthropic API key** (deliberately unset; a Console key bills separately from any Claude subscription).
+   - `cloud-frontier` → Blocked on **OpenRouter key**.
+   - `cloud-frontier-direct` → Blocked on **Moonshot key**.
+   - `cloud-frontier-fast` → Blocked on **Fireworks key**.
+
+3. **Postgres port and reason:** The file records Postgres historically running in Podman on **`:5433`**. However, it **does not state why that specific port was chosen**. The file only notes that `:5433` was part of the legacy LiteLLM + Ollama gateway stack, which was completely stopped, disabled, and removed in October 2026 (ADR 0016), and is now listed as one of the free ports.
