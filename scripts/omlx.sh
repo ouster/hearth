@@ -440,6 +440,36 @@ for stale in ("local-main", "local-deep", "local-edit"):
         else:
             print("stale %s clear failed (%s)" % (stale, code))
 
+# Role aliases must be unique. When swapping candidate weights, clear the
+# alias from every other leaf before claiming it on the new one.
+wanted_alias = {"local-main": main_leaf}
+if "local-deep" in roles:
+    wanted_alias["local-deep"] = roles["local-deep"]["leaf"]
+for mid, meta in admin.items():
+    # Admin list may expose alias on the model object or only in settings.
+    pass
+code, all_settings = call("GET", "/admin/api/models")
+if code == 200:
+    for m in all_settings.get("models") or []:
+        mid = m.get("id")
+        if not mid:
+            continue
+        ms = m.get("settings") if isinstance(m.get("settings"), dict) else {}
+        alias = ms.get("model_alias") or m.get("model_alias")
+        if not alias or alias not in wanted_alias:
+            continue
+        if wanted_alias[alias] == mid:
+            continue
+        code, body = call("PUT", "/admin/api/models/%s/settings" % mid, {
+            "model_alias": None,
+            "is_pinned": False,
+            "is_default": False,
+        })
+        if code == 200:
+            print("cleared alias %s from previous leaf %s" % (alias, mid))
+        else:
+            print("clear alias on %s failed (%s): %s" % (mid, code, str(body.get("detail", ""))[:160]))
+
 common = {
     "enable_thinking": True,
     "chat_template_kwargs": {"enable_thinking": True},
@@ -479,6 +509,8 @@ main.update({
     "max_tokens": 65536,
     "is_pinned": True,
     "is_default": True,
+    # May have been hidden earlier as a non-role discovery during an A/B swap.
+    "is_hidden": False,
 })
 apply(main_leaf, main)
 print("alias local-main → %s" % main_leaf)
@@ -493,6 +525,7 @@ if "local-deep" in roles:
             "max_tokens": 32768,
             "is_pinned": False,
             "is_default": False,
+            "is_hidden": False,
         })
         apply(deep_leaf, deep)
         print("alias local-deep → %s" % deep_leaf)

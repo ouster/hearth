@@ -1,0 +1,19 @@
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+PLIST="$HOME/Library/LaunchAgents/com.example.service.plist"
+IDENTIFIER="com.example.service"
+
+if [[ ! -f "$PLIST" ]]; then
+    echo "Error: Plist not found at $PLIST" >&2
+    exit 1
+fi
+
+if launchctl list "$IDENTIFIER" >/dev/null 2>&1; then
+    echo "Agent $IDENTIFIER is already loaded."
+else
+    launchctl load "$PLIST"
+    echo "Agent $IDENTIFIER loaded successfully."
+fi
+```

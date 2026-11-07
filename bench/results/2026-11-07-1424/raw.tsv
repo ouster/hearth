@@ -1,0 +1,5 @@
+model	task	tokens	seconds	verdict
+local-main	01-bash-launchd	3535	30.6	syntax-ok
+local-main	02-python-mcp-tool	4015	34.7	syntax-ok
+local-main	03-refactor-judgment	5819	50.5	needs-reading
+local-main	04-long-context	2388	69.3	needs-reading
