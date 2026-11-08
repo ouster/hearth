@@ -4,7 +4,7 @@
     "PreToolUse": [
       {
         "type": "command",
-        "command": "./scripts/loop-guard.sh --format vscode",
+        "command": "./scripts/loop-guard.sh --format vscode --workspace",
         "timeout": 5
       }
     ]

@@ -1,34 +1,57 @@
 # Hearth
 
-Local-first LLM serving for a single developer (or a small LAN).
-Inference that still works when vendors get expensive, overloaded, or unavailable.
+Hearth runs an AI coding assistant on a Mac you own. Your editors (VS Code,
+Cline, JetBrains IDEs, Zed) and the terminal talk to it the same way they
+would talk to a cloud AI service, but the model runs on your own hardware,
+so your code never leaves it. It keeps working when cloud vendors get
+expensive, overloaded or go down.
 
-oMLX serves local models on `127.0.0.1:1234` from `~/.hearth/models`, with a
-token required (ADR 0026). What was tried before is in [`docs/HISTORY.md`](docs/HISTORY.md).
+New here? Read *Words used here*, check *Before you start*, then follow
+*Quick start*. What was tried before is in [`docs/HISTORY.md`](docs/HISTORY.md).
 
 ## What you get
 
 - **A coding model on hardware you own.** `main-brain` stays loaded and
   serves agents in VS Code, Cline, JetBrains IDEs, Zed and aider. On the
-  benched tiers it takes three requests at once, 128K context each.
+  tested tiers it works on three requests at once, each up to 128K tokens.
 - **A bigger model when you need one (optional).** `ask-deep` loads
-  `deep-brain`, which swaps `main-brain` out for the session and loads it
-  back afterwards. 32 GB and up; skip it and everything else still works.
-- **Another host's brain (optional).** A laptop reaches a host over an SSH
-  tunnel, with a key that can only open the tunnel and a token revocable on
-  its own. A machine can serve its own brain and use a bigger host too
-  (ADR 0040).
-- **The same names everywhere.** Clients call roles, never a model tag, so a
-  model upgrade touches no editor or alias (*Why*, below).
-- **Edit prediction on a laptop.** `edit-brain` is a small model on the
-  laptop's own oMLX (ADR 0033).
+  `deep-brain`, a slower, more careful model. It swaps `main-brain` out for
+  the session and loads it back afterwards. Skip it and everything else
+  still works.
+- **Another host's brain (optional).** A laptop can use a more powerful
+  Mac's brain over an SSH tunnel, with a key that can only open the tunnel
+  and a token you can cancel on its own. A machine can run its own brain and
+  use a bigger host too (ADR 0040).
+- **The same names everywhere.** Editors and commands ask for a role such as
+  `main-brain`, never a specific model, so upgrading a model changes no
+  editor setting or command.
+- **Edit prediction on a laptop.** `edit-brain` is a small model that
+  suggests your next edit, on the laptop's own oMLX (ADR 0033).
 - **Cloud only when you ask.** `ask-cloud` runs on a laptop with that
   laptop's own key. The host holds no cloud key, so nothing sent to `:1234`
   leaves your hardware (ADR 0038).
-- **Agents that cannot loop forever.** A loop guard denies the third
-  identical tool call and stops a run at its call budget (ADR 0036).
+- **Agents that cannot loop forever.** A loop guard refuses the third
+  identical tool call in a row and stops a run at its call budget (ADR 0036).
 - **No silent fallback.** If a brain is down you get an error, never a quiet
   switch to the cloud.
+
+## Words used here
+
+| Word | Meaning |
+|---|---|
+| model, weights | The AI itself is a set of large files called weights, 16–22 GB each here, kept under `~/.hearth/models` |
+| oMLX | The free Mac program that loads the weights and answers requests, in the same format as cloud AI services ([omlx.ai](https://omlx.ai)) |
+| role, brain | A job name such as `main-brain`. Editors ask for the role; [`config/roles.tsv`](config/roles.tsv) says which model fills it. A *brain* is a role running on hardware you own |
+| host | The Mac that runs oMLX and serves a brain |
+| laptop, client | A machine that uses a host's brain over the network |
+| `127.0.0.1:1234` | "This machine, port 1234": where oMLX answers. Nothing else on the network can reach it |
+| tunnel | An SSH connection that makes the host's oMLX appear at `127.0.0.1` on the laptop, so it is never open on the network |
+| token | A password every request must carry. Each laptop and editor gets its own, so you can cancel one without touching the others |
+| RAM tier | Settings tested for one memory size. 8 GB is always held back for macOS and your apps |
+| context, 128K | How much text the model reads at once, in tokens. 128K tokens is roughly 100,000 words |
+| slots | How many requests the model works on at the same time |
+| aider | A terminal coding assistant. `ask` and `ask-deep` start it |
+| ADR | A short decision record in [`docs/decisions/`](docs/decisions/). "ADR 0040" is number 40 |
 
 ## Local brain or remote brain
 
@@ -39,7 +62,7 @@ tunnel, or both (ADR 0040).
 |---|---|---|---|
 | Address | `127.0.0.1:1234` | `127.0.0.1:1235` on a dual machine; `:1234` on a plain laptop | Gemini |
 | Commands | `ask`, `main-brain`, `ask-deep` | `ask-remote`, `main-brain-remote`, `ask-deep-remote` (no suffix on a plain laptop) | `ask-cloud` |
-| Needs | 24 GB RAM or more (*Model size by RAM*) | network, host awake | laptop's own key |
+| Needs | 24 GB RAM or more; 48 GB tested (*Before you start*) | network, host awake | laptop's own key |
 | Works offline | yes | no | no |
 | Sensitive code | yes | yes: your hardware, your tunnel | **never** |
 | Cost to this machine | up to 34 GB at peak on the 48 GB tier, plus battery and heat | almost none | none |
@@ -50,96 +73,124 @@ Both brains answer to the same role names. Each machine serves the model
 benched for its RAM tier, so on a bigger host the same role can be a bigger
 model.
 
-## Why
+## Before you start
 
-Model names change every few months. Hardcoding a model tag into shell
-aliases, IDE settings, and laptop configs means every upgrade is a scavenger
-hunt. This stack addresses **roles** instead:
+- **A Mac with Apple Silicon** (M1 or later).
+- **Memory.** Hearth holds back 8 GB for macOS and your apps, so a brain
+  needs at least 24 GB of RAM. Only 48 GB and up is tested today:
 
-```
-main-brain   cloud-cheap (client-only)
-```
+  | RAM (usable) | `main-brain` | `deep-brain` | State |
+  |---|---|---|---|
+  | 64 GB (56) | 35B MoE, ~3B active, 3 slots × 128K | dense 27B, swaps in | **tested**: reference host |
+  | 48 GB (40) | same | same | **tested**. Peaks about 34 GB, leaving about 14 GB for your apps |
+  | 32 GB (24) | ~26B MoE, ~4B active, 1 slot | dense 27B, swaps in | candidate, not tested |
+  | 24 GB (16) | dense ~12B, 1 slot | none | candidate, not tested |
+  | under 24 GB | none: use another host (*Laptops*) | — | — |
 
-`cloud-cheap` is reached only from a laptop's `ask-cloud`, with that
-laptop's own key. The host holds no cloud key (ADR 0038).
+  On 24 or 32 GB, `scripts/install-host.sh` prints the suggested model and
+  stops. A tier gets settings only after it is benched on that hardware
+  (rule 5). Which models these are, with measurements and sources:
+  [`docs/MODELS.md`](docs/MODELS.md) → *Candidates by RAM*.
+- **Disk.** About 25 GB free for `main-brain`, about 40 GB with
+  `deep-brain` (the 48 GB tier's weights).
+- **Software.** [Homebrew](https://brew.sh), git, `jq`, oMLX, and the
+  Hugging Face CLI for downloads (*Quick start* installs the last two).
+  [Podman](https://podman.io) only if you want the Open WebUI chat page or
+  SearXNG web search.
 
-Each local role is what clients ask for (`main-brain`), never a concrete
-tag in aliases or IDE config. Concrete models live in exactly two files —
-[`config/roles.tsv`](config/roles.tsv) and [`docs/MODELS.md`](docs/MODELS.md).
-oMLX discovers the weights leaf (for omlx.ai benches and Zed’s
-`display_name`); `/v1` still advertises the role via `model_alias`
-(ADR 0034).
+## Quick start
 
-```mermaid
-flowchart LR
-    subgraph host["Host"]
-        zed["Editor agents<br/>VS Code, Cline, JetBrains, Zed"]
-        aider["aider / ask-*"]
-        webui["Open WebUI :3000"]
-        sbx["sandboxed.sh agents<br/>egress: 127.0.0.1:1234 only"]
-        srv["oMLX 127.0.0.1:1234<br/>main-brain x3 slots<br/>token required"]
-    end
-    laptop["Laptop<br/>own token, tunnel-only key"]
-    cloud["Gemini<br/>tool's own key"]
-    searx["SearXNG<br/>opt-in search"]
+The default is one Mac running `main-brain`. `deep-brain` and a remote host
+are optional extras. Every Hearth script here is safe to re-run, says what
+is left to do, and never reads your token.
 
-    zed --> srv
-    aider --> srv
-    webui --> srv
-    sbx --> srv
-    laptop -->|"SSH tunnel"| srv
-    laptop -.->|"ask-cloud, laptop's own key"| cloud
-    webui -.->|"opt-in per message"| searx
+### 1. Your own `main-brain`
 
-    classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
-    classDef leaveCls fill:#FAEEDA,stroke:#854F0B,color:#633806
-    class srv localCls
-    class cloud,searx leaveCls
-```
+1. **Get the code.** Clone this repo (you need read access to it on
+   GitHub) and open a terminal in it:
 
-## Three guarantees
+   ```bash
+   git clone git@github.com:ouster/hearth.git ~/hearth
+   ```
 
-1. **Privacy is structural.** oMLX holds only local models, so anything
-   sent to `:1234` stays on the host by construction. The host holds no
-   cloud key at all; only a laptop's `ask-cloud` has one (ADR 0038). Sandboxed agents
-   can reach `127.0.0.1:1234` and nothing else (`scripts/sandbox-probe.sh`).
-2. **No silent route changes.** There is no router, so there is no fallback to
-   leak through. If `main-brain` is down, requests fail.
-3. **Nothing is claimed without being measured.** Role and serving changes get
-   an ADR and a bench (`bench/results/`, committed).
+   ```bash
+   cd ~/hearth
+   ```
 
-## Requirements
+2. **Install oMLX.** The easiest way: download the DMG from
+   [oMLX releases](https://github.com/jundot/omlx/releases), drag it to
+   Applications and open it once. Other ways: *Install oMLX*, below.
 
-- macOS on Apple Silicon with **24 GB or more** to run a brain. The ceiling
-  is RAM minus 8 GB, so 24 GB leaves 16 GB for models, the smallest useful
-  `main-brain`. Below that the machine is a client only. The reference host
-  is 64 GB (*Model size by RAM*)
-- [oMLX](https://omlx.ai) — macOS app ([DMG releases](https://github.com/jundot/omlx/releases)) and/or a headless CLI; Hearth starts or attaches with `scripts/omlx.sh up`
-- Role weights under `~/.hearth/models` (see [`docs/MODELS.md`](docs/MODELS.md))
-- [Podman](https://podman.io) for Open WebUI / SearXNG
+3. **Download the weights.** Install the Hugging Face CLI:
 
-### Model size by RAM
+   ```bash
+   brew install huggingface-cli
+   ```
 
-The ceiling is RAM minus 8 GB (ADR 0031). Only benched tiers get a row in
-`config/roles.tsv` (rule 5). `scripts/install-host.sh` stops on a machine
-without one. Candidates for other sizes are a starting point for a bench,
-not a recommendation to run untested. Which models these are, and the
-sources: [`docs/MODELS.md`](docs/MODELS.md) → *Candidates by RAM* (rule 1
-keeps model names there). Editor provider `hearth` is this machine's oMLX.
-`hearth-remote` is optional: another host, and only on a machine that also
-runs its own brain (ADR 0040).
+   In [`docs/MODELS.md`](docs/MODELS.md) → *Live*, find the `main-brain`
+   row. Its *Source* column gives a repo and a revision. Download it into a
+   folder with the same name as the repo:
 
-| RAM (usable) | `main-brain` | `deep-brain` | State |
-|---|---|---|---|
-| 64 GB (56) | 35B-A3B MoE, 128K × 3 | dense 27B, swaps in | **benched**: reference host |
-| 48 GB (40) | same rows; peak 34.0 GB at 128K × 3 | same, swaps in | **benched**. On a daily-use laptop that leaves about 14 GB for apps. A 1-slot laptop tier is open (ADR 0040) |
-| 32 GB (24) | ~26B MoE, ~4B active, 4-bit (~15 GB). Laptop c3 peak 22 GB fits; 3 × 128K peaked 25.2 GB here, so one slot. A 35B-A3B at 4-bit (20.4 GB) is the one-slot alternative | dense 27B, swaps in. A dense 31B (~20.5 GB) is short-context only | candidate. `install-host.sh` prints the candidate line from `docs/MODELS.md` |
-| 24 GB (16) | dense ~12B at 4-bit (about 12 GB with the runtime). A dense ~9B is the other fit. The 26B MoE and the 27B/35B working sets do not | none | candidate. Same: the script prints the line, then stops |
+   ```bash
+   hf download <source> --revision <revision> --local-dir ~/.hearth/models/<source>
+   ```
 
-Below 24 GB there is no local `hearth`. The machine stays a client, and the tunnel is its only endpoint (*Laptops*).
+   The revision pins the exact files, so Hearth can tell later if they
+   change (rule 6). If the short revision is refused, use the full commit
+   hash from the model page's history.
 
-## Install oMLX (either order)
+4. **Make the token.** This creates a random password and stores it
+   without showing it on screen:
 
+   ```bash
+   openssl rand -hex 32 | pbcopy
+   ```
+
+   ```bash
+   mkdir -p ~/.config/hearth && umask 077 && printf 'OMLX_HOST_TOKEN=%s\n' "$(pbpaste)" >> ~/.config/hearth/env && chmod 600 ~/.config/hearth/env && pbcopy </dev/null
+   ```
+
+   Editors and laptops get their own tokens later (*Editors*, *Laptops*).
+
+5. **Run the installer.** First see what is missing, then let it set
+   things up:
+
+   ```bash
+   scripts/install-host.sh --check
+   ```
+
+   ```bash
+   scripts/install-host.sh
+   ```
+
+   It checks the steps above, starts oMLX with `main-brain`, sets it to
+   start at login, and adds the `ask` commands to your shell. It prints one
+   step for you to run yourself (`scripts/iogpu-wired.sh`, which asks for
+   your password to let the GPU use more memory).
+
+6. **Try it.** Open a new terminal window and run `ask`. You are talking to
+   `main-brain` in aider. Then connect an editor (*Editors*).
+
+### 2. Optional: `deep-brain`
+
+On 48 GB and up, download the `deep-brain` row from `docs/MODELS.md` the
+same way as step 3, then use `ask-deep`. It swaps `main-brain` out for the
+session, so editors and laptops wait until you exit. Without the weights,
+`ask-deep` cannot start and nothing else changes.
+
+### 3. Optional: a remote host
+
+| This machine is | Run |
+|---|---|
+| a **client** only (no brain of its own; tunnel on `127.0.0.1:1234`) | `client/install-client.sh --host you@studio.local` |
+| **both** (its own brain, plus a bigger host on `127.0.0.1:1235`) | `client/install-client.sh --dual`, then section 1 |
+
+The client side, keys and tokens: *Laptops* and [`docs/LAPTOP.md`](docs/LAPTOP.md).
+What happens at each step, and how to fix things: [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+
+## Install oMLX
+
+Quick start step 2 covers the usual way. These are all three, in detail.
 Hearth and oMLX share `~/.omlx/settings.json`. `scripts/omlx.sh up` **merges**
 host policy into that file (loopback, CORS off, `auto_start_on_launch: false`,
 RAM envelope, host token) and does **not** wipe app UI / aliases / MCP prefs.
@@ -197,53 +248,6 @@ Xcode → Settings → Components → Metal Toolchain. After `xcode-select --ins
 switch back to Xcode.app so `metal` is visible. Confirm with
 `xcrun -sdk macosx metal --version`.
 
-## Quick start
-
-The default is one Mac with 24 GB or more running `main-brain`. `deep-brain`
-and a remote host are optional extras on top. Both installers are safe to
-re-run, report what is left, and never read a key or token (ADR 0040).
-
-**1. Default: your own `main-brain`.**
-
-```bash
-scripts/install-host.sh --check   # what is missing
-scripts/install-host.sh           # does what it can, lists the rest
-```
-
-**2. Optional: `deep-brain`.** On 32 GB and up, copy the `deep-brain`
-weights named in `docs/MODELS.md` into `~/.hearth/models` and use
-`ask-deep`. It swaps `main-brain` out for the session. Without the weights,
-`ask-deep` cannot load and nothing else changes.
-
-**3. Optional: a remote host.**
-
-| This machine is | Run |
-|---|---|
-| a **client** only (no brain of its own; tunnel on `127.0.0.1:1234`) | `client/install-client.sh --host you@studio.local` |
-| **both** (its own brain, plus a bigger host on `127.0.0.1:1235`) | `client/install-client.sh --dual`, then step 1 |
-
-The client side, keys and tokens are in *Laptops* and [`docs/LAPTOP.md`](docs/LAPTOP.md).
-
-`install-host.sh` runs the steps below in order. It starts oMLX only once
-nothing needs you:
-
-```bash
-git clone <this-repo> hearth && cd hearth
-
-# 0. oMLX — DMG and/or headless (sequences A–C above)
-# 1. Weights named in config/roles.tsv → ~/.hearth/models/…
-# 2. Token — the oMLX API key, mode 600
-#    ~/.config/hearth/env:  OMLX_HOST_TOKEN=...
-
-scripts/omlx.sh up
-
-# 3. Shell aliases
-echo "source $PWD/scripts/aliases.zsh" >> ~/.zshrc
-```
-
-Ops detail: [`docs/RUNBOOK.md`](docs/RUNBOOK.md). Architecture:
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
-
 ## Usage
 
 ### On the host
@@ -272,8 +276,9 @@ ai-boot            # scripts/boot.sh
 Source `~/.hearth-client.sh` (set by `client/install-client.sh`). On macOS,
 `ai-tunnel` once to accept the host fingerprint, then `ai-tunnel-install`:
 launchd restarts the forwards when they drop and at login. Linux stays on
-`ai-tunnel`. Everything below goes through the tunnel to the host's oMLX
-on `:1234`.
+`ai-tunnel`. Everything below goes through the tunnel to the host's oMLX.
+On a machine that is both (ADR 0040), the same commands end in `-remote`
+(`ask-remote`, `ask-deep-remote`) and the tunnel is on `:1235`.
 
 ```bash
 # Tunnel management
@@ -287,7 +292,8 @@ ai-models          # list models available through the tunnel
 ai-ask "question"  # one-shot question without aider
 ask                # aider with main-brain (also: main-brain)
 ask-arch           # aider architect mode, main-brain on both sides
-ask-deep           # aider on deep-brain — only while the host has it loaded
+ask-deep           # aider on deep-brain. A laptop cannot load it: someone on the host runs
+                   # ask-deep or scripts/demand-load.sh deep-brain up first
 deep-brain         # same as ask-deep
 ask-cloud          # Gemini via THIS machine's own key — the only cloud alias
 
@@ -301,7 +307,7 @@ aider and `ask-*` are in [`docs/IDES.md`](docs/IDES.md).
 
 Every editor calls the role `main-brain` at `http://127.0.0.1:1234/v1`:
 directly on the host, through `ai-tunnel` on a laptop. It authenticates
-with a key: your laptop key, or a per-editor sub-key you can revoke on its
+with a token: your laptop's token, or a per-editor token you can revoke on its
 own (`scripts/omlx.sh sub-key add <editor>-<machine>` on the host; names
 are letters, digits, `-` and `_`). **No editor gets a cloud provider on the
 host** (rule 3). On a dual machine (ADR 0040), add a second provider,
@@ -317,8 +323,9 @@ per machine to cover every repo; this one is wired already
 
 **Check any client in a few steps** (hearth folder open):
 
-1. Point the base URL at `http://127.0.0.1:1299/v1` and send a prompt. It
-   must fail. Then set it back.
+1. Point the base URL at `http://127.0.0.1:1299/v1`, a port where nothing
+   answers, and send a prompt. It must fail with an error, which proves the
+   editor has no hidden cloud fallback. Then set it back.
 2. "Create `scratch-smoke.sh` containing `if [[ $x < 1 ]]; then echo hi; fi`,
    read it back, then delete it." Keeps the `<`.
 3. "Read `AGENTS.md` three times in a row with the read tool. Don't change
@@ -511,6 +518,61 @@ Both are your own hardware, so both are brains (rule 3). To convert a laptop:
 3. `brew services stop omlx`, if a brew-run oMLX serves `edit-brain` on 8000
 4. `scripts/install-host.sh`. Under 48 GB it prints the matching candidate from `docs/MODELS.md` and stops. That line is not installed; a row waits on a bench on this machine (rule 5)
 5. `client/edit-model.sh laptop-up`, to serve `edit-brain` from the new oMLX
+
+## How it works
+
+### Roles, not model names
+
+Model names change every few months. Writing one into shell commands,
+editor settings and laptop configs makes every upgrade a hunt. Hearth uses
+**roles** instead: `main-brain`, `deep-brain` and `edit-brain` run on your
+own hardware, and `cloud-cheap` is the laptop-only cloud role. Concrete
+models appear in exactly two files, [`config/roles.tsv`](config/roles.tsv)
+and [`docs/MODELS.md`](docs/MODELS.md). oMLX advertises each model under its
+role name (ADR 0034).
+
+```mermaid
+flowchart LR
+    subgraph host["Host"]
+        editors["Editors<br/>VS Code, Cline, JetBrains, Zed"]
+        aider["aider: ask, ask-deep"]
+        webui["Open WebUI :3000"]
+        sbx["sandboxed agents<br/>can reach 127.0.0.1:1234 only"]
+        srv["oMLX 127.0.0.1:1234<br/>main-brain, 3 slots<br/>deep-brain on demand<br/>token required"]
+    end
+    subgraph laptop["Laptop"]
+        lapps["Editors and aider"]
+        own["own oMLX, optional<br/>edit-brain, or a brain on a dual machine"]
+    end
+    cloud["Gemini<br/>laptop's own key"]
+    searx["SearXNG<br/>opt-in search"]
+
+    editors --> srv
+    aider --> srv
+    webui --> srv
+    sbx --> srv
+    lapps -->|"SSH tunnel: :1234, or :1235 on a dual machine"| srv
+    lapps --> own
+    lapps -.->|"ask-cloud only"| cloud
+    webui -.->|"opt-in per message"| searx
+
+    classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
+    classDef leaveCls fill:#FAEEDA,stroke:#854F0B,color:#633806
+    class srv,own localCls
+    class cloud,searx leaveCls
+```
+
+### Three guarantees
+
+1. **Privacy is structural.** oMLX holds only local models, so anything
+   sent to `:1234` stays on the machine by construction. The host holds no
+   cloud key at all; only a laptop's `ask-cloud` has one (ADR 0038).
+   Sandboxed agents can reach `127.0.0.1:1234` and nothing else
+   (`scripts/sandbox-probe.sh`).
+2. **No silent route changes.** There is no router, so there is no fallback
+   to leak through. If `main-brain` is down, requests fail.
+3. **Nothing is claimed without being measured.** Role and serving changes
+   get an ADR and a bench (`bench/results/`, committed).
 
 ## Using an AI assistant with this repo
 

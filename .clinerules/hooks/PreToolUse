@@ -1,4 +1,4 @@
 #!/bin/bash
 # Hearth loop guard for Cline (ADR 0036). The logic is in scripts/loop-guard.sh.
 here="$(cd "$(dirname "$0")" && pwd)"
-exec "${here}/../../scripts/loop-guard.sh" --format cline
+exec "${here}/../../scripts/loop-guard.sh" --format cline --workspace

@@ -60,9 +60,8 @@ deep-brain() { ask-deep "$@"; }
 ask-arch() { _aider_local --architect --editor-model openai/main-brain "$@"; }
 
 # Slow, careful local model for hard one-off questions (ADR 0020, 0028, 0031).
-# Still local: safe for sensitive work. On a 64 GB host it loads beside
-# main-brain. Below that it evicts main-brain, so Zed, aider and laptops get
-# errors until the session ends. The session unloads it on the way out,
+# Still local: safe for sensitive work. It evicts main-brain on every tier
+# (ADR 0033), so Zed, aider and laptops get errors until the session ends. The session unloads it on the way out,
 # including Ctrl-C, and main-brain is loaded again. Idempotent: INT and EXIT
 # can both fire.
 _hearth_ask_deep_restore() {

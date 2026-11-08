@@ -416,7 +416,7 @@ _hearth_ask_deep() {
        | python3 -c 'import sys, json
 sys.exit(0 if any(m.get("id") == "deep-brain" for m in json.load(sys.stdin).get("data", [])) else 1)' 2>/dev/null; then
     echo "deep-brain is not loaded on the host. On the host: scripts/demand-load.sh deep-brain up" >&2
-    echo "(on a 64 GB host main-brain stays loaded; on 48 GB it is swapped out until scripts/demand-load.sh deep-brain down)" >&2
+    echo "(main-brain is swapped out until scripts/demand-load.sh deep-brain down, so the host's editors and other laptops wait)" >&2
     unset _k; return 1
   fi
   # weak-model is deep-brain too: a commit step should use the same model
@@ -426,24 +426,27 @@ sys.exit(0 if any(m.get("id") == "deep-brain" for m in json.load(sys.stdin).get(
   _rc=$?; unset _k; return $_rc
 }
 
-# Older copies defined ask as an alias; zsh cannot then define a function
-# of that name in the same shell.
-unalias ask 2>/dev/null || true
-
 # Public names. Plain on a laptop; -remote on a machine that is also a host
-# (ADR 0039 names, ADR 0040 dual mode).
+# (ADR 0039 names, ADR 0040 dual mode). Dual mode leaves `ask` alone: there
+# it belongs to the host aliases (scripts/aliases.zsh).
+#
+# `function name { }` and not `name() { }`: zsh expands aliases when it
+# parses, and parses the whole if-block, so `ask() {` breaks on a host's
+# `ask` alias even in the branch that does not run. Older copies of this
+# file also defined ask as an alias; laptop mode drops that one.
+[ "$HEARTH_DUAL" = 1 ] || unalias ask 2>/dev/null || true
 if [ "$HEARTH_DUAL" = 1 ]; then
-  ask-remote()        { _hearth_aider "$@"; }
-  main-brain-remote() { _hearth_aider "$@"; }
-  ask-arch-remote()   { _hearth_ask_arch "$@"; }
-  ask-deep-remote()   { _hearth_ask_deep "$@"; }
-  deep-brain-remote() { _hearth_ask_deep "$@"; }
+  function ask-remote        { _hearth_aider "$@"; }
+  function main-brain-remote { _hearth_aider "$@"; }
+  function ask-arch-remote   { _hearth_ask_arch "$@"; }
+  function ask-deep-remote   { _hearth_ask_deep "$@"; }
+  function deep-brain-remote { _hearth_ask_deep "$@"; }
 else
-  ask()        { _hearth_aider "$@"; }
-  main-brain() { _hearth_aider "$@"; }
-  ask-arch()   { _hearth_ask_arch "$@"; }
-  ask-deep()   { _hearth_ask_deep "$@"; }
-  deep-brain() { _hearth_ask_deep "$@"; }
+  function ask        { _hearth_aider "$@"; }
+  function main-brain { _hearth_aider "$@"; }
+  function ask-arch   { _hearth_ask_arch "$@"; }
+  function ask-deep   { _hearth_ask_deep "$@"; }
+  function deep-brain { _hearth_ask_deep "$@"; }
 fi
 
 # The only command that leaves for the cloud, with THIS machine's own key.

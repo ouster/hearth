@@ -14,6 +14,12 @@
 #   scripts/loop-guard.sh --format cline  < hook.json
 #   scripts/loop-guard.sh --self-test
 #
+# --workspace marks the copy wired into this repo (.github/hooks,
+# .clinerules/hooks). When scripts/install-loop-guard.sh is installed too,
+# both copies run for each call. Whichever runs second sees the same call
+# logged by the other copy under 3 seconds ago, and allows it without
+# counting it again.
+#
 # State: one file of call hashes per session under
 # ${TMPDIR}/hearth-loop-guard. It resets after HEARTH_LOOP_IDLE_MIN idle
 # minutes (default 30). The log records the tool name and a hash only,
@@ -33,11 +39,13 @@ esac
 
 FORMAT="vscode"
 SELF_TEST=0
+SRC=global
 while [ $# -gt 0 ]; do
   case "$1" in
     --format) FORMAT="${2:-vscode}"; shift ;;
     --format=*) FORMAT="${1#--format=}" ;;
     --self-test) SELF_TEST=1 ;;
+    --workspace) SRC=workspace ;;
   esac
   shift
 done
@@ -106,14 +114,24 @@ guard() {
   if [ -f "$f" ] && [ -n "$(find "$f" -mmin +"$IDLE_MIN" 2>/dev/null)" ]; then
     rm -f "$f"
   fi
-  printf '%s\n' "$HASH" >> "$f" 2>/dev/null || allow
+  # Same call from the other copy (global vs workspace) a moment ago: the
+  # one call, seen twice. Allow it uncounted.
+  now=$(date +%s)
+  last="$(tail -n 1 "$f" 2>/dev/null)"
+  if [ -n "$last" ]; then
+    set -- $last
+    if [ "$1" = "$HASH" ] && [ "${2:-}" != "$SRC" ] && [ $(( now - ${3:-0} )) -lt 3 ]; then
+      allow
+    fi
+  fi
+  printf '%s %s %s\n' "$HASH" "$SRC" "$now" >> "$f" 2>/dev/null || allow
 
   total=$(wc -l < "$f" | tr -d ' ')
   if [ "$total" -gt "$BUDGET" ]; then
     block stop "Hearth loop guard: ${total} tool calls this session, over the budget of ${BUDGET}. Stop, summarise what is done and what is left, and ask the operator how to continue."
   fi
   if [ "$total" -ge "$REPEAT" ]; then
-    distinct=$(tail -n "$REPEAT" "$f" | sort -u | wc -l | tr -d ' ')
+    distinct=$(tail -n "$REPEAT" "$f" | cut -d' ' -f1 | sort -u | wc -l | tr -d ' ')
     if [ "$distinct" -eq 1 ]; then
       block deny "Hearth loop guard: this exact ${TOOL} call has been made ${REPEAT} times in a row. Do not repeat it. State what you expected, what happened, and the options, then ask the operator."
     fi
@@ -126,8 +144,8 @@ self_test() {
   tmp="$(mktemp -d)" || exit 1
   export HEARTH_LOOP_STATE="$tmp/state" HEARTH_LOOP_LOG="$tmp/log" HEARTH_LOOP_REPEAT=3 HEARTH_LOOP_BUDGET=4
   local me="${BASH_SOURCE[0]}"
-  check() { # usage: check <label> <format> <json> <pattern>
-    out="$(printf '%s' "$3" | "$me" --format "$2")"
+  check() { # usage: check <label> <format> <json> <pattern> [extra arg]
+    out="$(printf '%s' "$3" | "$me" --format "$2" ${5:-})"
     if printf '%s' "$out" | grep -q "$4"; then
       echo "ok     $1"
     else
@@ -148,6 +166,12 @@ self_test() {
   check "unknown shape allowed" vscode '{"hello":1}' '^{}$'
   check "empty input allowed" cline '' '"cancel": false'
   check "log holds no arguments" vscode "$v" '"permissionDecision":"deny"'
+  local w='{"session_id":"t4","tool_name":"read_file","tool_input":{"path":"w"}}'
+  check "global + workspace, call 1 (global)" vscode "$w" '^{}$'
+  check "global + workspace, call 1 (workspace): not counted" vscode "$w" '^{}$' --workspace
+  check "global + workspace, call 2 (global)" vscode "$w" '^{}$'
+  check "global + workspace, call 2 (workspace): not counted" vscode "$w" '^{}$' --workspace
+  check "global + workspace, call 3 (global): denied" vscode "$w" '"permissionDecision":"deny"'
   if grep -q '"path"' "$tmp/log" 2>/dev/null; then echo "FAIL   log contains tool arguments"; fail=1; fi
   rm -rf "$tmp"
   [ "$fail" -eq 0 ] && echo "loop-guard self-test passed" || echo "loop-guard self-test FAILED"
