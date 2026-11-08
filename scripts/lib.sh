@@ -235,6 +235,14 @@ hearth_role_load() {
   hearth_resolved_roles | awk -F'\t' -v r="$1" '$1 == r {print $8; exit}'
 }
 
+# True for a role this host can run without: deep-brain (loaded on demand,
+# beside or swap) and edit-brain (laptop oMLX only, ADR 0033). Missing
+# weights for it are reported, not failed.
+hearth_role_optional() {
+  case "$(hearth_role_load "$1")" in beside|swap|edit) return 0 ;; esac
+  return 1
+}
+
 # oMLX memory footprint in GB from its pid file, e.g. "24.0". Empty if down.
 hearth_footprint_gb() {
   local pid

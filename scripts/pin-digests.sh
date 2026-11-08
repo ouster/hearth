@@ -70,8 +70,15 @@ if [ "$MODE" = record ]; then
     echo "# Written by scripts/pin-digests.sh (D4). Hash of the weights on disk"
     echo "# under ~/.hearth/models. Detects drift; does not enforce."
   } > "$tmp"
-  # Keep records for weights this host does not serve (other tiers).
-  mine=$(printf '%s\n' "$rows" | cut -f6 | tr '\n' '|')
+  # Keep records for weights this host does not serve (other tiers), and for
+  # an optional role whose weights are not installed here.
+  mine=""
+  while IFS="$(printf '\t')" read -r role _ _ _ _ w; do
+    [ -n "$role" ] || continue
+    if [ -e "$(weight_path "$w")" ] || ! hearth_role_optional "$role"; then mine="${mine}${w}|"; fi
+  done <<EOF
+$rows
+EOF
   if [ -f "$PINS" ]; then
     awk -F'\t' -v mine="$mine" 'BEGIN { n = split(mine, a, "|"); for (i = 1; i <= n; i++) if (a[i] != "") m[a[i]] = 1 }
       !/^#/ && NF && !($3 in m)' "$PINS" >> "$tmp"
@@ -79,6 +86,7 @@ if [ "$MODE" = record ]; then
   while IFS="$(printf '\t')" read -r role _ key _ _ w; do
     [ -n "$role" ] || continue
     p="$(weight_path "$w")"
+    if [ ! -e "$p" ] && hearth_role_optional "$role"; then echo "skip ${role}: not installed (optional)"; continue; fi
     [ -n "$w" ] && [ "$w" != "-" ] && [ -e "$p" ] || { echo "could not run: ${role}: weights '${w}' not found under ${MODELS}"; rm -f "$tmp"; exit 2; }
     printf 'hashing %s (%s)… ' "$role" "$w"
     q=$(quick "$p"); h=$(deep "$p")
@@ -102,7 +110,11 @@ while IFS="$(printf '\t')" read -r role _ key _ _ w; do
     echo "DRIFT  ${role}: roles.tsv now ${key} / ${w}; recorded $(printf '%s' "$rec" | cut -f2,3 | tr '\t' ' ')"; rc=1; continue
   fi
   p="$(weight_path "$w")"
-  [ -e "$p" ] || { echo "DRIFT  ${role}: weights missing at ${p}"; rc=1; continue; }
+  if [ ! -e "$p" ]; then
+    if hearth_role_optional "$role"; then echo "skip   ${role}: not installed (optional)"
+    else echo "DRIFT  ${role}: weights missing at ${p}"; rc=1; fi
+    continue
+  fi
   want_q=$(printf '%s' "$rec" | cut -f4-6); got_q=$(quick "$p")
   if [ "$want_q" != "$got_q" ]; then
     echo "DRIFT  ${role}: files/bytes/mtime changed (recorded $(printf '%s' "$want_q" | tr '\t' '/'), now $(printf '%s' "$got_q" | tr '\t' '/'))"; rc=1; continue

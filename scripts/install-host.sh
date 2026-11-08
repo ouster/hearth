@@ -105,6 +105,8 @@ while IFS="$(printf '\t')" read -r role _b _k _c _s weights _d load; do
   case "$load" in edit) continue ;; esac   # edit-brain: client/edit-model.sh, not this host
   if [ -d "${HOME}/.hearth/models/${weights}" ]; then
     ok "${role}: weights present"
+  elif [ "$load" = beside ] || [ "$load" = swap ]; then
+    printf 'skip    %s: not installed (optional; ask-deep needs ~/.hearth/models/%s — docs/MODELS.md)\n' "$role" "$weights"
   else
     todo "${role}: no weights at ~/.hearth/models/${weights} — source and revision in docs/MODELS.md"
     missing=1

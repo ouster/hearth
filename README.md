@@ -4,9 +4,51 @@ Local-first LLM serving for a single developer (or a small LAN).
 Inference that still works when vendors get expensive, overloaded, or unavailable.
 
 oMLX serves local models on `127.0.0.1:1234` from `~/.hearth/models`, with a
-token required (ADR 0026). Cloud (Gemini) is reached by each tool directly
-with its own key, never through the local server — so nothing sent to `:1234`
-can leave the machine. What was tried before is in [`docs/HISTORY.md`](docs/HISTORY.md).
+token required (ADR 0026). What was tried before is in [`docs/HISTORY.md`](docs/HISTORY.md).
+
+## What you get
+
+- **A coding model on hardware you own.** `main-brain` stays loaded and
+  serves agents in VS Code, Cline, JetBrains IDEs, Zed and aider. On the
+  benched tiers it takes three requests at once, 128K context each.
+- **A bigger model when you need one (optional).** `ask-deep` loads
+  `deep-brain`, which swaps `main-brain` out for the session and loads it
+  back afterwards. 32 GB and up; skip it and everything else still works.
+- **Another host's brain (optional).** A laptop reaches a host over an SSH
+  tunnel, with a key that can only open the tunnel and a token revocable on
+  its own. A machine can serve its own brain and use a bigger host too
+  (ADR 0040).
+- **The same names everywhere.** Clients call roles, never a model tag, so a
+  model upgrade touches no editor or alias (*Why*, below).
+- **Edit prediction on a laptop.** `edit-brain` is a small model on the
+  laptop's own oMLX (ADR 0033).
+- **Cloud only when you ask.** `ask-cloud` runs on a laptop with that
+  laptop's own key. The host holds no cloud key, so nothing sent to `:1234`
+  leaves your hardware (ADR 0038).
+- **Agents that cannot loop forever.** A loop guard denies the third
+  identical tool call and stops a run at its call budget (ADR 0036).
+- **No silent fallback.** If a brain is down you get an error, never a quiet
+  switch to the cloud.
+
+## Local brain or remote brain
+
+A machine can serve its own brain, use another host's brain through the
+tunnel, or both (ADR 0040).
+
+| | **hearth** (this machine) | **hearth-remote** (another host) | **cloud-cheap** |
+|---|---|---|---|
+| Address | `127.0.0.1:1234` | `127.0.0.1:1235` on a dual machine; `:1234` on a plain laptop | Gemini |
+| Commands | `ask`, `main-brain`, `ask-deep` | `ask-remote`, `main-brain-remote`, `ask-deep-remote` (no suffix on a plain laptop) | `ask-cloud` |
+| Needs | 24 GB RAM or more (*Model size by RAM*) | network, host awake | laptop's own key |
+| Works offline | yes | no | no |
+| Sensitive code | yes | yes: your hardware, your tunnel | **never** |
+| Cost to this machine | up to 34 GB at peak on the 48 GB tier, plus battery and heat | almost none | none |
+| Best when | travelling, no network, host asleep | on battery, long agent runs, RAM needed for other work | throwaway, non-sensitive questions |
+| Fails when | not enough free RAM | tunnel down or host asleep (`ai-ping` says which) | no key or no network |
+
+Both brains answer to the same role names. Each machine serves the model
+benched for its RAM tier, so on a bigger host the same role can be a bigger
+model.
 
 ## Why
 
@@ -68,7 +110,10 @@ flowchart LR
 
 ## Requirements
 
-- macOS on Apple Silicon (the reference host is 64 GB; see *Model size by RAM*)
+- macOS on Apple Silicon with **24 GB or more** to run a brain. The ceiling
+  is RAM minus 8 GB, so 24 GB leaves 16 GB for models, the smallest useful
+  `main-brain`. Below that the machine is a client only. The reference host
+  is 64 GB (*Model size by RAM*)
 - [oMLX](https://omlx.ai) — macOS app ([DMG releases](https://github.com/jundot/omlx/releases)) and/or a headless CLI; Hearth starts or attaches with `scripts/omlx.sh up`
 - Role weights under `~/.hearth/models` (see [`docs/MODELS.md`](docs/MODELS.md))
 - [Podman](https://podman.io) for Open WebUI / SearXNG
@@ -88,7 +133,7 @@ runs its own brain (ADR 0040).
 |---|---|---|---|
 | 64 GB (56) | 35B-A3B MoE, 128K × 3 | dense 27B, swaps in | **benched**: reference host |
 | 48 GB (40) | same rows; peak 34.0 GB at 128K × 3 | same, swaps in | **benched**. On a daily-use laptop that leaves about 14 GB for apps. A 1-slot laptop tier is open (ADR 0040) |
-| 32 GB (24) | ~26B MoE, ~4B active, 4-bit (~15 GB). Laptop c3 peak 22 GB fits; 3 × 128K peaked 25.2 GB here, so one slot. A 35B-A3B at 4-bit (20.4 GB) is the one-slot alternative | dense 27B, swaps in. A dense 31B (~20.5 GB) is short-context only | candidate. `install-host.sh` prints the Qwen/Gemma line from `docs/MODELS.md` |
+| 32 GB (24) | ~26B MoE, ~4B active, 4-bit (~15 GB). Laptop c3 peak 22 GB fits; 3 × 128K peaked 25.2 GB here, so one slot. A 35B-A3B at 4-bit (20.4 GB) is the one-slot alternative | dense 27B, swaps in. A dense 31B (~20.5 GB) is short-context only | candidate. `install-host.sh` prints the candidate line from `docs/MODELS.md` |
 | 24 GB (16) | dense ~12B at 4-bit (about 12 GB with the runtime). A dense ~9B is the other fit. The 26B MoE and the 27B/35B working sets do not | none | candidate. Same: the script prints the line, then stops |
 
 Below 24 GB there is no local `hearth`. The machine stays a client, and the tunnel is its only endpoint (*Laptops*).
@@ -154,14 +199,30 @@ switch back to Xcode.app so `metal` is visible. Confirm with
 
 ## Quick start
 
-Two installers. Each one is safe to re-run, reports what is left, and never
-reads a key or token (ADR 0040).
+The default is one Mac with 24 GB or more running `main-brain`. `deep-brain`
+and a remote host are optional extras on top. Both installers are safe to
+re-run, report what is left, and never read a key or token (ADR 0040).
+
+**1. Default: your own `main-brain`.**
+
+```bash
+scripts/install-host.sh --check   # what is missing
+scripts/install-host.sh           # does what it can, lists the rest
+```
+
+**2. Optional: `deep-brain`.** On 32 GB and up, copy the `deep-brain`
+weights named in `docs/MODELS.md` into `~/.hearth/models` and use
+`ask-deep`. It swaps `main-brain` out for the session. Without the weights,
+`ask-deep` cannot load and nothing else changes.
+
+**3. Optional: a remote host.**
 
 | This machine is | Run |
 |---|---|
-| a **host** (its own brain on `127.0.0.1:1234`) | `scripts/install-host.sh --check`, then `scripts/install-host.sh` |
-| a **client** of another host (tunnel on `127.0.0.1:1234`) | `client/install-client.sh --host you@studio.local` |
-| **both** (its own brain, plus a bigger host through the tunnel) | `client/install-client.sh --dual`, then `scripts/install-host.sh` |
+| a **client** only (no brain of its own; tunnel on `127.0.0.1:1234`) | `client/install-client.sh --host you@studio.local` |
+| **both** (its own brain, plus a bigger host on `127.0.0.1:1235`) | `client/install-client.sh --dual`, then step 1 |
+
+The client side, keys and tokens are in *Laptops* and [`docs/LAPTOP.md`](docs/LAPTOP.md).
 
 `install-host.sh` runs the steps below in order. It starts oMLX only once
 nothing needs you:

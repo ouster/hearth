@@ -102,6 +102,11 @@ EOF
     [ -n "$role" ] || continue
     if [ -e "$HOME/.hearth/models/${w}" ]; then
       ok "${role}: weights on disk"
+    elif hearth_role_optional "$role"; then
+      case "$(hearth_role_load "$role")" in
+        edit) wrn "${role}: not installed (optional; laptop edit prediction, client/edit-model.sh)" ;;
+        *)    wrn "${role}: not installed (optional) — ask-deep cannot load until ${w} is under ~/.hearth/models" ;;
+      esac
     else
       bad "${role}: weights path ${w} missing under ~/.hearth/models"
     fi
