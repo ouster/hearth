@@ -163,6 +163,14 @@ deliberately unrestricted; see `docs/THREAT-MODEL.md` and ADR 0007.
 | A prompt sends client data to a cloud model | **caught** unless you run `ask-cloud` | not caught |
 | An injected agent exfiltrates a key via curl | not caught | **caught** |
 
+## Several people
+
+Each person has their own brain (ADR 0037). Another person's Mac, mini, Pi,
+or NAS does not run this host's prompts, and this host does not run theirs.
+oMLX stays on `127.0.0.1:1234`. Laptops still reach it by the SSH tunnel in
+`docs/LAPTOP.md`. The LAN-silent check is unchanged. That decision installs
+no coordinator, small role, or mail tool.
+
 ## Known gaps
 
 - **Host SSH accepts passwords** (macOS default). `docs/LAPTOP.md` gives the
