@@ -19,6 +19,10 @@ Route to `*-brain` roles (oMLX, `:1234`), always:
 - Language, framework, and API questions with no data attached
 - Architecture and design discussion in the abstract
 - This repo itself
+- VS Code Copilot inline completions and next edit suggestions, in any repo
+  not flagged sensitive (ADR 0041). Copilot also reads other open tabs, so a
+  sensitive file opened in a window without the repo opt-out goes too: open
+  sensitive work in its own repo's window.
 
 ## Roles
 
@@ -43,7 +47,7 @@ in a different way:
 | `ask-cloud` on a laptop | **yes** | the only command with a provider key, the laptop's own; it is explicit by name |
 | Sandboxed agents | **no** | egress allowed to `127.0.0.1:1234` only |
 | Open WebUI | model: **no**. Search query: **yes if enabled** | see below |
-| VS Code, Cline on this host (trial) | model: **no** if set up per `docs/IDES.md` | Custom Endpoint / OpenAI Compatible at `:1234` only. Copilot completions, NES and code search go to GitHub and must stay off (`scripts/vscode-check.sh`). Cline's own provider is cloud. Web fetch sends the query, as in Zed (ADR 0036) |
+| VS Code, Cline on this host (trial) | chat/agent model: **no** if set up per `docs/IDES.md`. Completions: **yes, to GitHub** | Custom Endpoint / OpenAI Compatible at `:1234` only. Copilot inline completions (ghost text) and next edit suggestions are **allowed** and send the text around the cursor to GitHub (ADR 0041) — except in a repo flagged sensitive, which turns both off in its own `.vscode/settings.json` (`scripts/vscode-check.sh --show-sensitive`, checked by `--workspace DIR`). Copilot code search stays off. Cline's own provider is cloud. Web fetch sends the query, as in Zed (ADR 0036) |
 
 What is lost against the gateway: on a laptop, nothing refuses a cloud
 request you make on purpose. Choosing `ask-cloud` on sensitive work is not

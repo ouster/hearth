@@ -1,14 +1,18 @@
 #!/bin/bash
-# Check VS Code's user settings against the host rules (ADR 0036). Checked,
+# Check VS Code's settings against the host rules (ADR 0036, 0041). Checked,
 # never written: VS Code settings are JSONC the operator edits.
 #
-#   scripts/vscode-check.sh          # report
-#   scripts/vscode-check.sh --show   # print the settings to paste, change nothing
+#   scripts/vscode-check.sh                    # user settings
+#   scripts/vscode-check.sh --workspace DIR    # a sensitive repo's opt-out
+#   scripts/vscode-check.sh --show             # user settings to paste
+#   scripts/vscode-check.sh --show-sensitive   # .vscode/settings.json for a sensitive repo
 #
-# Fails on anything that sends code off the host: Copilot inline completions
-# or next edit suggestions on, Copilot code search on, telemetry not off, or
-# a language-model endpoint other than 127.0.0.1 / localhost.
-# Warns when the agent request cap or the role is missing.
+# Copilot inline completions and next edit suggestions are allowed (ADR 0041):
+# they send the text around the cursor to GitHub, so they are reported, not
+# failed. A repo flagged sensitive must turn both off in its own
+# .vscode/settings.json; --workspace fails if it does not.
+# Still fails on: Copilot code search on, telemetry not off, tool calls
+# auto-approved, or a chat model endpoint other than 127.0.0.1 / localhost.
 #
 # Exit 0 clean, 1 a setting breaks the host rules, 2 could not run.
 
@@ -20,12 +24,26 @@ USERDIR="${VSCODE_USER:-$HOME/Library/Application Support/Code/User}"
 SETTINGS="${USERDIR}/settings.json"
 MODELS="${USERDIR}/chatLanguageModels.json"
 
+if [ "${1:-}" = "--show-sensitive" ]; then
+  cat <<'EOF'
+// <sensitive repo>/.vscode/settings.json (ADR 0041). Workspace settings win
+// over user settings, so Copilot sends nothing from this repo to GitHub.
+{
+  "github.copilot.enable": { "*": false },
+  "github.copilot.nextEditSuggestions.enabled": false
+}
+EOF
+  exit 0
+fi
+
 if [ "${1:-}" = "--show" ]; then
   cat <<'EOF'
 // VS Code user settings (Cmd-Shift-P → Preferences: Open User Settings (JSON)).
-// Host rules, ADR 0036. Merge into the existing object.
-  "github.copilot.enable": { "*": false },
-  "github.copilot.nextEditSuggestions.enabled": false,
+// Host rules, ADR 0036 and 0041. Merge into the existing object.
+// Completions and next edit suggestions go to GitHub (allowed, ADR 0041);
+// sensitive repos turn them off: scripts/vscode-check.sh --show-sensitive.
+  "github.copilot.enable": { "*": true },
+  "github.copilot.nextEditSuggestions.enabled": true,
   "github.copilot.chat.codesearch.enabled": false,
   "telemetry.telemetryLevel": "off",
   "chat.agent.enabled": true,
@@ -41,13 +59,23 @@ EOF
   exit 0
 fi
 
+MODE=user
+if [ "${1:-}" = "--workspace" ]; then
+  [ -n "${2:-}" ] || { echo "usage: $0 --workspace DIR"; exit 2; }
+  [ -d "$2" ] || { echo "could not run: no directory ${2}"; exit 2; }
+  MODE=workspace
+  SETTINGS="${2%/}/.vscode/settings.json"
+  # A missing file is the finding, not a failure to run.
+  [ -f "$SETTINGS" ] || { echo "FAIL   ${SETTINGS} missing — sensitive repo has no Copilot opt-out (scripts/vscode-check.sh --show-sensitive)"; exit 1; }
+fi
+
 [ -f "$SETTINGS" ] || { echo "could not run: no VS Code settings at ${SETTINGS}"; exit 2; }
 
 # Program on stdin (heredoc), data in argv — never both on stdin.
-/usr/bin/python3 -I - "$SETTINGS" "$MODELS" <<'PY'
+/usr/bin/python3 -I - "$SETTINGS" "$MODELS" "$MODE" <<'PY'
 import json, os, re, sys
 
-settings_path, models_path = sys.argv[1], sys.argv[2]
+settings_path, models_path, mode = sys.argv[1], sys.argv[2], sys.argv[3]
 
 def jsonc(text):
     # Strip // and /* */ comments outside strings, then trailing commas.
@@ -90,15 +118,30 @@ except ValueError as e:
     print("could not run: settings.json did not parse (%s)" % e); sys.exit(2)
 
 enable = s.get("github.copilot.enable")
-if isinstance(enable, dict) and enable.get("*") is False and not any(v is True for v in enable.values()):
+completions_off = isinstance(enable, dict) and enable.get("*") is False and not any(v is True for v in enable.values())
+nes_off = s.get("github.copilot.nextEditSuggestions.enabled") is False
+
+if mode == "workspace":
+    # A sensitive repo: both must be off here, whatever the user settings say.
+    if completions_off:
+        ok("Copilot inline completions off in this repo")
+    else:
+        bad('Copilot inline completions not off here — add "github.copilot.enable": {"*": false} (sensitive repo, ADR 0041)')
+    if nes_off:
+        ok("next edit suggestions off in this repo")
+    else:
+        bad('next edit suggestions not off here — add "github.copilot.nextEditSuggestions.enabled": false (sensitive repo, ADR 0041)')
+    sys.exit(rc)
+
+# User level: allowed either way (ADR 0041). Say where the text goes.
+if completions_off:
     ok("Copilot inline completions off")
 else:
-    bad('Copilot inline completions not off — set "github.copilot.enable": {"*": false} (they go to GitHub, rule 3)')
-
-if s.get("github.copilot.nextEditSuggestions.enabled") is False:
+    ok("Copilot inline completions on — cursor context goes to GitHub; sensitive repos opt out (--workspace DIR)")
+if nes_off:
     ok("next edit suggestions off")
 else:
-    bad('next edit suggestions not off — set "github.copilot.nextEditSuggestions.enabled": false (GitHub service)')
+    ok("next edit suggestions on — sent to GitHub; sensitive repos opt out (--workspace DIR)")
 
 if s.get("github.copilot.chat.codesearch.enabled") is True:
     bad("Copilot code search on — it uses GitHub embeddings; set it false")

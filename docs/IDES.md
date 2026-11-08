@@ -374,9 +374,14 @@ Cline the task should stop, and a line should appear in the log.
 2. **On the host:** `scripts/omlx.sh sub-key add vscode-<machine>`. On a laptop,
    `ai-tunnel` must be up first.
 3. **Settings:** `scripts/vscode-check.sh --show` prints the block to merge
-   into user settings. It turns off Copilot inline completions, next edit
-   suggestions and code search (these go to GitHub even with your own
-   model), turns off telemetry, and caps `chat.agent.maxRequests` at 40.
+   into user settings. It turns Copilot inline completions (ghost text) and
+   next edit suggestions **on** — they go to GitHub, allowed by ADR 0041 —
+   keeps Copilot code search off, turns off telemetry, and caps
+   `chat.agent.maxRequests` at 40. **Sensitive repos opt out:** paste
+   `scripts/vscode-check.sh --show-sensitive` into that repo's
+   `.vscode/settings.json` (workspace settings win), then
+   `scripts/vscode-check.sh --workspace <repo>` must exit 0. Open sensitive
+   work in its own window: Copilot also reads other open tabs.
 4. **Model:** Chat: Manage Language Models → Add Models → Custom Endpoint →
    Chat Completions. URL `http://127.0.0.1:1234/v1`, model id
    `main-brain`, tool calling on, max input tokens 131072 (the role's `ctx`
@@ -479,7 +484,7 @@ for indexing or an agent, is for non-sensitive repos only.
 |---|---|---|---|
 | JetBrains (AI Assistant, Junie) — setup above | Ollama, LM Studio, LiteLLM. Local models can be assigned to features beyond chat. Junie (out of beta June 2026, on ACP) can use them; one JetBrains answer says only from Junie CLI. "Junie Local" bundles its own local model and needs a 64 GB M5 Mac | JetBrains AI subscription or own keys | Most credible second editor for local work. Not benched against oMLX's token auth |
 | Xcode 27 — setup above | "Locally Hosted" provider by port (Intelligence settings). Unverified whether it can send oMLX's token | Built-in Claude, Gemini and OpenAI agents with your own keys; ACP agents | Swift only. Locally Hosted at `:1234`, never its cloud agents, for sensitive work |
-| VS Code + Copilot | Custom Endpoint, no GitHub login from 1.122 (Local harness). Inline completions, NES, code search still GitHub | Copilot | On trial — setup above (ADR 0036) |
+| VS Code + Copilot | Custom Endpoint, no GitHub login from 1.122 (Local harness) for chat. Inline completions and NES go to GitHub, allowed outside sensitive repos (needs a GitHub sign-in and Copilot plan, ADR 0041); code search stays off | Copilot | On trial — setup above (ADR 0036) |
 | Cursor | Custom endpoint possible; earlier it rejected non-HTTPS base URLs | Indexing and search use Cursor's cloud | Not used here |
 | Windsurf, Kiro, Antigravity | Nothing found | Agent-first cloud IDEs | Not used here |
 | Cline | OpenAI Compatible provider; VS Code, JetBrains, CLI | No (telemetry on by default) | On trial — setup above (ADR 0036) |
