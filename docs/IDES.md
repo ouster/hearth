@@ -174,7 +174,9 @@ from it into that query.
 
 Through an SSH tunnel to the host — `docs/LAPTOP.md`. Zed points at
 `http://127.0.0.1:1234/v1` exactly as on the host (the tunnel's local end),
-with the **laptop's own** token. Run `ai-tunnel` before opening Zed. A Gemini
+with the **laptop's own** token (`laptop-m5-air` in `~/.hearth-key`). On macOS,
+`ai-tunnel-install` keeps the tunnel up; otherwise run `ai-tunnel` before
+opening Zed. A Gemini
 provider is allowed on the laptop (D3). Web stays on `hearth/local-main`.
 Write + search has no pinned model. Do not switch either profile to Gemini.
 

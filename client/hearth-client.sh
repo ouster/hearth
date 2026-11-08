@@ -22,9 +22,15 @@
 #   ~/.hearth-key         this machine's API key (laptop-<name>)
 #   ~/.hearth-gemini-key  this machine's own Google API key, for ask-cloud only
 #
-# Commands: ai-tunnel, ai-tunnel-stop, ai-ping, ai-models, ai-ask, ai-webui,
-#           ask (and ask-big/-local/-chat/-fast, all local-main), ask-arch,
-#           ask-deep (local-deep, only while the host has it loaded), ask-cloud
+# Commands: ai-tunnel, ai-tunnel-install, ai-tunnel-stop, ai-ping, ai-models,
+#           ai-ask, ai-webui, ask (and ask-big/-local/-chat/-fast, all
+#           local-main), ask-arch, ask-deep (local-deep, only while the host
+#           has it loaded), ask-cloud
+#
+# macOS: ai-tunnel-install once. launchd (com.hearth.tunnel) restarts the
+# forwards when the session drops, and again at login. ai-tunnel then
+# kickstarts that job instead of leaving a one-shot ssh -f behind. Linux
+# stays on ssh -f. Do not run a second ssh -f while the agent holds the ports.
 
 # Old gateway installs set HEARTH_GATEWAY to :4000, which no longer exists.
 if [ -n "${HEARTH_GATEWAY:-}${AI_STACK_GATEWAY:-}" ]; then
@@ -110,6 +116,153 @@ _hearth_connect() {
   fi
 }
 
+# One argv line per ssh argument. HEARTH_SEARXNG_PORT=0 leaves SearXNG out.
+_hearth_tunnel_argv() {
+  printf '%s\n' /usr/bin/ssh -N \
+    -o ExitOnForwardFailure=yes \
+    -o ServerAliveInterval=30 \
+    -o ServerAliveCountMax=3 \
+    -L "127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" \
+    -L "127.0.0.1:${HEARTH_WEBUI_PORT}:127.0.0.1:3000"
+  if [ "${HEARTH_SEARXNG_PORT}" != "0" ]; then
+    printf '%s\n' -L "127.0.0.1:${HEARTH_SEARXNG_PORT}:127.0.0.1:8888"
+  fi
+  printf '%s\n' "$HEARTH_SSH"
+}
+
+_hearth_tunnel_up_msg() {
+  _sx=""
+  if [ "${HEARTH_SEARXNG_PORT}" != "0" ]; then
+    _sx=", SearXNG → 127.0.0.1:${HEARTH_SEARXNG_PORT}"
+  fi
+  echo "tunnel: up (oMLX → 127.0.0.1:${HEARTH_LOCAL_PORT}, WebUI → 127.0.0.1:${HEARTH_WEBUI_PORT}${_sx})"
+  unset _sx
+}
+
+_hearth_tunnel_plist() {
+  printf '%s\n' "${HOME}/Library/LaunchAgents/com.hearth.tunnel.plist"
+}
+
+# Ours only when the plist forwards this client's oMLX port. An older agent
+# that ran `ssh -N` with no -L is not this tunnel.
+_hearth_plist_ours() {
+  _plist="$(_hearth_tunnel_plist)"
+  [ -f "$_plist" ] || return 1
+  grep -F -- "127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" "$_plist" >/dev/null 2>&1
+}
+
+_hearth_tunnel_names_ok() {
+  case "${HEARTH_SSH}" in
+    ''|*[!A-Za-z0-9@._:-]*)
+      echo "tunnel: HEARTH_SSH must be a host alias or user@host (letters, digits, . _ - @ :)." >&2
+      return 1
+      ;;
+  esac
+  for _p in "$HEARTH_LOCAL_PORT" "$HEARTH_WEBUI_PORT" "$HEARTH_SEARXNG_PORT"; do
+    case "$_p" in
+      ''|*[!0-9]*)
+        echo "tunnel: port '${_p}' is not a number." >&2
+        return 1
+        ;;
+    esac
+  done
+  return 0
+}
+
+_hearth_write_tunnel_plist() {
+  _plist="$(_hearth_tunnel_plist)"
+  mkdir -p "${HOME}/Library/LaunchAgents" "${HOME}/Library/Logs" || return 1
+  {
+    cat <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hearth.tunnel</string>
+    <key>ProgramArguments</key>
+    <array>
+EOF
+    _hearth_tunnel_argv | while IFS= read -r _arg; do
+      printf '        <string>%s</string>\n' "$_arg"
+    done
+    cat <<EOF
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>${HOME}/Library/Logs/hearth-tunnel.log</string>
+    <key>StandardErrorPath</key>
+    <string>${HOME}/Library/Logs/hearth-tunnel.error.log</string>
+</dict>
+</plist>
+EOF
+  } > "$_plist"
+}
+
+_hearth_wait_forwards() {
+  _n=0
+  while [ "$_n" -lt 20 ]; do
+    if _hearth_forwards_open && _hearth_our_ssh; then
+      return 0
+    fi
+    sleep 0.5
+    _n=$((_n + 1))
+  done
+  return 1
+}
+
+# Load com.hearth.tunnel if needed and start it. No -f: launchd owns the ssh.
+_hearth_launchd_start() {
+  _dom="gui/$(id -u)"
+  if ! launchctl print "${_dom}/com.hearth.tunnel" >/dev/null 2>&1; then
+    launchctl bootstrap "$_dom" "$(_hearth_tunnel_plist)" || return 1
+  fi
+  launchctl kickstart -k "${_dom}/com.hearth.tunnel" || return 1
+  if _hearth_wait_forwards; then
+    return 0
+  fi
+  echo "tunnel: launchd did not bind the forwards." >&2
+  echo "        If this host key is new, accept it once: ssh ${HEARTH_SSH}" >&2
+  echo "        Log: ${HOME}/Library/Logs/hearth-tunnel.error.log" >&2
+  return 1
+}
+
+_hearth_refuse_partial() {
+  _miss=""
+  _hearth_port_open "$HEARTH_WEBUI_PORT" || _miss="WebUI ${HEARTH_WEBUI_PORT}"
+  if [ "${HEARTH_SEARXNG_PORT}" != "0" ] && ! _hearth_port_open "$HEARTH_SEARXNG_PORT"; then
+    [ -n "$_miss" ] && _miss="${_miss}, "
+    _miss="${_miss}SearXNG ${HEARTH_SEARXNG_PORT}"
+  fi
+  echo "tunnel: 127.0.0.1:${HEARTH_LOCAL_PORT} is open but a forward is missing (${_miss:-one of its ports})." >&2
+  echo "        Run: ai-tunnel-stop && ai-tunnel" >&2
+  echo "        If that does not clear it, something else is listening on ${HEARTH_LOCAL_PORT}." >&2
+}
+
+ai-tunnel-install() {
+  if [ "$(uname -s)" != "Darwin" ]; then
+    echo "tunnel: ai-tunnel-install is macOS (launchd). On Linux, use ai-tunnel." >&2
+    return 1
+  fi
+  command -v launchctl >/dev/null 2>&1 || {
+    echo "tunnel: launchctl not found." >&2
+    return 1
+  }
+  _hearth_tunnel_names_ok || return 1
+  # A one-shot ssh -f holds the ports and makes the agent's bind fail.
+  pkill -f "ssh -f -N .*-L 127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" >/dev/null 2>&1 || true
+  launchctl bootout "gui/$(id -u)/com.hearth.tunnel" >/dev/null 2>&1 || true
+  _hearth_write_tunnel_plist || return 1
+  _hearth_launchd_start || return 1
+  echo "tunnel: installed com.hearth.tunnel — restarts when the session drops, and at login"
+  _hearth_tunnel_up_msg
+}
+
 ai-tunnel() {
   if _hearth_port_open "$HEARTH_LOCAL_PORT" && ! _hearth_our_ssh; then
     echo "tunnel: 127.0.0.1:${HEARTH_LOCAL_PORT} is open, but not the hearth ssh tunnel. Refusing." >&2
@@ -120,25 +273,19 @@ ai-tunnel() {
       echo "tunnel: already listening on 127.0.0.1:${HEARTH_LOCAL_PORT}"
       return 0
     fi
-    _miss=""
-    _hearth_port_open "$HEARTH_WEBUI_PORT" || _miss="WebUI ${HEARTH_WEBUI_PORT}"
-    if [ "${HEARTH_SEARXNG_PORT}" != "0" ] && ! _hearth_port_open "$HEARTH_SEARXNG_PORT"; then
-      [ -n "$_miss" ] && _miss="${_miss}, "
-      _miss="${_miss}SearXNG ${HEARTH_SEARXNG_PORT}"
-    fi
-    echo "tunnel: 127.0.0.1:${HEARTH_LOCAL_PORT} is open but a forward is missing (${_miss:-one of its ports})." >&2
-    echo "        Run: ai-tunnel-stop && ai-tunnel" >&2
-    echo "        If that does not clear it, something else is listening on ${HEARTH_LOCAL_PORT}." >&2
+    _hearth_refuse_partial
     return 1
   fi
   # ExitOnForwardFailure: fail loudly instead of a half-open tunnel — so a
-  # local port already in use fails the whole tunnel. HEARTH_SEARXNG_PORT=0
-  # leaves SearXNG out.
+  # local port already in use fails the whole tunnel.
+  if _hearth_plist_ours; then
+    _hearth_launchd_start || return 1
+    _hearth_tunnel_up_msg
+    return 0
+  fi
   # "$@" splits the same way in bash and zsh; an unquoted ${x:+...} does not.
-  _sxmsg=""
   if [ "${HEARTH_SEARXNG_PORT}" != "0" ]; then
     set -- -L "127.0.0.1:${HEARTH_SEARXNG_PORT}:127.0.0.1:8888"
-    _sxmsg=", SearXNG → 127.0.0.1:${HEARTH_SEARXNG_PORT}"
   else
     set --
   fi
@@ -148,12 +295,24 @@ ai-tunnel() {
     -L "127.0.0.1:${HEARTH_WEBUI_PORT}:127.0.0.1:3000" \
     "$@" \
     "$HEARTH_SSH" \
-    && echo "tunnel: up (oMLX → 127.0.0.1:${HEARTH_LOCAL_PORT}, WebUI → 127.0.0.1:${HEARTH_WEBUI_PORT}${_sxmsg})"
-  _rc=$?; unset _sxmsg; return $_rc
+    && _hearth_tunnel_up_msg
 }
 
 ai-tunnel-stop() {
-  pkill -f "ssh -f -N .*-L 127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" && echo "tunnel: stopped" || echo "tunnel: none running"
+  _stopped=0
+  if [ "$(uname -s)" = "Darwin" ]; then
+    if launchctl bootout "gui/$(id -u)/com.hearth.tunnel" >/dev/null 2>&1; then
+      _stopped=1
+    fi
+  fi
+  if pkill -f "ssh -f -N .*-L 127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" >/dev/null 2>&1; then
+    _stopped=1
+  fi
+  if [ "$_stopped" -eq 1 ]; then
+    echo "tunnel: stopped"
+  else
+    echo "tunnel: none running"
+  fi
 }
 
 ai-ping() {

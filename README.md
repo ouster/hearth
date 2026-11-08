@@ -172,14 +172,17 @@ ai-boot            # scripts/boot.sh
 
 ### On a laptop
 
-Source `~/.hearth-client.sh` (set by `scripts/client-setup.sh`): run
-`ai-tunnel` first to open the SSH tunnel, then any of these — they all go
-through the tunnel to the host's oMLX on `:1234`.
+Source `~/.hearth-client.sh` (set by `scripts/client-setup.sh`). On macOS,
+`ai-tunnel` once to accept the host fingerprint, then `ai-tunnel-install`:
+launchd restarts the forwards when they drop and at login. Linux stays on
+`ai-tunnel`. Everything below goes through the tunnel to the host's oMLX
+on `:1234`.
 
 ```bash
 # Tunnel management
-ai-tunnel          # open the SSH tunnel (needed once)
-ai-tunnel-stop     # close the tunnel
+ai-tunnel-install  # macOS: LaunchAgent keeps the tunnel up
+ai-tunnel          # open it now (kickstarts the agent if installed)
+ai-tunnel-stop     # unload the agent and close the tunnel
 ai-ping            # check tunnel + server health (up / DOWN / BAD TOKEN)
 ai-models          # list models available through the tunnel
 
@@ -217,9 +220,19 @@ name, and do not repeat a command that just failed.
 
 SSH tunnel only — the server never listens on the LAN. Each laptop gets its
 own host token and an SSH key that can forward to `:1234` / `:3000` / `:8888` and
-nothing else. `scripts/client-setup.sh <laptop-name>` prints the steps;
-details in [`docs/LAPTOP.md`](docs/LAPTOP.md). Never port-forward `:22`,
-`:1234`, `:3000` or `:8888`.
+nothing else. The token name is `laptop-` plus a short name, for example
+`laptop-m5-air`:
+
+```bash
+scripts/omlx.sh sub-key add laptop-m5-air    # new: host user types the token
+scripts/client-setup.sh m5-air               # prints both paths
+```
+
+`m5-air` and `laptop-m5-air` are the same machine. When `laptop-m5-air` is
+already in `scripts/omlx.sh sub-key list`, skip add. The laptop uses the
+token already in `~/.hearth-key`. The list prints names only, so a lost token
+is replaced with revoke, then add. Details in [`docs/LAPTOP.md`](docs/LAPTOP.md).
+Never port-forward `:22`, `:1234`, `:3000` or `:8888`.
 
 A laptop may also run its own oMLX for `local-edit` (edit prediction with
 the tunnel down, ADR 0033; `client/edit-model.sh laptop-up`). Lock it the

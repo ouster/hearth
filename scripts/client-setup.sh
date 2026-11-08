@@ -1,18 +1,21 @@
 #!/bin/bash
 # Set up a laptop to use this host's oMLX over an SSH tunnel.
 #
-#   scripts/client-setup.sh <laptop-name>                    # print the steps
-#   scripts/client-setup.sh <laptop-name> --windows          # PowerShell steps
-#   scripts/client-setup.sh <laptop-name> --authorize <pub>  # add the laptop's
-#                                                            # tunnel-only key
-#   scripts/client-setup.sh <laptop-name> --install user@laptop  # scp the client
-#   scripts/client-setup.sh --update-keys    # bring every hearth-tunnel-* line in
-#                                            # authorized_keys to the current
-#                                            # restriction (backup kept)
+#   scripts/client-setup.sh m5-air                       # print the steps
+#   scripts/client-setup.sh laptop-m5-air                # same machine
+#   scripts/client-setup.sh m5-air --windows             # PowerShell steps
+#   scripts/client-setup.sh m5-air --authorize <pub>     # tunnel-only SSH key
+#   scripts/client-setup.sh m5-air --install user@laptop # scp the client
+#   scripts/client-setup.sh --update-keys                # refresh hearth-tunnel-* lines
+#
+# The sub-key argument is laptop-<short>, e.g. laptop-m5-air. Pass m5-air or
+# laptop-m5-air; a single leading laptop- is stripped. Letters, digits, hyphen,
+# underscore. sub-key list prints names only. Already listed: skip add and use
+# the laptop's existing ~/.hearth-key. A lost token cannot be reprinted.
 #
 # The host stays bound to 127.0.0.1 (ADR 0016, phase 4 decision: tunnel only).
 # Each laptop gets:
-#   - its own host token, laptop-<name>, registered with
+#   - its own host token, laptop-<short> (laptop-m5-air), registered with
 #     scripts/omlx.sh sub-key add — revoke one machine without touching
 #     the others. A reboot runs scripts/omlx.sh up, which keeps sub-keys
 #     already registered.
@@ -33,6 +36,22 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
+
+_hearth_setup_usage() {
+  cat <<'EOF'
+scripts/client-setup.sh m5-air                       # print the steps
+scripts/client-setup.sh laptop-m5-air                # same machine
+scripts/client-setup.sh m5-air --windows             # PowerShell steps
+scripts/client-setup.sh m5-air --authorize <pub>     # tunnel-only SSH key
+scripts/client-setup.sh m5-air --install user@laptop # scp the client
+scripts/client-setup.sh --update-keys                # refresh hearth-tunnel-* lines
+
+Sub-key argument: laptop-<short>, e.g. laptop-m5-air
+  letters, digits, hyphen, underscore.
+  Already in sub-key list: skip add. The laptop uses ~/.hearth-key.
+  Lost token: sub-key list cannot show it. revoke, then add a new one.
+EOF
+}
 
 AK="$HOME/.ssh/authorized_keys"
 # permitlisten="none:1" is an allowlist entry that no real -R request matches
@@ -133,8 +152,16 @@ if [ "${1:-}" = "--update-keys" ]; then
 fi
 
 NAME="${1:-}"; shift || true
-case "$NAME" in ''|-*) sed -n '2,12p' "$0"; exit 2 ;; esac
-case "$NAME" in *[!A-Za-z0-9_-]*) echo "laptop name: letters, digits, - and _ only"; exit 2 ;; esac
+case "$NAME" in
+  laptop-*) NAME="${NAME#laptop-}" ;;
+esac
+case "$NAME" in ''|-*) _hearth_setup_usage; exit 2 ;; esac
+case "$NAME" in
+  *[!A-Za-z0-9_-]*)
+    echo "laptop name: letters, digits, - and _ only (m5-air → sub-key laptop-m5-air)"
+    exit 2
+    ;;
+esac
 WINDOWS=0; AUTH=""; INSTALL=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -220,61 +247,96 @@ fi
 [ -n "$CLOUD_MODEL" ] || CLOUD_MODEL="<cloud-cheap id from config/roles.tsv>"
 cat <<EOF
 Laptop setup: ${NAME}   (host ${USER_NAME}@${HOSTNAME_LOCAL}, tunnel only)
+  sub-key add argument: laptop-${NAME}
+  SSH key comment:      hearth-tunnel-${NAME}
 
-1. ON THIS HOST — oMLX is listening (scripts/omlx.sh status). Generate a
-   token for laptop-${NAME} and register it. The prompt does not echo:
+Letters, digits, hyphen, underscore. Example: m5-air → laptop-m5-air.
+scripts/client-setup.sh laptop-${NAME} prints this same page.
+Leave oMLX on 127.0.0.1. A reboot runs scripts/omlx.sh up, which keeps
+sub-keys already registered.
+
+1. ON THIS HOST — oMLX is listening (scripts/omlx.sh status). Pick one path.
+
+   NEW — laptop-${NAME} is absent from scripts/omlx.sh sub-key list.
+   Ask the host user to type a token (the command does not invent one):
      scripts/omlx.sh sub-key add laptop-${NAME}
-   Put that same token on the laptop as ~/.hearth-key. Leave the server on
-   127.0.0.1: the tunnel needs nothing exposed.
-   A reboot runs scripts/omlx.sh up, which keeps sub-keys already registered.
+   The prompt says "paste the token for laptop-${NAME}" and does not echo.
+   That same string is stored on the laptop as ~/.hearth-key.
+   sub-key list prints the name only. It never prints the token back.
+
+   ALREADY REGISTERED — laptop-${NAME} is in that list.
+   Skip sub-key add. A different token fails with
+   "sub-key laptop-${NAME} already exists".
+   The laptop uses the token already in ~/.hearth-key.
+   If that file is gone, the host cannot show the old token. Then:
+     scripts/omlx.sh sub-key revoke laptop-${NAME}
+     scripts/omlx.sh sub-key add laptop-${NAME}
 
 EOF
 if [ "$WINDOWS" -eq 0 ]; then cat <<EOF
-2. ON THE LAPTOP — a key used only for the tunnel:
+2. ON THE LAPTOP — the tunnel SSH key. Pick one path.
+
+   NEW — no ~/.ssh/hearth_tunnel yet:
      ssh-keygen -t ed25519 -f ~/.ssh/hearth_tunnel -C hearth-tunnel-${NAME}
-     printf 'Host hearth\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/hearth_tunnel\n  IdentitiesOnly yes\n' ${HOSTNAME_LOCAL} ${USER_NAME} >> ~/.ssh/config
+     printf 'Host hearth\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/hearth_tunnel\n  IdentitiesOnly yes\n  ServerAliveInterval 30\n  ServerAliveCountMax 3\n' "${HOSTNAME_LOCAL}" "${USER_NAME}" >> ~/.ssh/config
    Copy ~/.ssh/hearth_tunnel.pub to this host, then HERE:
      scripts/client-setup.sh ${NAME} --authorize /path/to/hearth_tunnel.pub
 
-3. ON THE LAPTOP — the client and its secrets:
+   ALREADY AUTHORIZED — the laptop still has ~/.ssh/hearth_tunnel, and
+   --authorize prints "already authorized". Leave the key. Skip ssh-keygen.
+   If the private key is gone, generate a new one and authorize that .pub.
+
+3. ON THE LAPTOP — the client. Copy it even when the token already exists:
      scp ${USER_NAME}@${HOSTNAME_LOCAL}:${ROOT}/client/hearth-client.sh ~/.hearth-client.sh
        (or from this host: scripts/client-setup.sh ${NAME} --install you@laptop)
-     umask 077
-     read -rs t && printf '%s' "\$t" > ~/.hearth-key && unset t        # paste the laptop-${NAME} token
-     read -rs t && printf '%s' "\$t" > ~/.hearth-gemini-key && unset t # this laptop's OWN Google key (optional)
      printf 'export HEARTH_SSH=hearth\nexport HEARTH_CLOUD_MODEL=%s\nsource ~/.hearth-client.sh\n' ${CLOUD_MODEL} >> ~/.zshrc   # or ~/.bashrc
+   Store a token only when ~/.hearth-key is missing or this is a new token:
+     umask 077
+     read -rs t && printf '%s' "\$t" > ~/.hearth-key && unset t        # laptop-${NAME}
+     read -rs t && printf '%s' "\$t" > ~/.hearth-gemini-key && unset t # this laptop's OWN Google key (optional)
 
-4. ON THE LAPTOP — prove it:
-     ai-tunnel        # ssh -f -N -L 1234 -L 3000 -L 8888 via the tunnel-only key
-     ai-ping          # up / BAD TOKEN / NO ANSWER / DOWN
-     ai-models        # local-main
-     ask              # aider on local-main
-     ask-cloud        # Gemini with the laptop's own key
-     ai-webui         # the host's Open WebUI at http://127.0.0.1:3000
+4. ON THE LAPTOP — prove it. The first ai-tunnel accepts the host fingerprint.
+     ai-tunnel            # one ssh -N -L 1234 -L 3000 -L 8888
+     ai-tunnel-install    # macOS: launchd keeps those forwards up, and at login
+     ai-ping              # up / BAD TOKEN / NO ANSWER / DOWN
+     ai-models            # local-main
+     ask                  # aider on local-main
+     ask-cloud            # Gemini with the laptop's own key
+     ai-webui             # the host's Open WebUI at http://127.0.0.1:3000
+   Linux: skip ai-tunnel-install. ai-tunnel-stop unloads the LaunchAgent too.
 EOF
 else cat <<EOF
-2. ON THE LAPTOP (PowerShell) — a key used only for the tunnel:
+2. ON THE LAPTOP (PowerShell) — the tunnel SSH key. Pick one path.
+
+   NEW — no \$HOME\\.ssh\\hearth_tunnel yet:
      ssh-keygen -t ed25519 -f \$HOME\\.ssh\\hearth_tunnel -C hearth-tunnel-${NAME}
-     Add-Content \$HOME\\.ssh\\config "Host hearth\`n  HostName ${HOSTNAME_LOCAL}\`n  User ${USER_NAME}\`n  IdentityFile ~/.ssh/hearth_tunnel\`n  IdentitiesOnly yes"
+     Add-Content \$HOME\\.ssh\\config "Host hearth\`n  HostName ${HOSTNAME_LOCAL}\`n  User ${USER_NAME}\`n  IdentityFile ~/.ssh/hearth_tunnel\`n  IdentitiesOnly yes\`n  ServerAliveInterval 30\`n  ServerAliveCountMax 3"
    Copy hearth_tunnel.pub to this host, then HERE:
      scripts/client-setup.sh ${NAME} --authorize /path/to/hearth_tunnel.pub
 
-3. ON THE LAPTOP — the client and its secrets:
+   ALREADY AUTHORIZED — the laptop still has hearth_tunnel, and --authorize
+   prints "already authorized". Leave the key. Skip ssh-keygen.
+   If the private key is gone, generate a new one and authorize that .pub.
+
+3. ON THE LAPTOP — the client. Copy it even when the token already exists:
      scp ${USER_NAME}@${HOSTNAME_LOCAL}:${ROOT}/client/hearth-client.ps1 \$HOME\\.hearth-client.ps1
-     Read-Host -AsSecureString "token" | ConvertFrom-SecureString -AsPlainText | Set-Content \$HOME\\.hearth-key      # PowerShell 7
-     Read-Host -AsSecureString "gemini" | ConvertFrom-SecureString -AsPlainText | Set-Content \$HOME\\.hearth-gemini-key
      Add to \$PROFILE:
        \$env:HEARTH_SSH = "hearth"
        \$env:HEARTH_CLOUD_MODEL = "${CLOUD_MODEL}"
        . "\$HOME\\.hearth-client.ps1"
+   Store a token only when .hearth-key is missing or this is a new token:
+     Read-Host -AsSecureString "token" | ConvertFrom-SecureString -AsPlainText | Set-Content \$HOME\\.hearth-key      # PowerShell 7, laptop-${NAME}
+     Read-Host -AsSecureString "gemini" | ConvertFrom-SecureString -AsPlainText | Set-Content \$HOME\\.hearth-gemini-key
 
 4. ON THE LAPTOP — prove it: ai-tunnel, ai-ping, ai-models, ask, ask-cloud, ai-webui
+   Windows stays on one-shot ai-tunnel. There is no LaunchAgent.
 EOF
 fi
 cat <<EOF
 
 5. Zed on the laptop: docs/LAPTOP.md (api_url http://127.0.0.1:1234/v1 through
-   the tunnel; token via the UI; a Gemini provider is allowed on the laptop, D3).
+   the tunnel; the laptop-${NAME} token via the UI). On macOS, ai-tunnel-install
+   starts the tunnel at login. A Gemini provider is allowed on the laptop (D3).
 
 Revoke a laptop: run
   scripts/omlx.sh sub-key revoke laptop-${NAME}

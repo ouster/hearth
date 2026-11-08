@@ -6,7 +6,8 @@
 # PowerShell 5.1 and 7+. Needs the built-in OpenSSH client (ssh.exe).
 #
 # The host's oMLX listens on 127.0.0.1:1234 only; this machine reaches it
-# through an SSH tunnel, on and off the LAN.
+# through an SSH tunnel, on and off the LAN. macOS uses ai-tunnel-install
+# (launchd). Windows stays on one-shot ai-tunnel.
 #
 # Set before dot-sourcing (scripts/client-setup.sh --windows prints these):
 #   $env:HEARTH_SSH          user@host, e.g. colin@Colins-Mac-Studio.local

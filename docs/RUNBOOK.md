@@ -90,10 +90,13 @@ warns if either differs. `scripts/omlx.sh bench` checks thinking, tools,
 and a repeated 30K prompt. `scripts/omlx.sh down` stops a Hearth-started
 oMLX (launchd) and leaves the port empty; it does not kill an app-owned
 server. A reboot runs `up` again. The Mac app may stay as a settings panel.
-A laptop token is registered with `scripts/omlx.sh sub-key add laptop-<name>`
-(the prompt does not echo) and dropped with `sub-key revoke`. That key can
-call the model and cannot log in as admin. The operator pastes the token.
-`sub-key list` prints names.
+A laptop token is registered with
+`scripts/omlx.sh sub-key add laptop-m5-air` (the prompt does not echo; the
+operator types the token; the name is letters, digits, hyphen, or underscore).
+`sub-key list` prints names, not tokens. A name already in that list is left
+alone; the laptop uses its existing `~/.hearth-key`. A lost token is
+`sub-key revoke laptop-m5-air` and then add again. That key can call the
+model and cannot log in as admin.
 
 ### Sleep
 
@@ -253,12 +256,14 @@ SSH tunnel only; the server stays on `127.0.0.1`. `docs/LAPTOP.md` has the
 whole setup. On the host:
 
 ```bash
-scripts/client-setup.sh <laptop-name>                       # print the steps
-scripts/client-setup.sh <laptop-name> --authorize key.pub   # tunnel-only key
+scripts/client-setup.sh m5-air                              # print the steps
+scripts/omlx.sh sub-key add laptop-m5-air                   # new token only
+scripts/client-setup.sh m5-air --authorize key.pub          # tunnel-only key
 ```
 
-`healthcheck.sh` section 5 should say "LAN: no answer" — a LAN answer means
-the server is not bound to loopback. Revoke a laptop with
-`scripts/omlx.sh sub-key revoke laptop-<name>` and delete its
-`hearth-tunnel-<name>` line in `~/.ssh/authorized_keys`.
+`laptop-m5-air` already in `sub-key list`: skip add; the laptop keeps
+`~/.hearth-key`. `healthcheck.sh` section 5 should say "LAN: no answer" — a
+LAN answer means the server is not bound to loopback. Revoke a laptop with
+`scripts/omlx.sh sub-key revoke laptop-m5-air` and delete its
+`hearth-tunnel-m5-air` line in `~/.ssh/authorized_keys`.
 **Never port-forward `:22`, `:1234` or `:3000`.**
