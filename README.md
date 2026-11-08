@@ -80,16 +80,18 @@ The ceiling is RAM minus 8 GB (ADR 0031). Only benched tiers get a row in
 without one. Candidates for other sizes are a starting point for a bench,
 not a recommendation to run untested. Which models these are, and the
 sources: [`docs/MODELS.md`](docs/MODELS.md) → *Candidates by RAM* (rule 1
-keeps model names there).
+keeps model names there). Editor provider `hearth` is this machine's oMLX.
+`hearth-remote` is optional: another host, and only on a machine that also
+runs its own brain (ADR 0040).
 
 | RAM (usable) | `main-brain` | `deep-brain` | State |
 |---|---|---|---|
 | 64 GB (56) | 35B-A3B MoE, 128K × 3 | dense 27B, swaps in | **benched**: reference host |
 | 48 GB (40) | same rows; peak 34.0 GB at 128K × 3 | same, swaps in | **benched**. On a daily-use laptop that leaves about 14 GB for apps. A 1-slot laptop tier is open (ADR 0040) |
-| 32 GB (24) | ~26B MoE, ~4B active (≈15 GB at 4-bit; one ran here as the resident at 25.2 GB peak with 3 × 128K, ADR 0019) | dense ~24–27B, swaps in | candidate. Bench with fewer slots |
-| 24 GB (16) | ~20B MoE with native tool calling | none: no room beside it | candidate. Web search 2026-11-08: sources disagree. Check tool calling against oMLX's parser first |
+| 32 GB (24) | ~26B MoE, ~4B active, 4-bit (~15 GB). Laptop c3 peak 22 GB fits; 3 × 128K peaked 25.2 GB here, so one slot. A 35B-A3B at 4-bit (20.4 GB) is the one-slot alternative | dense 27B, swaps in. A dense 31B (~20.5 GB) is short-context only | candidate. `install-host.sh` prints the Qwen/Gemma line from `docs/MODELS.md` |
+| 24 GB (16) | dense ~12B at 4-bit (about 12 GB with the runtime). A dense ~9B is the other fit. The 26B MoE and the 27B/35B working sets do not | none | candidate. Same: the script prints the line, then stops |
 
-Below 24 GB, use the machine as a client of a bigger host (*Laptops*).
+Below 24 GB there is no local `hearth`. The machine stays a client, and the tunnel is its only endpoint (*Laptops*).
 
 ## Install oMLX (either order)
 
@@ -446,7 +448,7 @@ Both are your own hardware, so both are brains (rule 3). To convert a laptop:
 2. in a new shell, `ai-tunnel-stop && ai-tunnel-install`, which moves the
    tunnel to 1235
 3. `brew services stop omlx`, if a brew-run oMLX serves `edit-brain` on 8000
-4. `scripts/install-host.sh`
+4. `scripts/install-host.sh`. Under 48 GB it prints the matching candidate from `docs/MODELS.md` and stops. That line is not installed; a row waits on a bench on this machine (rule 5)
 5. `client/edit-model.sh laptop-up`, to serve `edit-brain` from the new oMLX
 
 ## Using an AI assistant with this repo

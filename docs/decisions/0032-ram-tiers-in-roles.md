@@ -35,8 +35,10 @@ fit together is a measured fact per tier, not a constant.
   Resolved at 64 GB, they are the same rows as before this ADR.
 - Above 64 GB a host falls back to the 64 GB rows with a larger ceiling, so
   it works before its own tier is benched.
-- Below 48 GB no `local-main` row fits: `scripts/omlx.sh up` refuses and
-  preflight fails. That is deliberate until a 32 GB tier is benched.
+- Below 48 GB no resident row fits: `scripts/omlx.sh up` refuses and
+  preflight fails. `scripts/install-host.sh` prints the matching
+  *Candidates by RAM* row from `docs/MODELS.md` and stops. That line is
+  not a role. Deliberate until a tier is benched on that hardware.
 - The 64 GB `beside` row still rests on ADR 0028. The combined peak with the
   ADR 0030 resident (~53 GB estimated against 56) has not been measured.
 - The 48 GB rows are not benched on 48 GB hardware (ADR 0031).

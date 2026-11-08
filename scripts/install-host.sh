@@ -33,6 +33,44 @@ todo() { printf 'TODO    %s\n' "$1"; rc=1; }
 stop() { printf 'STOP    %s\n' "$1"; exit 1; }
 mode_ok() { [ -f "$1" ] && [ "$(ls -l "$1" | cut -c5-10)" = "------" ] && [ -s "$1" ]; }
 
+# The largest *Candidates by RAM* shortlist row at or below this machine.
+# Read from docs/MODELS.md so this file does not name a model (rule 1).
+suggest_unbenched() {
+  local ram="$1" models="${ROOT}/docs/MODELS.md"
+  [ -f "$models" ] || { echo "suggestion  docs/MODELS.md missing"; return; }
+  awk -F'|' -v ram="$ram" '
+    BEGIN { best = 0 }
+    $0 ~ /^\| [0-9]+ GB \(/ {
+      cell = $2
+      gsub(/^[ \t]+|[ \t]+$/, "", cell)
+      split(cell, a, " ")
+      gb = a[1] + 0
+      if (gb > 0 && gb <= ram + 0 && gb >= best) {
+        best = gb
+        label = cell
+        agent = $3
+        deep = $4
+        load = $5
+      }
+    }
+    END {
+      if (best == 0) {
+        print "suggestion  under 24 GB: no local hearth. This machine stays a client; the tunnel is the only endpoint on 127.0.0.1:1234 (README → Laptops)"
+        exit
+      }
+      gsub(/^[ \t]+|[ \t]+$/, "", agent)
+      gsub(/^[ \t]+|[ \t]+$/, "", deep)
+      gsub(/^[ \t]+|[ \t]+$/, "", load)
+      print "suggestion  " label " — docs/MODELS.md → Candidates by RAM (unbenched, not a role)"
+      print "            main-brain: " agent
+      print "            deep-brain: " deep
+      print "            load: " load
+      print "            hearth: this machine, 127.0.0.1:1234"
+      print "            hearth-remote: optional, the other host on 127.0.0.1:1235"
+    }
+  ' "$models"
+}
+
 # 1. Port 1234 must be free for oMLX, or already oMLX. A client tunnel there
 #    means this machine is a laptop that has not moved its tunnel yet.
 if ps axww -o command= 2>/dev/null | grep -F "ssh " | grep -qF -- "-L 127.0.0.1:1234:127.0.0.1:1234"; then
@@ -46,7 +84,8 @@ roles=$(hearth_resolved_roles | awk -F'\t' '$2 == "omlx"')
 if printf '%s\n' "$roles" | awk -F'\t' '$1 == "main-brain"' | grep -q .; then
   ok "${ram} GB RAM: benched main-brain row, ceiling $(hearth_gpu_ceiling_gb) GB"
 else
-  stop "${ram} GB RAM has no benched main-brain row. Candidates by RAM: docs/MODELS.md (unbenched). A row needs bench/tasks and scripts/concurrency-bench.sh on this hardware first (rule 5)."
+  suggest_unbenched "$ram"
+  stop "${ram} GB RAM has no benched main-brain row. The suggestion above is not installed. A row needs bench/tasks and scripts/concurrency-bench.sh on this hardware first (rule 5)."
 fi
 
 # 3. oMLX installed (README → Install oMLX).
@@ -118,9 +157,11 @@ if [ "$rc" -eq 0 ]; then
   "${ROOT}/scripts/healthcheck.sh" >/dev/null 2>&1 && ok "healthcheck passes" || todo "healthcheck: run scripts/healthcheck.sh"
 fi
 
+echo
+echo "hearth: this machine, 127.0.0.1:1234"
 if [ -f "${HOME}/.hearth-key" ]; then
-  echo
-  echo "This machine is also a client of another host (~/.hearth-key)."
-  echo "Keep its tunnel on 1235: client/install-client.sh --dual (ADR 0040)."
+  echo "hearth-remote: optional. A client key is present; keep that tunnel on 1235 (client/install-client.sh --dual, ADR 0040)."
+else
+  echo "hearth-remote: optional. Skip it, or add another host with client/install-client.sh --dual."
 fi
 exit "$rc"

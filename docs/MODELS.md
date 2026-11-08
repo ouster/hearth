@@ -68,20 +68,21 @@ detected size. Ceiling is RAM minus 8 (ADR 0031).
 ### Candidates by RAM (unbenched)
 
 Not roles. Each needs `bench/tasks` and `scripts/concurrency-bench.sh` on
-that hardware before it gets a row (rule 5). Web search, 2026-11-07; 24 GB row
-added 2026-11-08 (blogs, unverified; check tool calling with oMLX's parser). Sources
-are mostly blogs, Hugging Face cards and leaderboards, and they often
-disagree: sizes are as reported unless marked *(repo)*, which means measured
-here. Usable = RAM minus 8 (ADR 0031); weights plus KV cache must fit under
-it. *Agent* = MoE with ~3–4B active, for resident tool loops. *Deep* =
-slower and stronger, for one-off questions.
+that hardware before it gets a row (rule 5). `scripts/install-host.sh` prints
+the matching shortlist row and stops; it does not download weights or write
+a row. Web search, 2026-11-07; the 24 GB and 32 GB rows are the Qwen/Gemma
+shortlist as of 2026-11-08 (Hugging Face cards and the mlx-optiq catalog).
+Sources often disagree: sizes are as reported unless marked *(repo)*, which
+means measured here. Usable = RAM minus 8 (ADR 0031); weights plus KV cache
+must fit under it. *Agent* = the resident for tool loops. *Deep* = slower
+and stronger, for one-off questions.
 
 **Shortlist to bench first**
 
 | RAM (usable) | Agent | Deep | Load |
 |---|---|---|---|
-| 24 GB (16) | gpt-oss-20b (MXFP4, ~12–13 GB; most-cited small MoE with tool calling). Alternative: Devstral Small 2 24B at 4-bit (dense, slow) | none beside it | — |
-| 32 GB (24) | Gemma 4 26B-A4B (≈15 GB 4-bit per blogs; ran here as the resident, c3 peak 25.2 GB, ADR 0019) | Devstral Small 2 24B or Qwen3.8-27B | swap |
+| 24 GB (16) | Gemma 4 12B OptiQ 4-bit (`mlx-community/gemma-4-12B-it-OptiQ-4bit`): 9.0 GB disk, about 12 GB memory (catalog 2026-10-18). Dense. Qwen that fits: Qwen3.5-9B 4-bit, ~5.6 GB (mlx-community card). The 26B-A4B and the 27B/35B Qwens do not fit | none | — |
+| 32 GB (24) | Gemma 4 26B-A4B uniform 4-bit, 15.4 GB disk (mlx-community). Laptop c3 peak 22 GB, so one slot; host 3×128K peaked 25.2 GB (ADR 0019). Qwen alternative: Qwen3.6 35B-A3B uniform 4-bit, 20.4 GB *(repo)*, about 32K × 1 | Qwen3.8-27B, 16.1 GB *(repo)*, swap. Gemma 4 31B oQ4e is 20.5 GB (Jundot card, updated 2026-10-29): short context only | swap |
 | 48 GB (40) | Qwen3.6 35B-A3B (tier row) | Qwen3.8-27B (tier row) | swap |
 | 64 GB (56) | Qwen3.6 35B-A3B (tier row); alternative Qwen3-Coder-Next 80B-A3B with no deep beside | Qwen3.8-27B (tier row) | beside |
 | 128 GB (120) | Qwen3.6 35B-A3B | Qwen3.5-122B-A10B or gpt-oss-120b | beside (~109 GB with the 122B, tight) |
@@ -116,6 +117,9 @@ Skip GGUF orgs for oMLX (no GGUF→MLX path).
 
 | Tier | Model | Kind | 4-bit size | Notes |
 |---|---|---|---|---|
+| 24 | Gemma 4 12B OptiQ | agent | 9.0 GB disk, ~12 GB memory | First bench on 24 GB. Catalog 2026-10-18. Dense, so slower than a 4B-active MoE |
+| 24 | Qwen3.5-9B 4-bit | agent | ~5.6 GB | The Qwen that fits under 16 GB. mlx-community card |
+| 24 | Gemma 4 26B-A4B, Qwen3.6 35B-A3B, Qwen3.6-27B, Qwen3.8-27B | — | 15–28 GB memory | Over the 16 GB ceiling. Qwen3.6 REAP's card says 11.6 GB peak and the same publisher's catalog says about 17 GB; not the first bench |
 | 32 | Gemma 4 26B-A4B | agent | ~15 GB *(repo)* | Laptop c3 30/30, peak 22 GB (`[o]mlx` matcher) |
 | 32 | Qwen3.6 35B-A3B | agent | 20.4 GB *(repo)* | Only ~32K × 1 at this ceiling |
 | 32 | GLM-4.7-Flash 30B-A3B | agent | ~19 GB | Little data |
