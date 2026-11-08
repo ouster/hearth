@@ -1,4 +1,4 @@
-# Editors: Zed and aider
+# Editors: Zed and aider (VS Code and Cline on trial)
 
 Two tools, deliberately. They are good at different halves of the work and both
 address roles rather than model names, so neither needs touching when a model
@@ -333,6 +333,94 @@ adding a TLS proxy in front of `:1234`.
 
 ---
 
+## VS Code and Cline (trial, ADR 0036)
+
+On trial beside Zed for agent work, with a loop guard Zed cannot have.
+Both call `local-main` at `127.0.0.1:1234` with their own sub-key: on the
+host directly, on a laptop through `ai-tunnel`. **No cloud provider in
+either on the host** (rule 3, D3). Setup follows vendor
+docs read 2026-11-08 and has not been run against oMLX yet.
+
+### Loop guard
+
+`scripts/loop-guard.sh` runs before every tool call. It denies the same
+call (tool + arguments) made 3 times in a row, and stops the run after 80
+calls in one session. The state resets after 30 idle minutes. Tune it
+with `HEARTH_LOOP_REPEAT`, `HEARTH_LOOP_BUDGET` and `HEARTH_LOOP_IDLE_MIN`
+in the editor's environment. It fails open, so treat it as a brake and
+not a control (ADR 0007). Denials go to
+`~/Library/Logs/hearth-loop-guard.log`, which records the tool name and a
+hash only, never the arguments.
+
+| Where | How it is wired |
+|---|---|
+| This repo, VS Code | `.github/hooks/hearth-loop-guard.json` |
+| This repo, Cline | `.clinerules/hooks/PreToolUse` |
+| Every other repo | `scripts/install-loop-guard.sh` writes `~/Documents/Cline/Hooks/PreToolUse` and `~/.copilot/hooks/hearth-loop-guard.json`. `--check`, `--remove` |
+
+If VS Code's Local harness ignores `~/.copilot/hooks`, add that folder to
+`chat.hookFilesLocations`. `preflight.sh` runs `loop-guard.sh --self-test`.
+
+**Check it in each client:** ask the agent to read the same file three
+times without changing anything. The third call should be refused, or in
+Cline the task should stop, and a line should appear in the log.
+
+### VS Code
+
+1. **VS Code 1.122 or later.** Hooks need 1.109, and BYOK without a GitHub
+   login needs 1.122. Use Code → Check for Updates, or
+   `brew upgrade --cask visual-studio-code`.
+2. **On the host:** `scripts/omlx.sh sub-key add vscode-<machine>`. On a laptop,
+   `ai-tunnel` must be up first.
+3. **Settings:** `scripts/vscode-check.sh --show` prints the block to merge
+   into user settings. It turns off Copilot inline completions, next edit
+   suggestions and code search (these go to GitHub even with your own
+   model), turns off telemetry, and caps `chat.agent.maxRequests` at 40.
+4. **Model:** Chat: Manage Language Models → Add Models → Custom Endpoint →
+   Chat Completions. URL `http://127.0.0.1:1234/v1`, model id
+   `local-main`, tool calling on, max input tokens 131072 (the role's `ctx`
+   in `roles.tsv`). Give the key as an input variable so it is not stored
+   in the file.
+5. **Utility models:** set `chat.utilityModel` and `chat.utilitySmallModel`
+   to the same `local-main` entry. Their default is GitHub Copilot, which
+   sends titles and commit messages to GitHub if you are signed in.
+6. **Harness:** use the Local session target. The Copilot harness needs the
+   experimental `chat.agentHost.byokModels.enabled` setting for your own
+   model.
+7. `scripts/vscode-check.sh` should then exit 0.
+
+VS Code reads `AGENTS.md` (`chat.useAgentsMdFile`), so the repo rules
+apply.
+
+### Cline (VS Code, JetBrains, CLI)
+
+1. **On the host:** `scripts/omlx.sh sub-key add cline-<machine>`. On a laptop,
+   `ai-tunnel` must be up first.
+2. **Provider:** API Provider **OpenAI Compatible**, Base URL
+   `http://127.0.0.1:1234/v1`, the `cline-<machine>` key, Model `local-main`,
+   Context Window 131072. Turn on tool support.
+   **Never pick the Cline or ClinePass provider**: prompts sent through
+   them go to Cline's servers.
+3. **Settings → General:** clear "Allow error and usage reporting". It is
+   on by default. The docs say it excludes code and prompts, but it still
+   sends usage data.
+4. **Auto-approve:** leave web fetch and browser off. Fetch sends what the
+   model chose to look up, as with Zed's fetch (`docs/ROUTING.md`).
+5. **Feature settings → Enable Hooks.** Turn on **Use Compact Prompt** for
+   local models.
+6. Cline reads `AGENTS.md` and `.clinerules/`.
+
+JetBrains: Marketplace plugin 28247, View → Tool Windows → Cline. The
+docs do not say whether it runs `.clinerules/hooks`. Check it with the
+three-reads test above before relying on the guard there.
+CLI (`npm install -g cline`): set `"telemetryOptOut": true` in
+`~/.cline/data/settings/global-settings.json`. CLI hooks are off in
+`--yolo` mode.
+
+**Not verified:** whether either client passes oMLX's token check, the
+exact hook stdin field names on the installed versions, and VS Code's
+`chatLanguageModels.json` file name and location.
+
 ## Why two tools, and why this matters
 
 The 2026 research on AI-assisted development is not comfortable reading.
@@ -376,7 +464,8 @@ for indexing or an agent, is for non-sensitive repos only.
 |---|---|---|---|
 | JetBrains (AI Assistant, Junie) — setup above | Ollama, LM Studio, LiteLLM. Local models can be assigned to features beyond chat. Junie (out of beta June 2026, on ACP) can use them; one JetBrains answer says only from Junie CLI. "Junie Local" bundles its own local model and needs a 64 GB M5 Mac | JetBrains AI subscription or own keys | Most credible second editor for local work. Not benched against oMLX's token auth |
 | Xcode 27 — setup above | "Locally Hosted" provider by port (Intelligence settings). Unverified whether it can send oMLX's token | Built-in Claude, Gemini and OpenAI agents with your own keys; ACP agents | Swift only. Locally Hosted at `:1234`, never its cloud agents, for sensitive work |
-| VS Code + Copilot | Bring-your-own-model includes Ollama; still needs a GitHub login | Copilot | Works; an extension stack rather than built in |
+| VS Code + Copilot | Custom Endpoint, no GitHub login from 1.122 (Local harness). Inline completions, NES, code search still GitHub | Copilot | On trial — setup above (ADR 0036) |
 | Cursor | Custom endpoint possible; earlier it rejected non-HTTPS base URLs | Indexing and search use Cursor's cloud | Not used here |
 | Windsurf, Kiro, Antigravity | Nothing found | Agent-first cloud IDEs | Not used here |
-| Cline, aider | Any OpenAI-compatible endpoint | No | aider is the second tool |
+| Cline | OpenAI Compatible provider; VS Code, JetBrains, CLI | No (telemetry on by default) | On trial — setup above (ADR 0036) |
+| aider | Any OpenAI-compatible endpoint | No | The second tool |

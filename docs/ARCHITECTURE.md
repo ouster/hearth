@@ -117,6 +117,8 @@ anything an agent spawns, would then hold it.
 | `tool-smoke.sh` | Zed-like read → write tool loop | 0 / 1 |
 | `concurrency-bench.sh`, `bench.sh` | load behaviour; quality tasks | — |
 | `sandbox-probe.sh` | sandboxed agents reach :1234 and nothing else | 0 / 1 |
+| `vscode-check.sh` | VS Code settings keep code on the host: no Copilot completions/NES/code search, telemetry off, loopback endpoints only | 0 / 1 / 2 |
+| `loop-guard.sh --self-test` | the PreToolUse loop guard denies repeats and stops over budget, in both hook formats | 0 / 1 |
 
 Exit 2 always means "could not run", never "found a problem".
 

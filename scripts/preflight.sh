@@ -228,6 +228,18 @@ case "$zrc" in
   *) wrn "zed-sync could not run: $(printf '%s' "$zs" | tail -1)" ;;
 esac
 
+# ---------------------------------------------------------------- vs code, cline
+hdr "VS Code and loop guard (ADR 0036)"
+vs=$("${ROOT}/scripts/vscode-check.sh" 2>&1); vrc=$?
+case "$vrc" in
+  0) ok "VS Code settings keep code on the host (scripts/vscode-check.sh)" ;;
+  1) wrn "VS Code: $(printf '%s' "$vs" | grep FAIL | head -1 | sed 's/^FAIL *//') — scripts/vscode-check.sh" ;;
+  *) ok "VS Code not set up here (skipped)" ;;
+esac
+"${ROOT}/scripts/loop-guard.sh" --self-test >/dev/null 2>&1 \
+  && ok "loop guard self-test passes" \
+  || bad "loop guard self-test fails — scripts/loop-guard.sh --self-test"
+
 # ---------------------------------------------------------------- autostart
 hdr "Autostart"
 "${ROOT}/scripts/install-autostart.sh" --check >/dev/null 2>&1 \

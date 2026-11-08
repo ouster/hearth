@@ -43,6 +43,7 @@ in a different way:
 | `ask-cloud` | **yes** | the only alias with a provider key; it is explicit by name |
 | Sandboxed agents | **no** | egress allowed to `127.0.0.1:1234` only |
 | Open WebUI | model: **no**. Search query: **yes if enabled** | see below |
+| VS Code, Cline on this host (trial) | model: **no** if set up per `docs/IDES.md` | Custom Endpoint / OpenAI Compatible at `:1234` only. Copilot completions, NES and code search go to GitHub and must stay off (`scripts/vscode-check.sh`). Cline's own provider is cloud. Web fetch sends the query, as in Zed (ADR 0036) |
 
 What is lost against the gateway: nothing refuses a cloud request you make
 on purpose. Choosing `ask-cloud` on sensitive work is no longer stopped — it
