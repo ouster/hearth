@@ -1,0 +1,53 @@
+### Bug Identification
+
+There are two critical bugs in the provided function that compromise the correctness of monetary calculations.
+
+**1. Floating Point Precision (IEEE 754 Errors)**
+*   **The Issue:** The function uses Python’s native `float` type to accumulate the total and apply the discount. Standard floats are binary approximations and cannot represent decimal values like `0.1` or `19.99` exactly.
+*   **Breakage:** Adding decimals leads to precision loss. For example, `0.1 + 0.2` results in `0.30000000000000004`.
+*   **Under what input:** This fails whenever item prices or quantities contain decimal fractions (e.g., `19.99` or `0.10`). While `round()` at the end of the function might mask small errors for display, intermediate calculations (like the discount multiplier) drift, leading to systematic "penny" discrepancies in a billing system.
+
+**2. Incorrect Rounding Logic (Banker's Rounding)**
+*   **The Issue:** Python’s built-in `round()` function uses "Round Half to Even" (Banker's Rounding).
+*   **Breakage:** Under this rule, values exactly halfway between two numbers round to the nearest even digit.
+    *   `round(2.5)` returns `2`
+    *   `round(3.5)` returns `4`
+*   **Under what input:** This fails when a calculation results in a value exactly ending in `.005`. In a financial context, customers expect standard "Round Half Up" (where `.005` rounds up to `.01`). Using Python's default creates a systematic bias that undercharges or overcharges based on the parity of the preceding digit.
+
+---
+
+### Corrected Version
+
+This version uses the `decimal` module for exact arithmetic and `ROUND_HALF_UP` to match standard financial rounding expectations.
+
+```python
+from decimal import Decimal, ROUND_HALF_UP
+
+def apply_discount(items, discount_pct):
+    # 1. Initialize total as a Decimal string to avoid float representation errors
+    total = Decimal('0')
+    
+    # 2. Convert discount to Decimal via string to preserve exactness
+    # If discount_pct is a float (e.g., 10.5), str() ensures accurate conversion
+    discount = Decimal(str(discount_pct))
+
+    for item in items:
+        # 3. Convert inputs to Decimal via string to ensure exact arithmetic
+        # This prevents the float-to-Decimal conversion bug (Decimal(0.1) != Decimal('0.1'))
+        price = Decimal(str(item['price']))
+        qty = Decimal(str(item['qty']))
+        
+        # Accumulate total using exact Decimal arithmetic
+        total += price * qty
+
+    if discount > 0:
+        # Calculate discount amount exactly
+        discount_amount = total * discount / Decimal('100')
+        total -= discount_amount
+
+    # 4. Round using standard "Half Up" logic instead of Python's "Half to Even"
+    final_total = total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    # Return float to maintain compatibility with the original function signature
+    return float(final_total)
+```

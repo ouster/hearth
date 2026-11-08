@@ -255,14 +255,16 @@ hdr "Autostart"
 # ---------------------------------------------------------------- hygiene
 hdr "Hygiene"
 crlf=$(find "$ROOT/scripts" "$ROOT/config" -type f \( -name '*.sh' -o -name '*.zsh' -o -name '*.tsv' \) -exec file {} \; 2>/dev/null | grep -c CRLF || true)
-[ "$crlf" -eq 0 ] && ok "no CRLF line endings in scripts/config"
+[ "$crlf" -eq 0 ] && ok "no CRLF line endings in scripts/config" \
+                  || bad "${crlf} file(s) have CRLF — breaks shebangs and launchd"
 # Retired role names (ADR 0039). History keeps them; live files must not.
+# Independent of the CRLF check: ok/bad return 0, so chaining them hides one.
 old=$(git -C "$ROOT" grep -lE '(^|[^-[:alnum:]_])local-(main|deep|edit)([^[:alnum:]_]|$)' -- . \
   ':!bench/results' ':!docs/decisions' ':!research_notes' ':!docs/HISTORY.md' \
   ':!docs/MIGRATION-LMSTUDIO.md' ':!docs/SUMMARY-EMAIL.md' ':!docs/REVIEW-HANDOFF.md' \
   ':!scripts/preflight.sh' 2>/dev/null | tr '\n' ' ' || true)
 [ -z "$old" ] && ok "no retired local-* role names in live files (ADR 0039)" \
-              || bad "retired role names (local-main/deep/edit) in: ${old}— use main-brain/deep-brain/edit-brain" || bad "${crlf} file(s) have CRLF — breaks shebangs and launchd"
+              || bad "retired role names (local-main/deep/edit) in: ${old}— use main-brain/deep-brain/edit-brain"
 
 # macOS /bin/bash is 3.2. --exclude this file: it contains the patterns.
 bash4=$(grep -lnE 'declare -A|local -A|mapfile|readarray|\$\{[A-Za-z_]+\^\^|\$\{[A-Za-z_]+,,' \

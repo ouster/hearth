@@ -1,0 +1,9 @@
+1. **Not in the file.** The current architecture explicitly enforces **no fallbacks** (there is no gateway/router to route requests), and `cloud-frontier` is currently listed as dormant with no active configuration.
+
+2. **Dormant roles and what each is blocked on:**
+   - `cloud-code` (`claude-sonnet-5`) — blocked on an **Anthropic API key** (deliberately unset).
+   - `cloud-frontier` (`kimi-k3` via OpenRouter) — blocked on an **OpenRouter key**.
+   - `cloud-frontier-direct` (`kimi-k3` via Moonshot) — blocked on a **Moonshot key**.
+   - `cloud-frontier-fast` (`kimi-k3` via Fireworks) — blocked on a **Fireworks key**.
+
+3. **Not in the file.** Postgres was removed from the stack on 2026-10-31 (ports 4000, 5433, and 11434 are now free), and the documentation does not specify a reason for why it was bound to port 5433.

@@ -39,9 +39,11 @@ for `edit-brain` on another port. Under the old split, the two cannot share
   installer reads a key.
 - **Editors** on a dual machine get two providers: `hearth` (1234) and
   `hearth-remote` (1235), both calling `main-brain`.
-- **Sizes.** The 48 GB tier row is benched. 32 GB and 24 GB get candidates
-  only (README, `docs/MODELS.md`), with no `roles.tsv` row until benched
-  (rule 5). `install-host.sh` stops on a machine without a benched row.
+- **Sizes.** The 48 GB tier row is in `roles.tsv` (same weights as the 64 GB
+  bench, so `install-host.sh` will load it). A c3 on 48 GB hardware is still
+  outstanding (`docs/MODELS.md`). 32 GB and 24 GB get candidates only, with
+  no `roles.tsv` row until benched (rule 5). `install-host.sh` stops on a
+  machine without a row.
 
 ## Consequences
 

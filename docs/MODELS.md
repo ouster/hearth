@@ -63,7 +63,7 @@ detected size. Ceiling is RAM minus 8 (ADR 0031).
 | RAM | Ceiling | `main-brain` | `deep-brain` | Status |
 |---|---|---|---|---|
 | < 48 GB | — | none: `omlx.sh up` refuses | — | no tier benched |
-| 48 GB and up | RAM − 8 | `qwen3.6-35b-a3b-mlx`, 128K × 3 | `qwen3.8-27b-mlx`, **swap** | live on 64 GB. 48 GB waits on a c3 bench on 48 GB hardware with the host's `\.omlx/` matcher: 30/30, peak ≤ 36 GB. `edit-brain` is laptop-only (ADR 0033 amend) |
+| 48 GB and up | RAM − 8 | `qwen3.6-35b-a3b-mlx`, 128K × 3 | `qwen3.8-27b-mlx`, **swap** | live on 64 GB. The same row is what a 48 GB host loads (`min_ram` 48); a c3 on 48 GB hardware is still outstanding: 30/30, peak ≤ 36 GB, host's `\.omlx/` matcher. `edit-brain` is laptop-only (ADR 0033 amend) |
 
 ### Candidates by RAM (unbenched)
 

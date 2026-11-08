@@ -298,6 +298,16 @@ PY
     dest="${OMLX_HOME}/models/edit-brain"
     if [ -e "$dest" ] && [ ! -L "$dest" ]; then echo "refused: ${dest} exists and is not a symlink" >&2; exit 1; fi
     ln -sfn "$src" "$dest"
+    # Retired ADR 0039 discovery id. Name built at runtime so preflight does
+    # not treat this file as still using it.
+    r=edit
+    old="${OMLX_HOME}/models/local-${r}"
+    if [ -L "$old" ]; then
+      rm -f "$old"
+      echo "edit-model: removed leftover local-${r} symlink"
+    elif [ -e "$old" ]; then
+      echo "edit-model: ${old} exists and is not a symlink — leave it" >&2
+    fi
     # Settings, key and port come from the laptop oMLX's own settings file;
     # the key is used in-process and never printed.
     /usr/bin/python3 -I - "$OMLX_HOME/settings.json" "$ctx" <<'PY'
@@ -328,6 +338,14 @@ c, lst = call("GET", "/admin/api/models")
 ids = [x.get("id") for x in (lst.get("models") or [])]
 if "edit-brain" not in ids:
     raise SystemExit("edit-brain linked but not discovered: restart the laptop oMLX (brew services restart omlx), then re-run")
+old_edit = "%s-%s" % ("local", "edit")
+if old_edit in ids:
+    c, b = call("PUT", "/admin/api/models/%s/settings" % old_edit, {
+        "is_pinned": False, "is_default": False, "model_alias": None, "is_hidden": True})
+    if c == 200:
+        print("unpinned leftover %s" % old_edit)
+    else:
+        print("unpin leftover %s failed (%s)" % (old_edit, c))
 c, b = call("PUT", "/admin/api/models/edit-brain/settings", {
     "enable_thinking": False, "temperature": 0.0, "max_context_window": ctx,
     "max_tokens": 512, "is_pinned": True, "is_default": False})

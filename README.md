@@ -206,7 +206,7 @@ ai-boot            # scripts/boot.sh
 
 ### On a laptop
 
-Source `~/.hearth-client.sh` (set by `scripts/client-setup.sh`). On macOS,
+Source `~/.hearth-client.sh` (set by `client/install-client.sh`). On macOS,
 `ai-tunnel` once to accept the host fingerprint, then `ai-tunnel-install`:
 launchd restarts the forwards when they drop and at login. Linux stays on
 `ai-tunnel`. Everything below goes through the tunnel to the host's oMLX

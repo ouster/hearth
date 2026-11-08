@@ -286,23 +286,24 @@ if [ "$WINDOWS" -eq 0 ]; then cat <<EOF
    --authorize prints "already authorized". Leave the key. Skip ssh-keygen.
    If the private key is gone, generate a new one and authorize that .pub.
 
-3. ON THE LAPTOP — the client. Copy it even when the token already exists:
-     scp ${USER_NAME}@${HOSTNAME_LOCAL}:${ROOT}/client/hearth-client.sh ~/.hearth-client.sh
-       (or from this host: scripts/client-setup.sh ${NAME} --install you@laptop)
-     printf 'export HEARTH_SSH=hearth\nexport HEARTH_CLOUD_MODEL=%s\nsource ~/.hearth-client.sh\n' ${CLOUD_MODEL} >> ~/.zshrc   # or ~/.bashrc
+3. ON THE LAPTOP — the client, from a clone of this repo (do not append
+   loose HEARTH_* lines to the rc; the installer writes one marked block):
+     client/install-client.sh --host ${USER_NAME}@${HOSTNAME_LOCAL}
+   Dual (this laptop also runs a brain on 1234): add --dual, then
+   scripts/install-host.sh (docs/LAPTOP.md → *A laptop that is also a host*).
    Store a token only when ~/.hearth-key is missing or this is a new token:
      umask 077
      read -rs t && printf '%s' "\$t" > ~/.hearth-key && unset t        # laptop-${NAME}
      read -rs t && printf '%s' "\$t" > ~/.hearth-gemini-key && unset t # this laptop's OWN Google key (optional)
 
-4. ON THE LAPTOP — prove it. The first ai-tunnel accepts the host fingerprint.
-     ai-tunnel            # one ssh -N -L 1234 -L 3000 -L 8888
+4. ON THE LAPTOP — prove it, in a new shell. The first ai-tunnel accepts the host fingerprint.
+     ai-tunnel            # one ssh -N -L (1234, or 1235 when dual)
      ai-tunnel-install    # macOS: launchd keeps those forwards up, and at login
      ai-ping              # up / BAD TOKEN / NO ANSWER / DOWN
      ai-models            # main-brain
-     ask                  # aider on main-brain
+     ask                  # aider on main-brain (ask-remote when dual)
      ask-cloud            # Gemini with the laptop's own key
-     ai-webui             # the host's Open WebUI at http://127.0.0.1:3000
+     ai-webui             # the host's Open WebUI
    Linux: skip ai-tunnel-install. ai-tunnel-stop unloads the LaunchAgent too.
 EOF
 else cat <<EOF

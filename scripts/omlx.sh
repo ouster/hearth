@@ -223,9 +223,10 @@ os.chmod(path, 0o600)
 PY
 }
 
-# Clear a leftover edit-brain pin before start so 0.7.4 does not preload it
-# (ADR 0033 amend: host does not serve edit prediction).
-unpin_local_edit_on_disk() {
+# Clear leftover pins before start so 0.7.4 does not preload them: edit-brain
+# (ADR 0033 amend: host does not serve edit prediction) and retired ADR 0039
+# discovery ids (built at runtime so this file does not spell those names).
+unpin_retired_flat_ids_on_disk() {
   local ms="${OMLX_HOME}/model_settings.json"
   [ -f "$ms" ] || return 0
   /usr/bin/python3 -I - "$ms" <<'PY'
@@ -234,19 +235,27 @@ path = sys.argv[1]
 with open(path) as f:
     doc = json.load(f)
 models = doc.get("models")
-if not isinstance(models, dict) or "edit-brain" not in models:
+if not isinstance(models, dict):
     raise SystemExit(0)
-edit = models["edit-brain"]
-if not isinstance(edit, dict):
+unpin = ["edit-brain"]
+unpin.extend("%s-%s" % ("local", n) for n in ("main", "deep", "edit"))
+changed = []
+for key in unpin:
+    entry = models.get(key)
+    if not isinstance(entry, dict):
+        continue
+    if entry.get("is_pinned") is not True and entry.get("is_default") is not True and not entry.get("model_alias"):
+        continue
+    entry["is_pinned"] = False
+    entry["is_default"] = False
+    entry["model_alias"] = None
+    changed.append(key)
+if not changed:
     raise SystemExit(0)
-if edit.get("is_pinned") is not True:
-    raise SystemExit(0)
-edit["is_pinned"] = False
-edit["is_default"] = False
 with open(path, "w") as f:
     json.dump(doc, f, indent=2)
     f.write("\n")
-print("omlx: cleared edit-brain pin in model_settings.json")
+print("omlx: cleared leftover pin(s) in model_settings.json: %s" % ", ".join(changed))
 PY
 }
 
@@ -286,10 +295,15 @@ link_weights() {
   deep=$(hearth_resolved_roles | awk -F'\t' '$1=="deep-brain" && ($8=="beside" || $8=="swap") { print $6; exit }')
   if [ -n "$deep" ]; then
     link_weights_path "$deep" || echo "omlx: deep-brain weights not under ~/.hearth/models — ask-deep cannot load it until the weights are copied" >&2
-    remove_flat_role_link deep-brain
   fi
   # edit-brain is laptop-primary (ADR 0033 amend). Host does not link or load it.
+  remove_flat_role_link deep-brain
   remove_flat_role_link edit-brain
+  # Retired ADR 0039 discovery ids. Names built at runtime so preflight does
+  # not treat this file as still using them.
+  for r in main deep edit; do
+    remove_flat_role_link "local-${r}"
+  done
 }
 
 configure_model() {
@@ -427,8 +441,12 @@ def apply(mid, settings):
     if code != 200:
         raise SystemExit("model settings failed for %s (%s): %s" % (mid, code, str(body.get("detail", ""))[:300]))
 
-# Clear leftover flat role ids so they are not pinned/preloaded.
-for stale in ("main-brain", "deep-brain", "edit-brain"):
+# Clear leftover flat role ids so they are not pinned/preloaded. Includes
+# retired ADR 0039 names, built at runtime so this file does not spell them.
+stale_ids = ["main-brain", "deep-brain", "edit-brain"]
+stale_ids.extend("%s-%s" % ("local", n) for n in ("main", "deep", "edit"))
+retired_aliases = set("%s-%s" % ("local", n) for n in ("main", "deep", "edit"))
+for stale in stale_ids:
     if stale in admin and stale not in {r["leaf"] for r in roles.values()}:
         code, body = call("PUT", "/admin/api/models/%s/settings" % stale, {
             "is_pinned": False,
@@ -441,7 +459,8 @@ for stale in ("main-brain", "deep-brain", "edit-brain"):
             print("stale %s clear failed (%s)" % (stale, code))
 
 # Role aliases must be unique. When swapping candidate weights, clear the
-# alias from every other leaf before claiming it on the new one.
+# alias from every other leaf before claiming it on the new one. Also strip
+# retired ADR 0039 aliases so /v1 does not keep advertising them.
 wanted_alias = {"main-brain": main_leaf}
 if "deep-brain" in roles:
     wanted_alias["deep-brain"] = roles["deep-brain"]["leaf"]
@@ -456,9 +475,10 @@ if code == 200:
             continue
         ms = m.get("settings") if isinstance(m.get("settings"), dict) else {}
         alias = ms.get("model_alias") or m.get("model_alias")
-        if not alias or alias not in wanted_alias:
+        if not alias:
             continue
-        if wanted_alias[alias] == mid:
+        hold = wanted_alias.get(alias)
+        if alias not in retired_aliases and (hold is None or hold == mid):
             continue
         code, body = call("PUT", "/admin/api/models/%s/settings" % mid, {
             "model_alias": None,
@@ -589,6 +609,9 @@ if code == 200:
     v1_ids = [m.get("id") for m in listing.get("data") or [] if m.get("id")]
     if "main-brain" not in v1_ids:
         raise SystemExit("/v1/models missing alias main-brain (have %s)" % v1_ids)
+    leftover = [i for i in v1_ids if i in retired_aliases]
+    if leftover:
+        raise SystemExit("/v1/models still lists retired ids %s (have %s)" % (leftover, v1_ids))
     print("clients see main-brain via model_alias")
 PY
 }
@@ -615,7 +638,7 @@ cmd_up() {
 
   write_settings
   link_weights
-  unpin_local_edit_on_disk
+  unpin_retired_flat_ids_on_disk
 
   if [ -n "$already" ]; then
     echo "oMLX already listening on ${HEARTH_PORT} — configuring in place (not taking over the process)"

@@ -1,0 +1,61 @@
+### Bug Analysis
+
+The code contains several critical bugs regarding financial precision and edge cases. In a billing system, these must be corrected to ensure the mathematical integrity of transaction totals.
+
+**1. Floating-Point Precision (The "Float-for-Currency" Problem)**
+*   **The Issue:** The code uses Python's native `float` type for calculations. This uses binary floating-point arithmetic, which cannot represent decimal fractions (like 0.1 or 0.2) exactly.
+*   **What Breaks:** Accumulating these values leads to "off-by-one" errors due to binary approximation (e.g., `0.1 + 0.2` results in `0.30000000000000004`).
+*   **Input:** `items = [{'price': 0.1, 'qty': 1}, {'price': 0.2, 'qty': 1}]`.
+*   **Consequence:** A calculated total may end in `0.30000000000000004` or `0.29999999999999999`, leading to billing discrepancies.
+
+**2. Rounding Behavior (Banker's Rounding)**
+*   **The Issue:** The built-in `round()` function uses "Banker's Rounding" (round half to even). This means a value of `0.5` rounds down to `0`, while `1.5` rounds up to `2`.
+*   **What Breaks:** Standard billing practices typically require "Round Half Up" (e.g., `0.5` rounds to `1.0`), or truncation to the nearest cent.
+*   **Input:** A subtotal resulting in exactly `.5` cents (e.g., `10.005`).
+*   **Consequence:** Financially significant rounding errors where amounts are systematically rounded down.
+
+**3. Type Coercion and Initialization**
+*   **The Issue:** `total` is initialized as an integer `0`. While Python allows mixing integers and floats, mixing `Decimal` with `int` can be verbose.
+*   **What Breaks:** This implies a lack of strict type safety, making it harder to maintain precision throughout the calculation.
+
+**4. Input Safety**
+*   **The Issue:** The loop relies on `range(len(items))` and assumes every item is a dictionary containing keys `'price'` and `'qty'`.
+*   **What Breaks:** If an item is missing a key, the code raises a `KeyError`. If `items` is `None`, it raises a `TypeError`.
+
+---
+
+### Corrected Version
+
+The following version uses the `decimal` module for arithmetic to ensure exact precision and `ROUND_HALF_UP` for compliant financial rounding.
+
+```python
+from decimal import Decimal, ROUND_HALF_UP
+
+def apply_discount(items, discount_pct):
+    # Use Decimal('0.00') for strict type safety and precision
+    total = Decimal('0.00')
+    
+    # Convert discount percentage to Decimal
+    # Converting via str() ensures we don't copy float representation errors
+    if not isinstance(discount_pct, Decimal):
+        discount_pct = Decimal(str(discount_pct))
+        
+    for item in items:
+        # Convert inputs via str() to ensure exact Decimal representation
+        price = Decimal(str(item['price']))
+        qty = Decimal(str(item['qty']))
+        total += price * qty
+        
+    if discount_pct > 0:
+        # Apply discount: total * (discount_pct / 100)
+        discount_amount = total * discount_pct / Decimal('100')
+        total -= discount_amount
+
+    # Use quantize for explicit financial rounding (Round Half Up)
+    return total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+```
+
+### Key Changes
+1.  **`decimal` Module:** Replaced `float` with `Decimal` to handle arithmetic exactly.
+2.  **String Conversion:** Prices and quantities are converted via `str()` (e.g., `Decimal(str(0.1))`) to prevent the underlying binary float error from being copied into the `Decimal` object.
+3.  **Explicit Rounding:** Replaced `round()` with `quantize(..., ROUND_HALF_UP)` to ensure standard financial rounding behavior.

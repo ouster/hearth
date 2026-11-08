@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BUNDLE_ID="com.example.service"
+PLIST_PATH="$HOME/Library/LaunchAgents/${BUNDLE_ID}.plist"
+
+if [[ ! -f "$PLIST_PATH" ]]; then
+    echo "Error: Plist not found at $PLIST_PATH" >&2
+    exit 1
+fi
+
+if launchctl list "$BUNDLE_ID" >/dev/null 2>&1; then
+    echo "$BUNDLE_ID is already loaded."
+    exit 0
+fi
+
+echo "Loading $BUNDLE_ID from $PLIST_PATH"
+launchctl load "$PLIST_PATH"
+echo "$BUNDLE_ID loaded successfully."

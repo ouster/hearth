@@ -448,7 +448,7 @@ fi
 
 # The only command that leaves for the cloud, with THIS machine's own key.
 ask-cloud() {
-  [ -n "${HEARTH_CLOUD_MODEL:-}" ] || { echo "hearth: set HEARTH_CLOUD_MODEL (scripts/client-setup.sh prints it)" >&2; return 1; }
+  [ -n "${HEARTH_CLOUD_MODEL:-}" ] || { echo "hearth: set HEARTH_CLOUD_MODEL (client/install-client.sh writes it)" >&2; return 1; }
   _g=$(_hearth_secret "$HOME/.hearth-gemini-key") || return 1
   GEMINI_API_KEY="$_g" aider --model "gemini/${HEARTH_CLOUD_MODEL}" --weak-model "gemini/${HEARTH_CLOUD_MODEL}" "$@"
   _rc=$?; unset _g; return $_rc

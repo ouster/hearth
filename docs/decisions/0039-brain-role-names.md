@@ -33,8 +33,9 @@ as "this machine". That is a property of the endpoint, not the role. ADR
 ## Consequences
 
 - **Host:** after pulling, run `scripts/omlx.sh up`, which re-advertises
-  the new names (`model_alias`). Then run `scripts/zed-sync.sh` and
-  `scripts/pin-digests.sh` (the role column of `pins/digests.tsv` was
+  the new names (`model_alias`) and unpins leftover `local-*` discovery ids
+  so `/v1/models` does not keep listing them. Then run `scripts/zed-sync.sh`
+  and `scripts/pin-digests.sh` (the role column of `pins/digests.tsv` was
   renamed in place; the hashes are unchanged).
 - **Clients:** change the model id to `main-brain` in Zed (`name` in the
   `hearth` provider), VS Code (`chatLanguageModels.json`, and

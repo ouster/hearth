@@ -1,0 +1,11 @@
+Based strictly on the provided file:
+
+1. **Fallback chain for `cloud-frontier`**: There is none. The routing rules explicitly state **"No fallbacks"**, noting that *"There is no router, so nothing can quietly reroute a request to a cloud model."* Any cloud routing is done explicitly via `ask-cloud`, not through a fallback chain.
+
+2. **Dormant roles and what each is blocked on**:
+   - `cloud-code` (Model: `claude-sonnet-5`) → Blocked on an **Anthropic API key** (deliberately unset; a Console key bills separately from a subscription).
+   - `cloud-frontier` (Model: `kimi-k3` via OpenRouter) → Blocked on an **OpenRouter key**.
+   - `cloud-frontier-direct` (Model: `kimi-k3` via Moonshot) → Blocked on a **Moonshot key**.
+   - `cloud-frontier-fast` (Model: `kimi-k3` via Fireworks) → Blocked on a **Fireworks key**.
+
+3. **Postgres port and reason**: The file states Postgres was bound to port **5433** (via Podman) during the gateway era. However, it was **removed on 2026-10-31**, and the document notes that port 5433 (along with 4000 and 11434) should now be free. The file **does not provide a specific reason** for choosing port 5433.

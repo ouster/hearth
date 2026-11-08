@@ -101,7 +101,16 @@ ai_load_env() {
     val="${val%\"}"; val="${val#\"}"; val="${val%\'}"; val="${val#\'}"
     case "$val" in
       ''|*...|CHANGEME|*CHANGEME*) unset "$name" ;;
-      *) printf -v "$name" '%s' "$val"; export -n "$name" ;;
+      *)
+        printf -v "$name" '%s' "$val"
+        # Unexport so children do not inherit the token. bash: export -n.
+        # zsh: typeset +x (export -n is not a zsh option).
+        if [ -n "${BASH_VERSION:-}" ]; then
+          export -n "$name"
+        elif [ -n "${ZSH_VERSION:-}" ]; then
+          typeset -g +x "$name"
+        fi
+        ;;
     esac
   done
   return 0

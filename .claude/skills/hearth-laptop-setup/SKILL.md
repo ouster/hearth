@@ -40,35 +40,24 @@ alone proves nothing.
 - What is the host, as `user@host.local`?
 - What shell: zsh, bash or PowerShell?
 
-The Gemini id for `HEARTH_CLOUD_MODEL` is the `cloud-cheap` row of
-`config/roles.tsv`, column 3. Copy it only into that line.
+`client/install-client.sh` writes `HEARTH_CLOUD_MODEL` from the
+`cloud-cheap` row of `config/roles.tsv`. Do not append that id to the rc
+by hand.
 
 ## 2. You may run
 
 `client/install-client.sh --check`, then `client/install-client.sh --host
-user@host.local`. It does the plumbing below in one go: client copy, `Host
+user@host.local`. It does the plumbing in one go: client copy, `Host
 hearth`, one marked rc block, and tunnel port by mode. It lists what is
-left for the person. The manual steps, if you need them:
+left for the person. Do not append loose `HEARTH_*` lines to the rc.
 
-Follow *AI-assisted setup* step 2:
+`ssh-keygen` is still separate: only for a new tunnel key, interactive, so
+the person may need to run it. Follow *AI-assisted setup* step 2.
 
-- `ssh-keygen`, only for a new tunnel key. It is interactive, so the person
-  may need to run it.
-- The `Host hearth` block, appended to `~/.ssh/config` only if there is no
-  such entry already.
-- Copy `client/hearth-client.sh` to `~/.hearth-client.sh`.
-- The rc lines.
-
-**Stale client check.** Even when already set up, compare the installed
-copy with the repo:
-
-```bash
-diff -q ~/.hearth-client.sh client/hearth-client.sh
-```
-
-If they differ, copy the repo version over it and `source ~/.hearth-client.sh`.
-An old copy's `ai-tunnel-stop` cannot see the launchd tunnel
-(`com.hearth.tunnel`). It reports "none running" while the tunnel is up.
+**Stale client check.** Even when already set up, re-run the installer
+(it refreshes `~/.hearth-client.sh` and the rc block). An old copy's
+`ai-tunnel-stop` cannot see the launchd tunnel (`com.hearth.tunnel`). It
+reports "none running" while the tunnel is up.
 
 ## 3. Stop and hand over
 

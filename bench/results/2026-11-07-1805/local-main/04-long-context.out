@@ -1,0 +1,11 @@
+Based strictly on the provided file:
+
+1. **Fallback chain for `cloud-frontier`:** There is no fallback chain. The architecture explicitly states under "No fallbacks": *"There is no router, so nothing can quietly reroute a request to a cloud model."* `cloud-frontier` is also listed as dormant.
+
+2. **Dormant roles and what each is blocked on:** Four roles are dormant. Per the "Dormant" section in `docs/MODELS.md`:
+   * `cloud-code`: Blocked on an **Anthropic API key** (deliberately unset; a Console key bills separately from a Claude subscription).
+   * `cloud-frontier`: Blocked on an **OpenRouter key**.
+   * `cloud-frontier-direct`: Blocked on a **Moonshot key**.
+   * `cloud-frontier-fast`: Blocked on a **Fireworks key**.
+
+3. **Postgres port and reason:** Postgres was bound to **port 5433** via Podman during the old LiteLLM gateway era. However, the file explicitly notes that **Postgres was removed on 2026-10-31** as part of the migration to oMLX/LM Studio, so it is no longer bound to any port and port 5433 is now free. The file does not specify why 5433 was selected over other ports.

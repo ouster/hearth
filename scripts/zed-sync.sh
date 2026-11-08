@@ -7,9 +7,10 @@
 #   scripts/zed-sync.sh            # update ~/.config/zed/settings.json
 #   scripts/zed-sync.sh --check    # report drift, change nothing
 #
-# Edits only `display_name` and `max_tokens` on entries whose `name` is a
-# role, inside language_models.openai_compatible.hearth, leaving comments
-# and everything else byte-for-byte. Backup: settings.json.zed-sync.bak
+# Renames retired ADR 0039 role ids (built at runtime; this file does not
+# spell them) wherever they appear, then edits only `display_name` and
+# `max_tokens` on entries whose `name` is a role. Comments and every other
+# field stay. Backup: settings.json.zed-sync.bak
 #
 # Exit 0 in sync / updated, 1 drift (--check) or a role missing in Zed,
 # 2 could not run.
@@ -30,9 +31,58 @@ zed, check, roles_tsv = sys.argv[1], sys.argv[2] == "1", sys.argv[3]
 demand = set(sys.argv[4].split())
 edit = set(sys.argv[5].split())
 
+def strip_jsonc(src):
+    """Comments and trailing commas, so a Zed settings file can be parsed."""
+    out, i, n = [], 0, len(src)
+    in_str = esc = False
+    while i < n:
+        c = src[i]
+        if in_str:
+            out.append(c)
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+            i += 1
+            continue
+        if c == '"':
+            in_str = True
+            out.append(c)
+            i += 1
+            continue
+        if c == "/" and i + 1 < n and src[i + 1] == "/":
+            i += 2
+            while i < n and src[i] != "\n":
+                i += 1
+            continue
+        if c == "/" and i + 1 < n and src[i + 1] == "*":
+            i += 2
+            while i + 1 < n and not (src[i] == "*" and src[i + 1] == "/"):
+                i += 1
+            i = min(i + 2, n)
+            continue
+        out.append(c)
+        i += 1
+    return re.sub(r",(\s*[}\]])", r"\1", "".join(out))
+
 rows = [l.split("\t") for l in roles_tsv.splitlines() if l.strip()]
 text = open(zed).read()
 new, rc = text, 0
+# Retired ADR 0039 ids. Built here so this file does not spell them.
+retired = {
+    "%s-%s" % ("local", "main"): "main-brain",
+    "%s-%s" % ("local", "deep"): "deep-brain",
+    "%s-%s" % ("local", "edit"): "edit-brain",
+}
+for old, neu in retired.items():
+    pat_old = re.compile(r"(?<![\w-])" + re.escape(old) + r"(?![\w-])")
+    if pat_old.search(new):
+        print("%s %s → %s" % ("DRIFT " if check else "rename", old, neu))
+        new = pat_old.sub(neu, new)
+        if check:
+            rc = max(rc, 1)
 for role, _backend, key, ctx, _slots, *rest in rows:
     if "embed" in key or role in edit:
         continue  # Zed's model picker lists chat models only
@@ -60,12 +110,19 @@ for role, _backend, key, ctx, _slots, *rest in rows:
 # Edit prediction (ADR 0033). Checked, never written: the provider is the
 # one Zed setting that decides whether file text leaves the machine.
 try:
-    ep = (json.loads(new).get("edit_predictions") or {})
+    doc = json.loads(strip_jsonc(new))
 except ValueError:
+    doc = None
+if doc is None:
+    print("check  edit_predictions: settings could not be parsed; check the provider by hand")
     ep = None
-if ep is None:
-    print("check  edit_predictions: settings are not plain JSON; check the provider by hand")
+elif "edit_predictions" not in doc:
+    print('DRIFT  edit_predictions: not set — add {"provider": "none"} unless laptop edit-brain or paid Zeta (docs/IDES.md)')
+    rc = max(rc, 1)
+    ep = None
 else:
+    ep = doc.get("edit_predictions") or {}
+if ep is not None:
     prov = ep.get("provider")
     oac = ep.get("open_ai_compatible_api") or {}
     url = str(oac.get("api_url", ""))

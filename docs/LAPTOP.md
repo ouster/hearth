@@ -70,15 +70,14 @@ applies, then follow that path only.
    not invent a token. The same string is stored on the laptop as
    `~/.hearth-key`. A reboot runs `scripts/omlx.sh up`, which keeps sub-keys
    already registered.
-2. **Laptop:** `ssh-keygen -t ed25519 -f ~/.ssh/hearth_tunnel -C hearth-tunnel-m5-air`,
-   and a `Host hearth` entry in `~/.ssh/config` pointing at the host with
-   `IdentitiesOnly yes`.
+2. **Laptop:** `ssh-keygen -t ed25519 -f ~/.ssh/hearth_tunnel -C hearth-tunnel-m5-air`.
 3. **Host:** `scripts/client-setup.sh m5-air --authorize hearth_tunnel.pub`.
    It refuses a key that is already authorized without restrictions.
-4. **Laptop:** copy `client/hearth-client.sh` to `~/.hearth-client.sh`,
-   store the token and (optionally) a Google key, add
-   `HEARTH_SSH=hearth`, `HEARTH_CLOUD_MODEL=…` and `source ~/.hearth-client.sh`
-   to the shell rc.
+4. **Laptop:** `client/install-client.sh --host you@studio.local` from a clone
+   of this repo. It copies the client, writes `Host hearth`, and one marked
+   rc block (`HEARTH_CLOUD_MODEL` comes from `config/roles.tsv`). Store the
+   token and (optionally) a Google key in your own terminal. Do not append
+   loose `HEARTH_*` lines to the rc.
 5. **Laptop:** `ai-tunnel` once, so the host fingerprint can be accepted.
    On macOS, then `ai-tunnel-install`. Then `ai-ping && ai-models`.
 
@@ -97,8 +96,8 @@ The laptop user:
 2. Keep `~/.ssh/hearth_tunnel` when the host's `--authorize` prints
    `already authorized`. Skip `ssh-keygen`. When the private key is gone,
    generate a new one and authorize that `.pub`.
-3. Copy the current `client/hearth-client.sh` over `~/.hearth-client.sh` and
-   source it with `HEARTH_SSH=hearth`.
+3. Re-run `client/install-client.sh` (same as New machine step 4). It
+   refreshes `~/.hearth-client.sh` and the rc block.
 4. On macOS, `ai-tunnel` once if the host fingerprint is new, then
    `ai-tunnel-install`. Login starts the tunnel after that. On Linux,
    `ai-tunnel`.
@@ -171,9 +170,10 @@ and the shell: macOS / Linux (zsh or bash) or Windows PowerShell.
   ask the host user to `sub-key revoke laptop-m5-air` and then
   `sub-key add laptop-m5-air` with a new token. The list cannot show the old one.
 
-Read the Gemini model id yourself: the `cloud-cheap` row of
-`config/roles.tsv`, column 3. Do not copy it anywhere except the
-`HEARTH_CLOUD_MODEL` line.
+`client/install-client.sh` writes `HEARTH_CLOUD_MODEL` from the `cloud-cheap`
+row of `config/roles.tsv`. Do not append that id to the rc by hand. Windows
+has no installer: read column 3 of that row into `$env:HEARTH_CLOUD_MODEL`
+only (see `client/hearth-client.ps1`).
 
 **2. You may run** (macOS / Linux; Windows equivalents are in
 `client/hearth-client.ps1`'s header). Skip `ssh-keygen` when
@@ -185,11 +185,8 @@ Read the Gemini model id yourself: the `cloud-cheap` row of
 # terminal is interactive. New tunnel key only:
 ssh-keygen -t ed25519 -f ~/.ssh/hearth_tunnel -C hearth-tunnel-m5-air
 
-# ~/.ssh/config — append only if there is no "Host hearth" entry already
-printf 'Host hearth\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/hearth_tunnel\n  IdentitiesOnly yes\n  ServerAliveInterval 30\n  ServerAliveCountMax 3\n' <host.local> <user> >> ~/.ssh/config
-
-cp client/hearth-client.sh ~/.hearth-client.sh
-printf 'export HEARTH_SSH=hearth\nexport HEARTH_CLOUD_MODEL=%s\nsource ~/.hearth-client.sh\n' <cloud-cheap id> >> ~/.zshrc   # or ~/.bashrc
+# Client copy, Host hearth, marked rc block. Dual: add --dual.
+client/install-client.sh --host you@studio.local
 ```
 
 Showing the person `~/.ssh/hearth_tunnel.pub` is fine — it is public.
