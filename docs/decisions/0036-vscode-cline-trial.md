@@ -43,7 +43,8 @@ The host had VS Code 1.107, which is too old for both features.
    oMLX sub-key. Neither gets a cloud provider on the host (rule 3, D3).
 2. **Off on the host:** Copilot inline completions, next edit
    suggestions, Copilot code search, VS Code telemetry, Cline telemetry,
-   Cline's own provider, and Cline auto-approve for web fetch.
+   Cline's own provider, Cline's Composio connectors, and Cline auto-approve
+   for web fetch.
    `scripts/vscode-check.sh` checks the VS Code settings, and preflight
    warns if any of these is on.
 3. **One loop guard, `scripts/loop-guard.sh`, for every hook-capable
@@ -68,6 +69,20 @@ The host had VS Code 1.107, which is too old for both features.
 - **2026-11-08:** `bench/tool-smoke.py` passed against `local-main` through
   a laptop's `ai-tunnel` (two reads, then a write that kept `<`). The first
   gate is met. The client gates are still open.
+- **2026-11-08, Cline Desktop and PyCharm:** both used the `hearth`
+  provider, and both completed write → read → delete with `<` intact. The
+  global hook stopped the third identical `read_files` in both, logged
+  under two separate session ids. Composio connectors (`COMPOSIO_BETA`,
+  pushed to signed-in Cline accounts) are a new egress path. They are
+  added to the off list. No-fallback: with the base URL on a dead port, Cline
+  failed with ConnectionRefused rather than answering from elsewhere. Still
+  open: the rules test in a hearth workspace (the first run was in a Zed
+  checkout).
+- **2026-11-08, VS Code 1.144.1:** with a Custom Endpoint on `local-main` and
+  the Local target, the workspace hook (`.github/hooks/`) refused the third
+  identical `read_file` (`vscode deny` in the log). The key is set through
+  Manage Language Models, which keeps it in VS Code's secret store and
+  writes a `${input:…}` reference into the file.
 - **Not verified:** whether VS Code's Custom Endpoint passes oMLX's token
   check, whether Cline's JetBrains plugin runs workspace hooks, and the
   exact stdin field names on this version. The guard accepts every

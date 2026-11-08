@@ -31,7 +31,10 @@ if [ "${1:-}" = "--show" ]; then
   "chat.agent.enabled": true,
   "chat.agent.maxRequests": 40,
   "chat.tools.global.autoApprove": false,
-  "chat.mcp.discovery.enabled": false,
+  "chat.mcp.discovery.enabled": {
+      "claude-desktop": false, "windsurf": false,
+      "cursor-global": false, "cursor-workspace": false
+  },
   "chat.useHooks": true,
   "chat.useAgentsMdFile": true,
 EOF
@@ -121,6 +124,10 @@ else:
 if s.get("chat.agent.enabled") is False:
     warn("chat.agent.enabled false — agent mode is off, so no tools run")
 
+disc = s.get("chat.mcp.discovery.enabled")
+if disc is True or (isinstance(disc, dict) and any(v is True for v in disc.values())):
+    warn("MCP discovery on — servers from other apps load into chat; turn each source off")
+
 if s.get("chat.useHooks") is False:
     warn("chat.useHooks false — the loop guard will not run in the Local harness")
 
@@ -150,6 +157,13 @@ else:
             ok("endpoint %s" % u)
         else:
             bad("endpoint %s is not loopback — no remote model in host VS Code (rule 3)" % u)
+    raw = open(models_path).read()
+    if re.search(r'"apiKey"\s*:\s*"(?!\$\{)[^"]+"', raw):
+        mode = os.stat(models_path).st_mode & 0o777
+        if mode & 0o077:
+            bad("chatLanguageModels.json holds a key and is mode %o — chmod 600 it" % mode)
+        else:
+            ok("key file mode 600")
     if "local-main" in ids:
         ok("model id local-main (the role)")
     else:

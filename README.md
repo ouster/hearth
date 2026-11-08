@@ -28,7 +28,7 @@ oMLX discovers the weights leaf (for omlx.ai benches and Zed’s
 ```mermaid
 flowchart LR
     subgraph host["Host"]
-        zed["Zed agent"]
+        zed["Editor agents<br/>VS Code, Cline, JetBrains, Zed"]
         aider["aider / ask-*"]
         webui["Open WebUI :3000"]
         sbx["sandboxed.sh agents<br/>egress: 127.0.0.1:1234 only"]
@@ -197,24 +197,160 @@ ask-cloud          # Gemini via THIS machine's own key — the only cloud alias
 ai-webui           # open host's Open WebUI (http://127.0.0.1:3000)
 ```
 
-Editors (aider + Zed): [`docs/IDES.md`](docs/IDES.md). Zed compacts an
-agent thread at 110,000 tokens, under the 128K window. A longer prompt is
-refused. `/compact` does it by hand.
+aider and `ask-*` are in [`docs/IDES.md`](docs/IDES.md).
 
-Zed MCP tools are `context_servers`: Zed starts them as a stdio child on
-the machine where it is running. A networked server is enabled only
-in an agent profile named for where its traffic goes, and never in Write.
-Coding threads that need search use Write + search. The query text leaves,
-the same rule as web search. What is registered, and how to add one, is in
-[`docs/MCP.md`](docs/MCP.md) and [`docs/IDES.md`](docs/IDES.md).
+## Editors
 
-An incomplete directory name makes the agent retry `cd`. In
-`~/.config/zed/settings.json`, set `ask_user` to `true` in the `write` and
-`write-web` profiles, and set `agent.tool_permissions.tools.terminal.default`
-to `confirm`. Personal agent instructions go in `~/.config/zed/AGENTS.md`
-(create the file). Tell the agent: if a path does not resolve, call
-`find_path` or `list_directory` once, then ask. Do not `cd` to a guessed
-name, and do not repeat a command that just failed.
+Every editor calls the role `local-main` at `http://127.0.0.1:1234/v1`:
+directly on the host, through `ai-tunnel` on a laptop. It authenticates
+with a key: your laptop key, or a per-editor sub-key you can revoke on its
+own (`scripts/omlx.sh sub-key add <editor>-<machine>` on the host; names
+are letters, digits, `-` and `_`). **No editor gets a cloud provider on the
+host** (rule 3). Full detail and what is not yet verified:
+[`docs/IDES.md`](docs/IDES.md).
+
+**Loops.** `scripts/loop-guard.sh` runs before every tool call in VS Code
+and Cline. It refuses the third identical call in a row, and stops the run
+after 80 calls in one session. Run `scripts/install-loop-guard.sh` once
+per machine to cover every repo; this one is wired already
+(`.github/hooks/`, `.clinerules/hooks/`). Refusals are logged to
+`~/Library/Logs/hearth-loop-guard.log`. Zed has no hooks; see below.
+
+**Check any client in a few steps** (hearth folder open):
+
+1. Point the base URL at `http://127.0.0.1:1299/v1` and send a prompt. It
+   must fail. Then set it back.
+2. "Create `scratch-smoke.sh` containing `if [[ $x < 1 ]]; then echo hi; fi`,
+   read it back, then delete it." Keeps the `<`.
+3. "Read `AGENTS.md` three times in a row with the read tool. Don't change
+   anything." The third call is refused, and a line appears in the log.
+
+### VS Code (1.122+, trial, ADR 0036)
+
+Two files in `~/Library/Application Support/Code/User/`. Check both with
+`scripts/vscode-check.sh` (exit 0 = clean). `--show` prints the settings.
+
+`settings.json` (JSONC, so comments are allowed). These keep code off
+GitHub's servers and cap agent requests:
+
+```jsonc
+"github.copilot.enable": { "*": false },               // inline completions go to GitHub
+"github.copilot.nextEditSuggestions.enabled": false,  // so do next edit suggestions
+"github.copilot.chat.codesearch.enabled": false,      // GitHub embeddings
+"telemetry.telemetryLevel": "off",
+"chat.agent.maxRequests": 40,                          // pauses and asks to continue
+"chat.tools.global.autoApprove": false,
+"chat.mcp.discovery.enabled": {                        // object form in 1.144
+    "claude-desktop": false, "windsurf": false,
+    "cursor-global": false, "cursor-workspace": false
+},
+"chat.useHooks": true,                                 // runs the loop guard
+"chat.useAgentsMdFile": true,
+"chat.planAgent.defaultModel": "local-main (customendpoint)"
+```
+
+`chatLanguageModels.json` holds the model. Give it no provider-level
+`url`: that would list every role oMLX reports, `local-deep` included.
+
+```jsonc
+[
+  {
+    "name": "hearth",
+    "vendor": "customendpoint",
+    "apiKey": "${input:…}",          // written by VS Code, see below
+    "apiType": "chat-completions",
+    "models": [
+      {
+        "id": "local-main",
+        "name": "local-main",
+        "url": "http://127.0.0.1:1234/v1",
+        "toolCalling": true,
+        "vision": false,
+        "thinking": true,
+        "streaming": true,
+        "maxInputTokens": 114688,
+        "maxOutputTokens": 16384
+      }
+    ]
+  }
+]
+```
+
+Leave `apiKey` out when writing the file. Then set the key in **Chat:
+Manage Language Models** → `hearth`. VS Code keeps it in its secret store
+and writes the `${input:…}` reference itself. A placeholder typed by hand
+has no secret behind it, so requests fail with "API key required" (1.144).
+Never paste the key itself into the file. `vscode-check.sh` fails if a
+literal key sits in a file other users can read. Then, in Chat, pick
+`local-main` and the **Local** session target.
+
+### Cline (Desktop, VS Code, JetBrains, CLI — trial, ADR 0036)
+
+1. **Provider → BYOK → Add Provider** (OpenAI Compatible). ID `hearth`.
+   Base URL `http://127.0.0.1:1234/v1`. **Leave Model Source URL empty**,
+   and type `local-main` as the model. Your key. Capabilities: streaming,
+   tools, reasoning. Prompt cache off, because oMLX's KV cache needs no
+   client flag. Context window 131072.
+2. **Never pick Cline Usage-Billing or ClinePass**: prompts sent through
+   them go to Cline's servers.
+3. **General:** clear usage and error reporting.
+4. **Connectors off.** A signed-in account can receive Cline's Composio
+   beta, which lets the agent connect to Slack and other services through
+   Composio's cloud. Never authorise a connection. Sign out if there is no
+   switch: Hearth needs only the key.
+5. **Enable Hooks**, then run `scripts/install-loop-guard.sh` once. This
+   was verified 2026-11-08 in Cline Desktop and PyCharm.
+
+Cline reads `AGENTS.md` and `.clinerules/`.
+
+### JetBrains IDEs (AI Assistant)
+
+1. Settings → Tools → AI Assistant → Providers & API keys → **OpenAI
+   Compatible**. Base URL `http://127.0.0.1:1234/v1`, your key (kept in
+   the IDE's password store). **Test Connection**.
+2. **Assign `local-main` by hand** to chat and every feature you use. A
+   feature with no local model assigned can fall back to JetBrains' cloud
+   if a subscription is signed in.
+3. **Offline mode on** for sensitive repos. No JetBrains AI cloud model on
+   the host.
+
+AI Assistant has no hooks. For agent work in a JetBrains IDE with the loop
+guard, use the Cline plugin (above).
+
+### Zed
+
+`~/.config/zed/settings.json`, provider `hearth` (OpenAI-compatible) →
+`local-main`, in every model slot. `scripts/zed-sync.sh` writes the labels
+and context from `roles.tsv`. Tool calls ask first
+(`agent.tool_permissions.default: "confirm"`). Threads compact at 110,000
+tokens, under the 128K window; a longer prompt is refused, and `/compact`
+compacts by hand.
+
+**Zed loops, and Hearth cannot stop it there.** Zed has no tool hooks and
+no per-turn request cap, so the loop guard does not cover it. Two shapes
+show up with local models: the same tool call repeated, and the same
+reasoning passage repeated. The ADR 0024 loop, where the old server
+silently trimmed long prompts, is gone, because oMLX refuses instead. What
+helps today:
+
+- Keep `confirm`: a loop cannot run unattended, it just becomes tedious to
+  click through. Setting read tools to `allow` lets a read loop run unasked.
+- An incomplete directory name makes the agent retry `cd`. Set `ask_user`
+  to `true` in the `write` and `write-web` profiles, and set
+  `agent.tool_permissions.tools.terminal.default` to `confirm`. In
+  `~/.config/zed/AGENTS.md`, tell the agent: if a path does not resolve,
+  call `find_path` or `list_directory` once, then ask. Do not repeat a
+  command that just failed.
+- Run Cline as an ACP agent inside Zed for the guard. Hooks under ACP are
+  not yet tested.
+- Upstream: [zed-industries/zed#66686](https://github.com/zed-industries/zed/pull/66686)
+  stops a turn on the third repeated tool call or reasoning passage. A
+  per-turn request cap is proposed in
+  [discussion #66689](https://github.com/zed-industries/zed/discussions/66689).
+
+Zed MCP tools are `context_servers`, started as a stdio child where Zed
+runs. A networked server goes only in an agent profile named for where
+its traffic goes, never in Write. See [`docs/MCP.md`](docs/MCP.md).
 
 ## Laptops
 
@@ -262,6 +398,20 @@ Claude Code reads `CLAUDE.md`; Cursor reads `AGENTS.md` (a symlink to it) and
 of `CLAUDE.md` tells the assistant which machine it is on, because the host and
 a laptop get very different instructions.
 
+Three setup skills live in `.claude/skills/`. Claude Code, VS Code (Agent
+Skills) and Cline all load them from there. Ask in plain words, for example
+"set up this laptop for hearth", and the matching one loads:
+
+| Skill | For |
+|---|---|
+| `hearth-host-setup` | first-time host setup or repair: oMLX, weights, token, autostart, preflight, registering a laptop or editor key |
+| `hearth-laptop-setup` | a laptop's tunnel, client script and token, then proving `ai-ping` and that the key is tunnel-only |
+| `hearth-editor-setup` | VS Code, Cline, JetBrains or Zed on `local-main`, plus the three checks (no fallback, tool loop, loop guard) |
+
+Each one first checks which machine it is on, and stops on the wrong one.
+None of them reads a key or token file. The docs stay the source of truth;
+the skills only give the order, the stops and the checks.
+
 ### Setting up a laptop
 
 On the laptop, clone the repo (it needs read access to the GitHub remote),
@@ -278,7 +428,8 @@ The assistant does the plumbing (SSH key, `~/.ssh/config`, client script,
 shell rc) and the checks; you type the secrets and do the two host-side steps.
 Cursor can help with setup but **cannot use hearth as a model provider** — its
 servers make the model calls, so they would need the host exposed publicly.
-Use Zed or aider for `local-main` on the laptop.
+Use VS Code, Cline, a JetBrains IDE, Zed or aider for `local-main` on the
+laptop (*Editors* above).
 
 ### Changing this repo
 

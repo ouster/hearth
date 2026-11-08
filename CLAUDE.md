@@ -6,11 +6,15 @@ the port empty. Cloud (Gemini) is reached by each tool with its own key.
 
 ## Which machine are you on?
 
-- **The host** (runs oMLX; `~/.omlx` exists): everything below applies.
-- **A laptop** (no `~/.omlx`; someone cloned this repo to set up access):
+- **The host** (serves oMLX to clients; `~/.config/hearth/env` exists): everything below applies.
+- **A laptop** (`~/.hearth-key` or `~/.ssh/hearth_tunnel` exists, or someone
+  cloned this repo to set up access; a laptop running `local-edit` has
+  `~/.omlx` too, so that alone proves nothing — ask when unsure):
   follow `docs/LAPTOP.md` → *AI-assisted setup* and nothing else, plus
   `client/edit-model.sh` when the person asks for laptop edit prediction
-  (ADR 0033). Do not run anything in `scripts/` — those are host scripts and touch the host's
+  (ADR 0033). Do not run anything in `scripts/` except the editor tools
+  `loop-guard.sh`, `install-loop-guard.sh` and `vscode-check.sh` (ADR 0036) —
+  the rest are host scripts and touch the host's
   oMLX, launchd and `authorized_keys`. Host-side steps are ones you tell the
   person to do on the host. You are likely a cloud model, so **never read,
   print, grep, copy or edit** `~/.hearth-key`, `~/.hearth-gemini-key` or

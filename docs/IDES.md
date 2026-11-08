@@ -379,8 +379,11 @@ Cline the task should stop, and a line should appear in the log.
 4. **Model:** Chat: Manage Language Models → Add Models → Custom Endpoint →
    Chat Completions. URL `http://127.0.0.1:1234/v1`, model id
    `local-main`, tool calling on, max input tokens 131072 (the role's `ctx`
-   in `roles.tsv`). Give the key as an input variable so it is not stored
-   in the file.
+   in `roles.tsv`). Set the key in Manage Language Models → `hearth`. VS
+   Code keeps it in its secret store and writes a `${input:…}` reference
+   into `chatLanguageModels.json`. A hand-typed placeholder has no secret
+   behind it ("API key required", 1.144). The README has both files'
+   full format.
 5. **Utility models:** set `chat.utilityModel` and `chat.utilitySmallModel`
    to the same `local-main` entry. Their default is GitHub Copilot, which
    sends titles and commit messages to GitHub if you are signed in.
@@ -392,7 +395,7 @@ Cline the task should stop, and a line should appear in the log.
 VS Code reads `AGENTS.md` (`chat.useAgentsMdFile`), so the repo rules
 apply.
 
-### Cline (VS Code, JetBrains, CLI)
+### Cline (VS Code, JetBrains, Desktop, CLI)
 
 1. **On the host:** `scripts/omlx.sh sub-key add cline-<machine>`. On a laptop,
    `ai-tunnel` must be up first.
@@ -400,7 +403,10 @@ apply.
    `http://127.0.0.1:1234/v1`, the `cline-<machine>` key, Model `local-main`,
    Context Window 131072. Turn on tool support.
    **Never pick the Cline or ClinePass provider**: prompts sent through
-   them go to Cline's servers.
+   them go to Cline's servers. Desktop: Provider → BYOK → Add Provider,
+   ID `hearth`. Leave Model Source URL empty and type `local-main`; a
+   model list would offer `local-deep`. Capabilities: streaming, tools,
+   reasoning. Prompt cache off, because oMLX's KV cache needs no client flag.
 3. **Settings → General:** clear "Allow error and usage reporting". It is
    on by default. The docs say it excludes code and prompts, but it still
    sends usage data.
@@ -409,10 +415,18 @@ apply.
 5. **Feature settings → Enable Hooks.** Turn on **Use Compact Prompt** for
    local models.
 6. Cline reads `AGENTS.md` and `.clinerules/`.
+7. **Composio connectors off.** A signed-in Cline account can receive the
+   `COMPOSIO_BETA` feature flag. That gives the agent tools that
+   connect to Slack and other services through Composio's cloud. On
+   2026-11-08 a `local-main` session offered a Slack auth link nobody had
+   asked for. That is egress with no cloud model involved. Do not
+   authorise one. Turn connectors off, or sign out: Hearth needs only the
+   key.
 
-JetBrains: Marketplace plugin 28247, View → Tool Windows → Cline. The
-docs do not say whether it runs `.clinerules/hooks`. Check it with the
-three-reads test above before relying on the guard there.
+JetBrains: Marketplace plugin 28247, View → Tool Windows → Cline. On
+2026-11-08 the global hook (`~/Documents/Cline/Hooks/PreToolUse`)
+stopped the third identical read in both PyCharm and Cline Desktop.
+Run `scripts/install-loop-guard.sh` once per machine.
 CLI (`npm install -g cline`): set `"telemetryOptOut": true` in
 `~/.cline/data/settings/global-settings.json`. CLI hooks are off in
 `--yolo` mode.
