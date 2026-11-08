@@ -212,8 +212,8 @@ status, models = request("GET", "/api/models", token)
 ids = []
 if isinstance(models, dict):
     ids = [m.get("id") for m in models.get("data") or []]
-if status != 200 or "local-main" not in ids:
-    raise SystemExit("model list missing local-main (%s)" % status)
+if status != 200 or "main-brain" not in ids:
+    raise SystemExit("model list missing main-brain (%s)" % status)
 status, body = request(
     "POST", "/api/v1/chats/new", token, {"chat": {"title": "probe"}}
 )
@@ -302,8 +302,8 @@ case "$CMD" in
       -e USER_PERMISSIONS_CHAT_SHARE=False \
       -e ENABLE_COMMUNITY_SHARING=False \
       -e BYPASS_MODEL_ACCESS_CONTROL=True \
-      -e TASK_MODEL_EXTERNAL="local-main" \
-      -e DEFAULT_MODELS="local-main" \
+      -e TASK_MODEL_EXTERNAL="main-brain" \
+      -e DEFAULT_MODELS="main-brain" \
       ${SEARCH_ENV[@]+"${SEARCH_ENV[@]}"} \
       -v "${VOLUME}:/app/backend/data" \
       "$IMAGE" >/dev/null
@@ -345,7 +345,7 @@ case "$CMD" in
   database, and that value wins over the environment. up does not rewrite
   it. The anonymous session cannot open the admin panel.
 
-  Default model and title/tag generation are local-main (D1): one resident
+  Default model and title/tag generation are main-brain (D1): one resident
   model, so housekeeping never evicts anything.
 
   Two settings worth changing on first run:

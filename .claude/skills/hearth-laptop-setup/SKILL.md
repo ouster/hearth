@@ -18,7 +18,7 @@ This skill adds the stops and the checks.
 | `~/.hearth-key` or `~/.ssh/hearth_tunnel` exists | laptop, already set up once ("Already registered" path) |
 | neither | fresh laptop, or a fresh host: **ask** |
 
-A laptop running `local-edit` also has `~/.omlx` (ADR 0033), so `~/.omlx`
+A laptop running `edit-brain` also has `~/.omlx` (ADR 0033), so `~/.omlx`
 alone proves nothing.
 
 ## Never
@@ -84,7 +84,7 @@ Wait at each of these until the person says it is done:
 | `ai-tunnel` | `tunnel: up` |
 | `ai-tunnel-install` (macOS) | `tunnel: installed com.hearth.tunnel` |
 | `ai-ping` | `up` |
-| `ai-models` | `local-main`, plus `local-deep` only while the host has it loaded |
+| `ai-models` | `main-brain`, plus `deep-brain` only while the host has it loaded |
 | `ai-ask "say ok"` | a short reply |
 | `ssh hearth true; echo $?` | **non-zero**, because the key is tunnel-only |
 

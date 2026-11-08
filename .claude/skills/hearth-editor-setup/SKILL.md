@@ -1,6 +1,6 @@
 ---
 name: hearth-editor-setup
-description: Connect an editor or agent to Hearth's local-main, then prove it with three checks. Covers VS Code (Custom Endpoint), Cline (Desktop, VS Code, JetBrains, CLI), JetBrains AI Assistant and Zed, plus the loop guard. Works on the host and on laptops. Use when the person says "set up VS Code / Cline / PyCharm / Zed for hearth", "add the local model to my editor", "test the loop guard" or "the agent keeps looping".
+description: Connect an editor or agent to Hearth's main-brain, then prove it with three checks. Covers VS Code (Custom Endpoint), Cline (Desktop, VS Code, JetBrains, CLI), JetBrains AI Assistant and Zed, plus the loop guard. Works on the host and on laptops. Use when the person says "set up VS Code / Cline / PyCharm / Zed for hearth", "add the local model to my editor", "test the loop guard" or "the agent keeps looping".
 ---
 
 # Hearth editor setup
@@ -11,8 +11,8 @@ before acting.
 
 ## Ground rules
 
-- Every editor calls the **role** `local-main` at `http://127.0.0.1:1234/v1`.
-  Never write a model name (rule 1). Never offer `local-deep` unless the host
+- Every editor calls the **role** `main-brain` at `http://127.0.0.1:1234/v1`.
+  Never write a model name (rule 1). Never offer `deep-brain` unless the host
   has it loaded.
 - **No cloud provider on the host** in any editor (rule 3). On a laptop,
   never pick a vendor's own cloud provider for sensitive repos.
@@ -34,18 +34,18 @@ Files are in `~/Library/Application Support/Code/User/`.
    `settings.json.bak` first. Get the person's OK before writing.
 3. `chatLanguageModels.json`: write the `hearth` provider in the README's
    format **without `apiKey`**. Do not set a provider-level `url`: it would
-   list `local-deep`. Then the person sets the key in **Chat: Manage
+   list `deep-brain`. Then the person sets the key in **Chat: Manage
    Language Models** → `hearth`. VS Code stores it in its secret store and
    writes a `${input:…}` reference itself. A placeholder you type by hand
    fails with "API key required".
-4. In Chat, pick `local-main` and the **Local** session target. Agent mode
+4. In Chat, pick `main-brain` and the **Local** session target. Agent mode
    must be on (`chat.agent.enabled`).
 5. `scripts/vscode-check.sh` must exit 0. Show any FAIL lines.
 
 ## Cline (Desktop, VS Code, PyCharm, CLI)
 
 1. Provider → BYOK → Add Provider (OpenAI Compatible). ID `hearth`. Base URL
-   as above. **Model Source URL empty.** Model `local-main`. Capabilities:
+   as above. **Model Source URL empty.** Model `main-brain`. Capabilities:
    streaming, tools, reasoning. Prompt cache off. Context 131072.
 2. **Never** select Cline Usage-Billing or ClinePass. Telemetry off
    (General).
@@ -57,7 +57,7 @@ Files are in `~/Library/Application Support/Code/User/`.
 ## JetBrains AI Assistant
 
 Settings → Tools → AI Assistant → Providers & API keys → OpenAI Compatible.
-Assign `local-main` by hand to every feature, and turn offline mode on for
+Assign `main-brain` by hand to every feature, and turn offline mode on for
 sensitive repos. It has no hooks, so for guarded agent work, use the Cline
 plugin.
 

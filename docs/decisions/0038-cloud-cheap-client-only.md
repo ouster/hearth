@@ -1,4 +1,4 @@
-# ADR 0037 — cloud-cheap is client-only; the host holds no cloud key
+# ADR 0038 — cloud-cheap is client-only; the host holds no cloud key
 
 **Date:** 2026-11-08
 **Status:** accepted by the operator 2026-11-08.

@@ -15,13 +15,13 @@ aliases, IDE settings, and laptop configs means every upgrade is a scavenger
 hunt. This stack addresses **roles** instead:
 
 ```
-local-main   cloud-cheap (client-only)
+main-brain   cloud-cheap (client-only)
 ```
 
 `cloud-cheap` is reached only from a laptop's `ask-cloud`, with that
-laptop's own key. The host holds no cloud key (ADR 0037).
+laptop's own key. The host holds no cloud key (ADR 0038).
 
-Each local role is what clients ask for (`local-main`), never a concrete
+Each local role is what clients ask for (`main-brain`), never a concrete
 tag in aliases or IDE config. Concrete models live in exactly two files —
 [`config/roles.tsv`](config/roles.tsv) and [`docs/MODELS.md`](docs/MODELS.md).
 oMLX discovers the weights leaf (for omlx.ai benches and Zed’s
@@ -35,7 +35,7 @@ flowchart LR
         aider["aider / ask-*"]
         webui["Open WebUI :3000"]
         sbx["sandboxed.sh agents<br/>egress: 127.0.0.1:1234 only"]
-        srv["oMLX 127.0.0.1:1234<br/>local-main x3 slots<br/>token required"]
+        srv["oMLX 127.0.0.1:1234<br/>main-brain x3 slots<br/>token required"]
     end
     laptop["Laptop<br/>own token, tunnel-only key"]
     cloud["Gemini<br/>tool's own key"]
@@ -59,10 +59,10 @@ flowchart LR
 
 1. **Privacy is structural.** oMLX holds only local models, so anything
    sent to `:1234` stays on the host by construction. The host holds no
-   cloud key at all; only a laptop's `ask-cloud` has one (ADR 0037). Sandboxed agents
+   cloud key at all; only a laptop's `ask-cloud` has one (ADR 0038). Sandboxed agents
    can reach `127.0.0.1:1234` and nothing else (`scripts/sandbox-probe.sh`).
 2. **No silent route changes.** There is no router, so there is no fallback to
-   leak through. If `local-main` is down, requests fail.
+   leak through. If `main-brain` is down, requests fail.
 3. **Nothing is claimed without being measured.** Role and serving changes get
    an ADR and a bench (`bench/results/`, committed).
 
@@ -156,14 +156,16 @@ Ops detail: [`docs/RUNBOOK.md`](docs/RUNBOOK.md). Architecture:
 ### On the host
 
 ```bash
-# Local models
-ask                # aider with openai/local-main
-ask-arch           # aider architect mode (two local-main sides)
-ask-deep           # aider on local-deep: slow, careful, loaded for the session only (ADR 0020)
-# No cloud alias on the host: ask-cloud is laptop-only (ADR 0037)
+# Brains (ADR 0039)
+ask                # aider with openai/main-brain
+main-brain         # same as ask
+ask-arch           # aider architect mode (two main-brain sides)
+ask-deep           # aider on deep-brain: slow, careful, loaded for the session only (ADR 0020)
+deep-brain         # same as ask-deep
+# No cloud alias on the host: ask-cloud is laptop-only (ADR 0038)
 
 # Server management
-ai-load            # scripts/omlx.sh up — start oMLX and load local-main
+ai-load            # scripts/omlx.sh up — start oMLX and load main-brain
 ai-loaded          # scripts/omlx.sh status
 ai-restart         # stop and start oMLX on 127.0.0.1:1234
 ai-log             # tail ~/Library/Logs/hearth-omlx.log
@@ -190,9 +192,10 @@ ai-models          # list models available through the tunnel
 
 # Asking
 ai-ask "question"  # one-shot question without aider
-ask                # aider with local-main
-ask-arch           # aider architect mode, local-main on both sides
-ask-deep           # aider on local-deep — only while the host has it loaded
+ask                # aider with main-brain (also: main-brain)
+ask-arch           # aider architect mode, main-brain on both sides
+ask-deep           # aider on deep-brain — only while the host has it loaded
+deep-brain         # same as ask-deep
 ask-cloud          # Gemini via THIS machine's own key — the only cloud alias
 
 # Open WebUI through the tunnel
@@ -203,7 +206,7 @@ aider and `ask-*` are in [`docs/IDES.md`](docs/IDES.md).
 
 ## Editors
 
-Every editor calls the role `local-main` at `http://127.0.0.1:1234/v1`:
+Every editor calls the role `main-brain` at `http://127.0.0.1:1234/v1`:
 directly on the host, through `ai-tunnel` on a laptop. It authenticates
 with a key: your laptop key, or a per-editor sub-key you can revoke on its
 own (`scripts/omlx.sh sub-key add <editor>-<machine>` on the host; names
@@ -248,11 +251,11 @@ GitHub's servers and cap agent requests:
 },
 "chat.useHooks": true,                                 // runs the loop guard
 "chat.useAgentsMdFile": true,
-"chat.planAgent.defaultModel": "local-main (customendpoint)"
+"chat.planAgent.defaultModel": "main-brain (customendpoint)"
 ```
 
 `chatLanguageModels.json` holds the model. Give it no provider-level
-`url`: that would list every role oMLX reports, `local-deep` included.
+`url`: that would list every role oMLX reports, `deep-brain` included.
 
 ```jsonc
 [
@@ -263,8 +266,8 @@ GitHub's servers and cap agent requests:
     "apiType": "chat-completions",
     "models": [
       {
-        "id": "local-main",
-        "name": "local-main",
+        "id": "main-brain",
+        "name": "main-brain",
         "url": "http://127.0.0.1:1234/v1",
         "toolCalling": true,
         "vision": false,
@@ -284,13 +287,13 @@ and writes the `${input:…}` reference itself. A placeholder typed by hand
 has no secret behind it, so requests fail with "API key required" (1.144).
 Never paste the key itself into the file. `vscode-check.sh` fails if a
 literal key sits in a file other users can read. Then, in Chat, pick
-`local-main` and the **Local** session target.
+`main-brain` and the **Local** session target.
 
 ### Cline (Desktop, VS Code, JetBrains, CLI — trial, ADR 0036)
 
 1. **Provider → BYOK → Add Provider** (OpenAI Compatible). ID `hearth`.
    Base URL `http://127.0.0.1:1234/v1`. **Leave Model Source URL empty**,
-   and type `local-main` as the model. Your key. Capabilities: streaming,
+   and type `main-brain` as the model. Your key. Capabilities: streaming,
    tools, reasoning. Prompt cache off, because oMLX's KV cache needs no
    client flag. Context window 131072.
 2. **Never pick Cline Usage-Billing or ClinePass**: prompts sent through
@@ -310,7 +313,7 @@ Cline reads `AGENTS.md` and `.clinerules/`.
 1. Settings → Tools → AI Assistant → Providers & API keys → **OpenAI
    Compatible**. Base URL `http://127.0.0.1:1234/v1`, your key (kept in
    the IDE's password store). **Test Connection**.
-2. **Assign `local-main` by hand** to chat and every feature you use. A
+2. **Assign `main-brain` by hand** to chat and every feature you use. A
    feature with no local model assigned can fall back to JetBrains' cloud
    if a subscription is signed in.
 3. **Offline mode on** for sensitive repos. No JetBrains AI cloud model on
@@ -322,7 +325,7 @@ guard, use the Cline plugin (above).
 ### Zed
 
 `~/.config/zed/settings.json`, provider `hearth` (OpenAI-compatible) →
-`local-main`, in every model slot. `scripts/zed-sync.sh` writes the labels
+`main-brain`, in every model slot. `scripts/zed-sync.sh` writes the labels
 and context from `roles.tsv`. Tool calls ask first
 (`agent.tool_permissions.default: "confirm"`). Threads compact at 110,000
 tokens, under the 128K window; a longer prompt is refused, and `/compact`
@@ -372,7 +375,7 @@ token already in `~/.hearth-key`. The list prints names only, so a lost token
 is replaced with revoke, then add. Details in [`docs/LAPTOP.md`](docs/LAPTOP.md).
 Never port-forward `:22`, `:1234`, `:3000` or `:8888`.
 
-A laptop may also run its own oMLX for `local-edit` (edit prediction with
+A laptop may also run its own oMLX for `edit-brain` (edit prediction with
 the tunnel down, ADR 0033; `client/edit-model.sh laptop-up`). Lock it the
 same way as the host's: bound to `127.0.0.1`, an API key required, and
 **CORS off**. oMLX's own default allows every origin (`"cors_origins":
@@ -408,7 +411,7 @@ Skills) and Cline all load them from there. Ask in plain words, for example
 |---|---|
 | `hearth-host-setup` | first-time host setup or repair: oMLX, weights, token, autostart, preflight, registering a laptop or editor key |
 | `hearth-laptop-setup` | a laptop's tunnel, client script and token, then proving `ai-ping` and that the key is tunnel-only |
-| `hearth-editor-setup` | VS Code, Cline, JetBrains or Zed on `local-main`, plus the three checks (no fallback, tool loop, loop guard) |
+| `hearth-editor-setup` | VS Code, Cline, JetBrains or Zed on `main-brain`, plus the three checks (no fallback, tool loop, loop guard) |
 
 Each one first checks which machine it is on, and stops on the wrong one.
 None of them reads a key or token file. The docs stay the source of truth;
@@ -430,7 +433,7 @@ The assistant does the plumbing (SSH key, `~/.ssh/config`, client script,
 shell rc) and the checks; you type the secrets and do the two host-side steps.
 Cursor can help with setup but **cannot use hearth as a model provider** — its
 servers make the model calls, so they would need the host exposed publicly.
-Use VS Code, Cline, a JetBrains IDE, Zed or aider for `local-main` on the
+Use VS Code, Cline, a JetBrains IDE, Zed or aider for `main-brain` on the
 laptop (*Editors* above).
 
 ### Changing this repo

@@ -19,7 +19,7 @@ else
 fi
 export HEARTH_ROOT
 
-# oMLX on localhost (ADR 0026). Every local alias is local-main (D1); there
+# oMLX on localhost (ADR 0026). Every local alias is main-brain (D1); there
 # is no router, so a role name is the model id and nothing can fall back.
 HEARTH_LOCAL="${HEARTH_LOCAL:-http://127.0.0.1:1234/v1}"
 . "${HEARTH_ROOT}/scripts/lib.sh"
@@ -46,49 +46,52 @@ _aider_local() {
   local tok; tok="$(_hearth_var OMLX_HOST_TOKEN)" || return 1
   OPENAI_API_BASE="$HEARTH_LOCAL" \
   OPENAI_API_KEY="$tok" \
-  aider --model openai/local-main "$@"
+  aider --model openai/main-brain "$@"
 }
 
 # --- local: stays on this machine, safe for client / sensitive work ---
 alias ask='_aider_local'
+# Role-named commands (ADR 0039), alongside ask / ask-deep.
+main-brain() { _aider_local "$@"; }
+deep-brain() { ask-deep "$@"; }
 
 # Architect mode with the same model on both sides: the design step stays
 # visible, and nothing is evicted because there is only one model.
-ask-arch() { _aider_local --architect --editor-model openai/local-main "$@"; }
+ask-arch() { _aider_local --architect --editor-model openai/main-brain "$@"; }
 
 # Slow, careful local model for hard one-off questions (ADR 0020, 0028, 0031).
 # Still local: safe for sensitive work. On a 64 GB host it loads beside
-# local-main. Below that it evicts local-main, so Zed, aider and laptops get
+# main-brain. Below that it evicts main-brain, so Zed, aider and laptops get
 # errors until the session ends. The session unloads it on the way out,
-# including Ctrl-C, and local-main is loaded again. Idempotent: INT and EXIT
+# including Ctrl-C, and main-brain is loaded again. Idempotent: INT and EXIT
 # can both fire.
 _hearth_ask_deep_restore() {
   [ "${_hearth_ask_deep_state:-}" = loaded ] || return 0
   _hearth_ask_deep_state=restored
-  "${HEARTH_ROOT}/scripts/demand-load.sh" local-deep down
+  "${HEARTH_ROOT}/scripts/demand-load.sh" deep-brain down
 }
 
 ask-deep() {
   setopt localoptions localtraps
   local tok rc
   tok="$(_hearth_var OMLX_HOST_TOKEN)" || return 1
-  _hearth_ask_deep_state=$("${HEARTH_ROOT}/scripts/demand-load.sh" local-deep up) || return 1
+  _hearth_ask_deep_state=$("${HEARTH_ROOT}/scripts/demand-load.sh" deep-brain up) || return 1
   # already: a manual `up`, or a session this shell did not start. Leave it
   # loaded. loaded: this call brought it in, so the trap unloads it on the
-  # way out, including Ctrl-C, and restores local-main if it was evicted.
+  # way out, including Ctrl-C, and restores main-brain if it was evicted.
   if [ "$_hearth_ask_deep_state" != loaded ]; then
-    echo "local-deep is already loaded; this session will not unload it." >&2
-    echo "When you are finished: scripts/demand-load.sh local-deep down" >&2
+    echo "deep-brain is already loaded; this session will not unload it." >&2
+    echo "When you are finished: scripts/demand-load.sh deep-brain down" >&2
   else
     trap _hearth_ask_deep_restore EXIT INT TERM
   fi
   OPENAI_API_BASE="$HEARTH_LOCAL" OPENAI_API_KEY="$tok" \
-    aider --model openai/local-deep --weak-model openai/local-deep "$@"
+    aider --model openai/deep-brain --weak-model openai/deep-brain "$@"
   rc=$?
   return $rc
 }
 
-# No cloud alias: the host holds no cloud key (ADR 0037). ask-cloud exists
+# No cloud alias: the host holds no cloud key (ADR 0038). ask-cloud exists
 # only in client/hearth-client.sh, with the laptop's own key.
 
 # --- utilities ---

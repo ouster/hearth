@@ -8,7 +8,7 @@ the port empty. Cloud (Gemini) is reached by each tool with its own key.
 
 - **The host** (serves oMLX to clients; `~/.config/hearth/env` exists): everything below applies.
 - **A laptop** (`~/.hearth-key` or `~/.ssh/hearth_tunnel` exists, or someone
-  cloned this repo to set up access; a laptop running `local-edit` has
+  cloned this repo to set up access; a laptop running `edit-brain` has
   `~/.omlx` too, so that alone proves nothing — ask when unsure):
   follow `docs/LAPTOP.md` → *AI-assisted setup* and nothing else, plus
   `client/edit-model.sh` when the person asks for laptop edit prediction
@@ -23,7 +23,7 @@ the port empty. Cloud (Gemini) is reached by each tool with its own key.
 
 Read `docs/ROUTING.md` before suggesting any routing change.
 
-**Serving:** login boot starts oMLX (ADR 0026, 0028) with `local-main`. `ask-deep` evicts `local-main`, loads `local-deep`, and on the way out unloads it and loads `local-main` again (ADR 0031, 0033). `local-edit` is laptop oMLX only (ADR 0033 amend).
+**Serving:** login boot starts oMLX (ADR 0026, 0028) with `main-brain`. `ask-deep` evicts `main-brain`, loads `deep-brain`, and on the way out unloads it and loads `main-brain` again (ADR 0031, 0033). `edit-brain` is laptop oMLX only (ADR 0033 amend).
 
 Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgres is the removed gateway — never suggest commands against it. `docs/MIGRATION-LMSTUDIO.md` is the record of the earlier cut onto LM Studio, which oMLX replaced.
 
@@ -39,23 +39,25 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
    Same discipline for MCP servers: client config docs (`docs/IDES.md`) and
    `docs/MCP.md`.
 
-   Live: `local-main` (oMLX identifier, resident), `local-deep` (loaded for an
+   Live: `main-brain` (oMLX identifier, resident), `deep-brain` (loaded for an
    `ask-deep` session; `load` is `beside` or `swap` per RAM tier, ADR 0020, 0028, 0031, 0032 — never call it
-   unless loaded), `local-edit` (editor edit prediction on a laptop's own
+   unless loaded), `edit-brain` (editor edit prediction on a laptop's own
    oMLX, `/v1/completions` only, ADR 0033; host does not load it), `cloud-cheap`
    (Gemini, client-only: a laptop's `ask-cloud` with that laptop's own key;
-   the host holds no cloud key, ADR 0037). `local-code` / `local-chat` are alias names that
-   mean `local-main` (D1). Dormant: `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`, `cloud-frontier-fast` — no keys.
+   the host holds no cloud key, ADR 0038). Role names were `local-*` until ADR 0039; `local-code`,
+   `local-chat` and `local-big` are older retired names (D1, ADR 0021). Dormant: `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`, `cloud-frontier-fast` — no keys.
 
 2. **oMLX never holds a cloud model.** There is no router, so there are no
-   fallbacks; if `local-main` is down, fail loudly. No script adds a remote backend
+   fallbacks; if `main-brain` is down, fail loudly. No script adds a remote backend
    to `config/roles.tsv` except as an explicit cloud row (`gemini` or another named
    cloud backend). A change that would let `:1234` reach a remote model is a bug.
 
 3. **Privacy is structural.** Sensitive private data, PII, credentials, and any repo or
-   path the operator has flagged as sensitive goes to `local-*` only. That is
+   path the operator has flagged as sensitive goes to `*-brain` only. A brain
+   is a model on hardware the person owns, reached on loopback or through their
+   own tunnel (ADR 0037, 0039) — never a cloud model. That is
    enforced by placement — `:1234` holds only local models, the host holds no cloud key
-   (only a laptop's `ask-cloud` does, ADR 0037), sandboxed agents can reach `127.0.0.1:1234` and nothing
+   (only a laptop's `ask-cloud` does, ADR 0038), sandboxed agents can reach `127.0.0.1:1234` and nothing
    else — not by key scope. Refuse to write code or config that could route that
    class of data to a cloud endpoint, including adding a cloud provider to host Zed.
 
@@ -78,7 +80,7 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
    applies until `scripts/iogpu-wired.sh` runs. Roles are tiered by RAM
    (`min_ram` in `roles.tsv`, ADR 0032); only benched tiers have rows, and
    candidates for other sizes are in `docs/MODELS.md`.
-   `local-main` (ADR 0030) peaks at 34.0 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-06, oMLX process footprint). `local-deep` swaps it out on every tier (ADR 0033). `local-edit` (~1.4 GB) is laptop-only after the host paired gate failed (edit p95 5747 ms beside c3). Say when a suggestion will not fit, or
+   `main-brain` (ADR 0030) peaks at 34.0 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-06, oMLX process footprint). `deep-brain` swaps it out on every tier (ADR 0033). `edit-brain` (~1.4 GB) is laptop-only after the host paired gate failed (edit p95 5747 ms beside c3). Say when a suggestion will not fit, or
    will evict something that needs to stay loaded — on this machine the resident
    set matters more than any one model's quality.
 

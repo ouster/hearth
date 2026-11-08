@@ -6,7 +6,7 @@
 #
 # What actually needs help (ADR 0026):
 #
-#   oMLX        serves local-main on 127.0.0.1 from ~/.hearth/models.
+#   oMLX        serves main-brain on 127.0.0.1 from ~/.hearth/models.
 #               scripts/omlx.sh up. scripts/omlx.sh down stops it
 #               and leaves the port empty.
 #   Podman      the VM does not start itself; container restart policies only

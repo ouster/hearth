@@ -1,6 +1,6 @@
 #!/bin/bash
 # Write each local role's label and context into Zed's settings, from
-# config/roles.tsv. Clients still call the role (`local-main`). The label
+# config/roles.tsv. Clients still call the role (`main-brain`). The label
 # is `role — <weights-leaf>` so the picker shows the backing model (ADR 0034),
 # regenerated whenever roles change so it cannot go stale.
 #
@@ -71,14 +71,14 @@ else:
     url = str(oac.get("api_url", ""))
     local = url.startswith(("http://127.0.0.1:", "http://localhost:")) and url.endswith("/v1/completions")
     if prov == "none":
-        print("ok     edit_predictions: off" + ("; laptop local-edit or paid Zeta: docs/IDES.md" if edit else ""))
-    elif prov == "open_ai_compatible_api" and local and oac.get("model") in edit | {"local-edit"}:
+        print("ok     edit_predictions: off" + ("; laptop edit-brain or paid Zeta: docs/IDES.md" if edit else ""))
+    elif prov == "open_ai_compatible_api" and local and oac.get("model") in edit | {"edit-brain"}:
         print("ok     edit_predictions: %s at %s" % (oac.get("model"), url))
     elif prov == "zed":
-        print("DRIFT  edit_predictions: paid Zed Zeta — cursor text leaves the machine (rule 3); keep \"none\" or laptop local-edit unless the buffer is non-sensitive (docs/IDES.md)")
+        print("DRIFT  edit_predictions: paid Zed Zeta — cursor text leaves the machine (rule 3); keep \"none\" or laptop edit-brain unless the buffer is non-sensitive (docs/IDES.md)")
         rc = max(rc, 1)
     else:
-        print("DRIFT  edit_predictions: provider %r — set \"none\", laptop local-edit, or knowingly enable paid Zeta (docs/IDES.md)" % prov)
+        print("DRIFT  edit_predictions: provider %r — set \"none\", laptop edit-brain, or knowingly enable paid Zeta (docs/IDES.md)" % prov)
         rc = max(rc, 1)
 
 if not check and new != text:

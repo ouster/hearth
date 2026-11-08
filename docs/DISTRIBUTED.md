@@ -13,7 +13,7 @@ names here (rule 1): candidates go into `docs/MODELS.md` once benched.
 
 ## Why not more
 
-None of the old boxes can serve `local-main` or `local-deep`. Splitting one
+None of the old boxes can serve `main-brain` or `deep-brain`. Splitting one
 model across nodes (llama.cpp RPC, exo) is slower than one box whenever the
 model fits on one, and llama.cpp RPC has no authentication. Rejected.
 
@@ -146,7 +146,7 @@ defaults to **private**. `--public` is explicit, the same stance as `ask-cloud`.
   next to the job. On start, jobs stuck in `running` past a timeout go back
   to the queue.
 - Retries twice with backoff on a connection error or 503, on the same role.
-  It **never** reroutes to `local-main`, another role or cloud. A role with
+  It **never** reroutes to `main-brain`, another role or cloud. A role with
   no healthy node leaves its jobs queued, and `batch.sh status` says so.
 - Refuses to send a private job to a `public-only` node. Checked at submit
   and again at dispatch.
@@ -189,7 +189,7 @@ whole job interface.
 **Gate (rule 5):** a new `bench/tasks/05-tagging/` with about 30 labelled
 documents. The committed set is **synthetic or public only**. If real
 documents are used to check accuracy, their labels and paths stay outside git.
-Score: doc_type accuracy and tag F1 per candidate model, `local-main` on the
+Score: doc_type accuracy and tag F1 per candidate model, `main-brain` on the
 host as the reference ceiling, plus seconds per document on each node. The
 operator sets pass marks after seeing the first run.
 
@@ -229,7 +229,7 @@ operator sets pass marks after seeing the first run.
 1. Which folder or folders, and which file types (PDF, docx, email, scans)?
    Roughly how many documents, and how many new ones a week?
 2. The tag vocabulary: do you already have categories (document types,
-   matter stages, …), or should a first pass with `local-main` over a sample
+   matter stages, …), or should a first pass with `main-brain` over a sample
    propose a list for you to edit?
 3. Index only, or also Finder tags?
 4. Exact boxes: Pi model and RAM, any old PC with a GPU?

@@ -15,7 +15,7 @@ import argparse, glob, json, os, statistics, sys, time, urllib.error, urllib.req
 ap = argparse.ArgumentParser()
 ap.add_argument("--base-url", required=True)
 ap.add_argument("--key-env", required=True)
-ap.add_argument("--model", default="local-edit")
+ap.add_argument("--model", default="edit-brain")
 ap.add_argument("--rounds", type=int, default=6)
 ap.add_argument("--duration", type=float, default=0.0)
 ap.add_argument("--tasks", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "edit"))

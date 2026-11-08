@@ -112,11 +112,11 @@ elif any(t in c for t in ("<think>", "</think>", "<|channel>", "<channel|>")): p
   done <<EOF
 $(hearth_resident_roles)
 EOF
-  # local-edit is laptop-primary (ADR 0033 amend). Host does not load it.
+  # edit-brain is laptop-primary (ADR 0033 amend). Host does not load it.
   if hearth_edit_roles | grep -q .; then
-    echo "        local-edit: laptop oMLX only — not called on the host (client/edit-model.sh bench)"
+    echo "        edit-brain: laptop oMLX only — not called on the host (client/edit-model.sh bench)"
   fi
-  # Calling an unloaded demand role would be answered by local-main (JIT off).
+  # Calling an unloaded demand role would be answered by main-brain (JIT off).
   for r in $(hearth_demand_roles); do
     echo "        ${r}: loaded on demand by ask-deep — not called here"
   done

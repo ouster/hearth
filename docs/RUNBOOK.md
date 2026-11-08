@@ -10,7 +10,7 @@ Start, stop, diagnose. oMLX serves `127.0.0.1:1234` from `~/.hearth/models`
 |---|---|---|
 | Server | `127.0.0.1:1234` | oMLX, `scripts/omlx.sh up`. `down` stops it |
 | Weights | `~/.hearth/models` | the directories named in `config/roles.tsv` |
-| Roles | `config/roles.tsv` | `local-main` resident, 128K × 3. `local-deep` evicts `local-main` for its session. `local-edit` is laptop-only (ADR 0031, 0033) |
+| Roles | `config/roles.tsv` | `main-brain` resident, 128K × 3. `deep-brain` evicts `main-brain` for its session. `edit-brain` is laptop-only (ADR 0031, 0033) |
 | Token | `~/.config/hearth/env`, mode 600 | `OMLX_HOST_TOKEN`. Scripts pass it to the server as `OMLX_API_KEY` |
 | Server settings | `~/.omlx/settings.json` (mode 600) | written by `scripts/omlx.sh up`: loopback, CORS off, no model fallback |
 | Remote Login (sshd) | `:22` | laptops' tunnel; their keys are `restrict`ed to `-L` `:1234`/`:3000`/`:8888`, with `-R` denied (`scripts/client-setup.sh --update-keys` brings old keys up to date) |
@@ -40,13 +40,13 @@ launchd agents. Ports 4000, 5433 and 11434 should be free.
      when it runs, falls back to the venv, **merges** host policy into the
      shared settings (loopback, CORS off, `auto_start_on_launch: false`, RAM
      envelope, host token) while leaving UI / aliases / MCP / other app keys
-     alone, and picks `local-main`'s `reasoning_parser` from the live
+     alone, and picks `main-brain`'s `reasoning_parser` from the live
      `/admin/api/grammar/parsers` list (`qwen_3_5` on 0.7.4+, `qwen` on
      0.7.3). If the app is already serving `:1234`, `up` configures that
      process in place (admin API) and does not take it over.
 4. `scripts/omlx.sh up` merges settings, links weights as the org/leaf path
    from `roles.tsv` (discovery id = leaf; `model_alias` = role so clients
-   still call `local-main`, ADR 0034), serves or attaches, and refuses only
+   still call `main-brain`, ADR 0034), serves or attaches, and refuses only
    if a non-oMLX process holds `:1234`.
 5. Prove auth holds — a positive control first. Do not `source` the env file
    into a shell you keep; `scripts/healthcheck.sh` reads it itself.
@@ -73,17 +73,17 @@ trim line appears. oMLX does not emit that line today, so it stays quiet.
 
 ### oMLX
 
-`scripts/boot.sh` runs `scripts/omlx.sh up`. It serves `local-main` from
+`scripts/boot.sh` runs `scripts/omlx.sh up`. It serves `main-brain` from
 the copy in `~/.hearth/models` on `127.0.0.1:1234`, with the host token, a
 memory guard of RAM minus 8 GB, an 8 GB RAM cache (4 GB below 64 GB RAM),
 and a 20 GB SSD cache — or, if oMLX is already listening (app-first install),
 merges the same policy into the shared settings and applies it live without
 replacing the process. Weights are linked as `~/.omlx/models/<org>/<leaf>`
 so omlx.ai benches and the admin UI show the real leaf; `/v1` exposes the
-role via `model_alias` (ADR 0034). It does not load `local-edit` (ADR 0033
+role via `model_alias` (ADR 0034). It does not load `edit-brain` (ADR 0033
 amend: laptop oMLX only); a leftover pin in `~/.omlx/model_settings.json` is
 cleared on `up` so a post-DMG install cannot preload it. `ask-deep` evicts
-`local-main` for the session and unloads `local-deep` on the way out
+`main-brain` for the session and unloads `deep-brain` on the way out
 (ADR 0031, 0033). The GPU wired limit is the same RAM minus 8 (57344 MB on
 64 GB, 40960 MB on 48 GB), installed by `scripts/iogpu-wired.sh`. Preflight
 warns if either differs. `scripts/omlx.sh bench` checks thinking, tools,
@@ -148,7 +148,7 @@ WebUI database, which is the value the search toggle actually uses.
 **The connection lives in WebUI's database.** Environment variables only seed
 a fresh database. `up` does not rewrite the saved OpenAI URL, and the
 anonymous session cannot open the admin panel. Default and task model are
-`local-main`.
+`main-brain`.
 
 ### Using the chat UI from a laptop
 
@@ -235,13 +235,13 @@ repo it was invited into. Commit first; `git diff` before accepting.
 | Slow under load | `concurrency-bench.sh` at the failing settings | prefill is serialised; see `docs/ARCHITECTURE.md` |
 | Zed agent stalls | `ai-log`, `scripts/status.sh`, bench | capture them **before** changing anything |
 | Server LAN-visible or CORS on | `ai-status`, `ai-health` | `scripts/boot.sh` restarts it on 127.0.0.1 without CORS |
-| aider errors naming `ollama_chat/…` or `local-code` | an old `.aider.conf.yml` in the repo dir | roles are `openai/local-main` now |
+| aider errors naming `ollama_chat/…` or `local-code` | an old `.aider.conf.yml` in the repo dir | roles are `openai/main-brain` now |
 
 Bench any change the same way as the baseline:
 
 ```bash
 scripts/concurrency-bench.sh --base-url http://127.0.0.1:1234/v1 \
-  --token-env OMLX_HOST_TOKEN --model local-main --concurrency 3
+  --token-env OMLX_HOST_TOKEN --model main-brain --concurrency 3
 ```
 
 ## Rollback

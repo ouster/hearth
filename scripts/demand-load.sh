@@ -140,7 +140,7 @@ if loaded(leaf):
     print("already")
     raise SystemExit(0)
 if evict:
-    sys.stderr.write("unloading resident roles for this session (Zed, aider and laptops have no local-main until down)…\n")
+    sys.stderr.write("unloading resident roles for this session (Zed, aider and laptops have no main-brain until down)…\n")
     for mid in residents:
         unload(mid)
 load(leaf)

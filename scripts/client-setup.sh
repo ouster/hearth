@@ -29,7 +29,7 @@
 #     dropped. A hearth-tunnel-*
 #     line with no tunnel restriction is a full shell key: reported, left
 #     unchanged, exit 1. Options must not contain spaces.
-#   - its own Google API key for ask-cloud. The host holds none (ADR 0037).
+#   - its own Google API key for ask-cloud. The host holds none (ADR 0038).
 #
 # Exit 0 ok, 1 failed, 2 could not run.
 
@@ -299,8 +299,8 @@ if [ "$WINDOWS" -eq 0 ]; then cat <<EOF
      ai-tunnel            # one ssh -N -L 1234 -L 3000 -L 8888
      ai-tunnel-install    # macOS: launchd keeps those forwards up, and at login
      ai-ping              # up / BAD TOKEN / NO ANSWER / DOWN
-     ai-models            # local-main
-     ask                  # aider on local-main
+     ai-models            # main-brain
+     ask                  # aider on main-brain
      ask-cloud            # Gemini with the laptop's own key
      ai-webui             # the host's Open WebUI at http://127.0.0.1:3000
    Linux: skip ai-tunnel-install. ai-tunnel-stop unloads the LaunchAgent too.

@@ -164,10 +164,10 @@ else:
             bad("chatLanguageModels.json holds a key and is mode %o — chmod 600 it" % mode)
         else:
             ok("key file mode 600")
-    if "local-main" in ids:
-        ok("model id local-main (the role)")
+    if "main-brain" in ids:
+        ok("model id main-brain (the role)")
     else:
-        warn("no model with id local-main — call the role, never a model name (rule 1)")
+        warn("no model with id main-brain — call the role, never a model name (rule 1)")
 
 sys.exit(rc)
 PY

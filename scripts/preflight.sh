@@ -70,16 +70,16 @@ else
     $2 == "omlx" && $9 !~ /^[0-9]+$/ { print $1 ": min_ram must be an integer GB on an omlx row (ADR 0032)" }
     $2 != "omlx" && $9 != "-" { print $1 ": min_ram must be - on a cloud row" }
     $2 == "omlx" && $8 == "resident" { res++ }
-    END { if (n > 0 && res == 0) print "no resident omlx role — nothing would serve local-main" }
+    END { if (n > 0 && res == 0) print "no resident omlx role — nothing would serve main-brain" }
     seen[$1 "@" $9]++ { print "duplicate role " $1 " at min_ram " $9 }
     $2 != "omlx" && $2 != "gemini" { print $1 ": backend \"" $2 "\" is not omlx or an explicit cloud backend (gemini)" }
     $2 == "omlx" && ($4 !~ /^[0-9]+$/ || $5 !~ /^[0-9]+$/) { print $1 ": ctx/slots must be integers" }
-    $2 == "omlx" && $1 !~ /^local-/ { print $1 ": an omlx row must be a local-* role" }
-    $2 != "omlx" && $1 ~ /^local-/ { print $1 ": a local-* role on a cloud backend — rule 2/3" }
+    $2 == "omlx" && $1 !~ /-brain$/ { print $1 ": an omlx row must be a *-brain role" }
+    $2 != "omlx" && $1 ~ /-brain$/ { print $1 ": a *-brain role on a cloud backend — rule 2/3" }
     $3 ~ /:\/\// || $6 ~ /:\/\// { print $1 ": URL in roles.tsv — :1234 must never front a remote model" }
     END { if (n == 0) print "no rows" }' "$ROLES")
   if [ -z "$probs" ]; then
-    ok "well-formed; backends omlx/gemini only; local-* only on omlx"
+    ok "well-formed; backends omlx/gemini only; *-brain only on omlx"
     tiers=$(hearth_all_rows | awk -F'\t' '$9 != "-" {print $9}' | sort -nu | tr '\n' ' ')
     ok "tiers with rows (GB RAM): ${tiers}"
   else
@@ -92,10 +92,10 @@ EOF
   fi
 
   host_ram=$(hearth_ram_gb || echo ?)
-  if hearth_resident_roles | awk -F'\t' '$1 == "local-main"' | grep -q .; then
+  if hearth_resident_roles | awk -F'\t' '$1 == "main-brain"' | grep -q .; then
     ok "this host (${host_ram} GB) resolves: $(hearth_resolved_roles | awk -F'\t' '$2 == "omlx" {printf "%s=%s ", $1, $8}')"
   else
-    bad "no local-main row fits this host (${host_ram} GB) — omlx.sh up will refuse (ADR 0032)"
+    bad "no main-brain row fits this host (${host_ram} GB) — omlx.sh up will refuse (ADR 0032)"
   fi
 
   while IFS="$(printf '\t')" read -r role _ _ _ _ w; do
@@ -163,10 +163,10 @@ if want_gb=$(hearth_gpu_ceiling_gb); then
   else
     wrn "iogpu.wired_limit_mb ${wired:-?}, want ${want_mb} — scripts/iogpu-wired.sh (0 is the macOS default, ~75% of RAM)"
   fi
-  case "$(hearth_role_load local-deep)" in
-    beside) ok "local-deep loads beside local-main (ceiling ${want_gb} GB)" ;;
-    swap)   ok "local-deep evicts local-main for its session (ceiling ${want_gb} GB)" ;;
-    *)      ok "no local-deep row for this tier" ;;
+  case "$(hearth_role_load deep-brain)" in
+    beside) ok "deep-brain loads beside main-brain (ceiling ${want_gb} GB)" ;;
+    swap)   ok "deep-brain evicts main-brain for its session (ceiling ${want_gb} GB)" ;;
+    *)      ok "no deep-brain row for this tier" ;;
   esac
 else
   er "cannot read hw.memsize"
@@ -188,9 +188,9 @@ if [ -f "$HEARTH_ENV" ]; then
   esac
   # Name match only; the value is never read (rule 11).
   if grep -qE '^[[:space:]]*(export[[:space:]]+)?(GOOGLE_API_KEY|GEMINI_API_KEY)=' "$HEARTH_ENV"; then
-    bad "a Google key is still in ${HEARTH_ENV} — cloud is client-only (ADR 0037); delete that line and revoke the key"
+    bad "a Google key is still in ${HEARTH_ENV} — cloud is client-only (ADR 0038); delete that line and revoke the key"
   else
-    ok "no cloud key on the host (ADR 0037)"
+    ok "no cloud key on the host (ADR 0038)"
   fi
 else
   bad "${HEARTH_ENV} missing"
@@ -255,7 +255,14 @@ hdr "Autostart"
 # ---------------------------------------------------------------- hygiene
 hdr "Hygiene"
 crlf=$(find "$ROOT/scripts" "$ROOT/config" -type f \( -name '*.sh' -o -name '*.zsh' -o -name '*.tsv' \) -exec file {} \; 2>/dev/null | grep -c CRLF || true)
-[ "$crlf" -eq 0 ] && ok "no CRLF line endings in scripts/config" || bad "${crlf} file(s) have CRLF — breaks shebangs and launchd"
+[ "$crlf" -eq 0 ] && ok "no CRLF line endings in scripts/config"
+# Retired role names (ADR 0039). History keeps them; live files must not.
+old=$(git -C "$ROOT" grep -lE '(^|[^-[:alnum:]_])local-(main|deep|edit)([^[:alnum:]_]|$)' -- . \
+  ':!bench/results' ':!docs/decisions' ':!research_notes' ':!docs/HISTORY.md' \
+  ':!docs/MIGRATION-LMSTUDIO.md' ':!docs/SUMMARY-EMAIL.md' ':!docs/REVIEW-HANDOFF.md' \
+  ':!scripts/preflight.sh' 2>/dev/null | tr '\n' ' ' || true)
+[ -z "$old" ] && ok "no retired local-* role names in live files (ADR 0039)" \
+              || bad "retired role names (local-main/deep/edit) in: ${old}— use main-brain/deep-brain/edit-brain" || bad "${crlf} file(s) have CRLF — breaks shebangs and launchd"
 
 # macOS /bin/bash is 3.2. --exclude this file: it contains the patterns.
 bash4=$(grep -lnE 'declare -A|local -A|mapfile|readarray|\$\{[A-Za-z_]+\^\^|\$\{[A-Za-z_]+,,' \

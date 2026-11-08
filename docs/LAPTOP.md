@@ -31,10 +31,10 @@ flowchart LR
 | Thing | Where | Why |
 |---|---|---|
 | API key `laptop-m5-air` | laptop `~/.hearth-key` (mode 600) | the `sub-key add` argument. Revoke one machine without touching the others |
-| `local-edit` on the laptop's own oMLX (optional) | `~/.hearth/models`, linked into `~/.omlx/models` by `client/edit-model.sh laptop-up` | local edit prediction; host does not serve it. Paid Zed Zeta is the cloud alternative (`docs/IDES.md`, ADR 0033) |
+| `edit-brain` on the laptop's own oMLX (optional) | `~/.hearth/models`, linked into `~/.omlx/models` by `client/edit-model.sh laptop-up` | local edit prediction; host does not serve it. Paid Zed Zeta is the cloud alternative (`docs/IDES.md`, ADR 0033) |
 | API keys `jetbrains-<name>`, `xcode-<name>` (optional) | typed into the IDE's own key field | revoke one editor without touching the laptop's key (`docs/IDES.md`) |
 | SSH key `hearth_tunnel` | laptop `~/.ssh/hearth_tunnel`; host `authorized_keys` with `command="/usr/bin/false",restrict,port-forwarding,permitopen=…,permitlisten="none:1"` | the key can `-L` to `127.0.0.1:1234`, `:3000` and `:8888` only — no shell, no commands, no `-R`, no other ports |
-| Google API key (optional) | laptop `~/.hearth-gemini-key` (mode 600) | `ask-cloud` with the laptop's own key; the host holds no Google key (ADR 0037) |
+| Google API key (optional) | laptop `~/.hearth-gemini-key` (mode 600) | `ask-cloud` with the laptop's own key; the host holds no Google key (ADR 0038) |
 | `client/hearth-client.sh` / `.ps1` | laptop `~/.hearth-client.sh` | `ai-tunnel`, `ai-tunnel-install` (macOS), `ai-ping`, `ai-models`, `ai-ask`, `ai-webui`, `ask*`, `ask-deep`, `ask-cloud` |
 
 Secrets are read from files per command and never exported into the
@@ -202,11 +202,11 @@ key works, the second that it can do nothing else.
 | `ai-tunnel` | `tunnel: up` (the first run asks the person to confirm the host fingerprint) |
 | `ai-tunnel-install` | macOS: `tunnel: installed com.hearth.tunnel`. Linux: skip this |
 | `ai-ping` | `up` |
-| `ai-models` | `local-main` (plus `local-deep` only while the host has it loaded) |
-| `ai-ask "say ok"` | a short reply from local-main |
+| `ai-models` | `main-brain` (plus `deep-brain` only while the host has it loaded) |
+| `ai-ask "say ok"` | a short reply from main-brain |
 | `ssh hearth true; echo $?` | **non-zero**, no shell: the key is tunnel-only |
 | `ask-cloud` (optional) | aider on Gemini with the laptop's own key |
-| `ask-deep` (optional) | refuses with "not loaded on the host" unless the host ran `scripts/demand-load.sh local-deep up`; the laptop cannot load it (tunnel-only key). `local-main` stays loaded beside it |
+| `ask-deep` (optional) | refuses with "not loaded on the host" unless the host ran `scripts/demand-load.sh deep-brain up`; the laptop cannot load it (tunnel-only key). `main-brain` stays loaded beside it |
 
 If `ai-ping` says `BAD TOKEN`, the person re-runs the `read -rs` step with
 the right token; `NO ANSWER` means the host is asleep or oMLX is down
@@ -221,7 +221,7 @@ with the laptop's token entered through Zed's UI by the person.
 the model call, not the laptop, so a `localhost` base URL never reaches the
 tunnel; the only workaround is a public endpoint, which the *Never* list
 forbids, and prompts would still pass through Cursor's servers (checked
-2026-10-31). Use Zed, aider or `ask` for local-main on the laptop; Cursor
+2026-10-31). Use Zed, aider or `ask` for main-brain on the laptop; Cursor
 with its own models only, and not on sensitive repos.
 
 ## Zed on the laptop
@@ -235,12 +235,12 @@ Same provider as the host, through the tunnel:
       "hearth": {
         "api_url": "http://127.0.0.1:1234/v1",
         "available_models": [
-          { "name": "local-main", "display_name": "local-main", "max_tokens": 131072 }
+          { "name": "main-brain", "display_name": "main-brain", "max_tokens": 131072 }
         ]
       }
     }
   },
-  "agent": { "default_model": { "provider": "hearth", "model": "local-main" } }
+  "agent": { "default_model": { "provider": "hearth", "model": "main-brain" } }
 }
 ```
 
@@ -250,7 +250,7 @@ tunnel at login. Run `ai-tunnel` before Zed when that agent is not installed,
 or Zed's models show as unavailable.
 
 A Gemini provider **is allowed on the laptop** (D3), with the laptop's own
-key. The host has none. Keep sensitive repos on `hearth/local-main`.
+key. The host has none. Keep sensitive repos on `hearth/main-brain`.
 
 If using the legal-research worked example from `docs/MCP.md`, install and
 review its source on the laptop too; its stdio process runs beside Zed, not on
@@ -275,7 +275,7 @@ npm install --ignore-scripts --save-exact --prefix ~/.local/share/hearth/mcp-sea
 Then a `searxng` stdio context server in Zed with
 `SEARXNG_URL=http://127.0.0.1:8888` (or your `HEARTH_SEARXNG_PORT`). Enable
 `searxng_web_search` only, in `web` (no file tools, `default_model`
-`hearth/local-main`) and, for a coding thread, `write-web` (Write's tools,
+`hearth/main-brain`) and, for a coding thread, `write-web` (Write's tools,
 no pinned model). Do not switch either profile to Gemini. The tunnel has to
 be up (`ai-tunnel-install` on macOS, otherwise `ai-tunnel`). Search queries
 go to public search engines via the host.

@@ -8,7 +8,7 @@
 #   scripts/omlx.sh sub-key add <name>      # token on stdin, not echoed
 #   scripts/omlx.sh sub-key revoke <name>
 #
-# Weights, context, and slots come from the resident local-main row. The API
+# Weights, context, and slots come from the resident main-brain row. The API
 # key is the existing host token, written to ~/.omlx/settings.json (mode 600)
 # and never printed. Clients that already send that token keep working.
 # A laptop token is a different key. `sub-key add` registers one the operator
@@ -62,9 +62,9 @@ find_omlx() {
   return 1
 }
 
-# This host's local-main row (tier resolved from RAM, ADR 0032).
+# This host's main-brain row (tier resolved from RAM, ADR 0032).
 role_fields() {
-  hearth_resolved_roles | awk -F'\t' '$1=="local-main" && $2=="omlx" && $8=="resident" {
+  hearth_resolved_roles | awk -F'\t' '$1=="main-brain" && $2=="omlx" && $8=="resident" {
     print $4 "\t" $5 "\t" $6; exit
   }'
 }
@@ -223,7 +223,7 @@ os.chmod(path, 0o600)
 PY
 }
 
-# Clear a leftover local-edit pin before start so 0.7.4 does not preload it
+# Clear a leftover edit-brain pin before start so 0.7.4 does not preload it
 # (ADR 0033 amend: host does not serve edit prediction).
 unpin_local_edit_on_disk() {
   local ms="${OMLX_HOME}/model_settings.json"
@@ -234,9 +234,9 @@ path = sys.argv[1]
 with open(path) as f:
     doc = json.load(f)
 models = doc.get("models")
-if not isinstance(models, dict) or "local-edit" not in models:
+if not isinstance(models, dict) or "edit-brain" not in models:
     raise SystemExit(0)
-edit = models["local-edit"]
+edit = models["edit-brain"]
 if not isinstance(edit, dict):
     raise SystemExit(0)
 if edit.get("is_pinned") is not True:
@@ -246,7 +246,7 @@ edit["is_default"] = False
 with open(path, "w") as f:
     json.dump(doc, f, indent=2)
     f.write("\n")
-print("omlx: cleared local-edit pin in model_settings.json")
+print("omlx: cleared edit-brain pin in model_settings.json")
 PY
 }
 
@@ -282,14 +282,14 @@ remove_flat_role_link() {
 link_weights() {
   mkdir -p "$MODEL_DIR"
   link_weights_path "$WEIGHTS" || fail "weights missing: ${HOME}/.hearth/models/${WEIGHTS}"
-  remove_flat_role_link local-main
-  deep=$(hearth_resolved_roles | awk -F'\t' '$1=="local-deep" && ($8=="beside" || $8=="swap") { print $6; exit }')
+  remove_flat_role_link main-brain
+  deep=$(hearth_resolved_roles | awk -F'\t' '$1=="deep-brain" && ($8=="beside" || $8=="swap") { print $6; exit }')
   if [ -n "$deep" ]; then
-    link_weights_path "$deep" || echo "omlx: local-deep weights not under ~/.hearth/models — ask-deep cannot load it until the weights are copied" >&2
-    remove_flat_role_link local-deep
+    link_weights_path "$deep" || echo "omlx: deep-brain weights not under ~/.hearth/models — ask-deep cannot load it until the weights are copied" >&2
+    remove_flat_role_link deep-brain
   fi
-  # local-edit is laptop-primary (ADR 0033 amend). Host does not link or load it.
-  remove_flat_role_link local-edit
+  # edit-brain is laptop-primary (ADR 0033 amend). Host does not link or load it.
+  remove_flat_role_link edit-brain
 }
 
 configure_model() {
@@ -395,9 +395,9 @@ for line in os.environ["OMLX_ROLES_TSV"].splitlines():
     leaf = weights.rstrip("/").split("/")[-1]
     roles[f[0]] = {"ctx": int(f[3]), "load": f[7], "leaf": leaf, "weights": weights}
 
-if "local-main" not in roles:
-    raise SystemExit("no local-main row in resolved roles")
-main_leaf = roles["local-main"]["leaf"]
+if "main-brain" not in roles:
+    raise SystemExit("no main-brain row in resolved roles")
+main_leaf = roles["main-brain"]["leaf"]
 
 # Pick up org/leaf symlinks (and drop removed flat role dirs).
 code, body = call("POST", "/admin/api/reload", None, timeout=120)
@@ -418,7 +418,7 @@ def admin_models():
 admin = admin_models()
 if main_leaf not in admin:
     raise SystemExit(
-        "local-main leaf %r was not discovered under ~/.omlx/models "
+        "main-brain leaf %r was not discovered under ~/.omlx/models "
         "(expected org/leaf symlink from roles.tsv)" % main_leaf
     )
 
@@ -428,7 +428,7 @@ def apply(mid, settings):
         raise SystemExit("model settings failed for %s (%s): %s" % (mid, code, str(body.get("detail", ""))[:300]))
 
 # Clear leftover flat role ids so they are not pinned/preloaded.
-for stale in ("local-main", "local-deep", "local-edit"):
+for stale in ("main-brain", "deep-brain", "edit-brain"):
     if stale in admin and stale not in {r["leaf"] for r in roles.values()}:
         code, body = call("PUT", "/admin/api/models/%s/settings" % stale, {
             "is_pinned": False,
@@ -442,9 +442,9 @@ for stale in ("local-main", "local-deep", "local-edit"):
 
 # Role aliases must be unique. When swapping candidate weights, clear the
 # alias from every other leaf before claiming it on the new one.
-wanted_alias = {"local-main": main_leaf}
-if "local-deep" in roles:
-    wanted_alias["local-deep"] = roles["local-deep"]["leaf"]
+wanted_alias = {"main-brain": main_leaf}
+if "deep-brain" in roles:
+    wanted_alias["deep-brain"] = roles["deep-brain"]["leaf"]
 for mid, meta in admin.items():
     # Admin list may expose alias on the model object or only in settings.
     pass
@@ -502,7 +502,7 @@ print("reasoning_parser=%s" % parser)
 
 main = dict(common)
 main.update({
-    "model_alias": "local-main",
+    "model_alias": "main-brain",
     "reasoning_parser": parser,
     "top_k": 20,
     "max_context_window": ctx,
@@ -513,26 +513,26 @@ main.update({
     "is_hidden": False,
 })
 apply(main_leaf, main)
-print("alias local-main → %s" % main_leaf)
+print("alias main-brain → %s" % main_leaf)
 
-if "local-deep" in roles:
-    deep_leaf = roles["local-deep"]["leaf"]
+if "deep-brain" in roles:
+    deep_leaf = roles["deep-brain"]["leaf"]
     if deep_leaf in admin:
         deep = dict(common)
         deep.update({
-            "model_alias": "local-deep",
-            "max_context_window": roles["local-deep"]["ctx"],
+            "model_alias": "deep-brain",
+            "max_context_window": roles["deep-brain"]["ctx"],
             "max_tokens": 32768,
             "is_pinned": False,
             "is_default": False,
             "is_hidden": False,
         })
         apply(deep_leaf, deep)
-        print("alias local-deep → %s" % deep_leaf)
+        print("alias deep-brain → %s" % deep_leaf)
 
-# Host does not serve local-edit (ADR 0033 amend).
-if "local-edit" in admin:
-    code, body = call("PUT", "/admin/api/models/local-edit/settings", {
+# Host does not serve edit-brain (ADR 0033 amend).
+if "edit-brain" in admin:
+    code, body = call("PUT", "/admin/api/models/edit-brain/settings", {
         "enable_thinking": False,
         "chat_template_kwargs": {"enable_thinking": False},
         "temperature": 0.0,
@@ -541,9 +541,9 @@ if "local-edit" in admin:
         "is_default": False,
     })
     if code != 200:
-        print("local-edit unpin failed (%s): %s — may still preload" % (code, str(body.get("detail", ""))[:200]))
+        print("edit-brain unpin failed (%s): %s — may still preload" % (code, str(body.get("detail", ""))[:200]))
     else:
-        print("unpinned local-edit (laptop-only)")
+        print("unpinned edit-brain (laptop-only)")
 
 # ~/.hearth/models is on model_dirs for org/leaf display; hide anything that
 # is not a served chat role leaf so /v1 stays role-aliased only. Edit roles
@@ -582,27 +582,27 @@ while time.time() < deadline:
     time.sleep(2)
 if not loaded:
     raise SystemExit("model did not report loaded")
-print("loaded %s (alias local-main)" % main_leaf)
+print("loaded %s (alias main-brain)" % main_leaf)
 
 code, listing = call("GET", "/v1/models")
 if code == 200:
     v1_ids = [m.get("id") for m in listing.get("data") or [] if m.get("id")]
-    if "local-main" not in v1_ids:
-        raise SystemExit("/v1/models missing alias local-main (have %s)" % v1_ids)
-    print("clients see local-main via model_alias")
+    if "main-brain" not in v1_ids:
+        raise SystemExit("/v1/models missing alias main-brain (have %s)" % v1_ids)
+    print("clients see main-brain via model_alias")
 PY
 }
 
 cmd_up() {
   OMLX="$(find_omlx)" || fail "omlx not installed"
   row="$(role_fields)"
-  [ -n "$row" ] || fail "no resident local-main row in config/roles.tsv fits $(hearth_ram_gb || echo ?) GB of RAM (tiers, ADR 0032)"
+  [ -n "$row" ] || fail "no resident main-brain row in config/roles.tsv fits $(hearth_ram_gb || echo ?) GB of RAM (tiers, ADR 0032)"
   CTX="$(printf '%s' "$row" | cut -f1)"
   SLOTS="$(printf '%s' "$row" | cut -f2)"
   WEIGHTS="$(printf '%s' "$row" | cut -f3)"
   case "$CTX" in ''|*[!0-9]*) fail "context is not an integer" ;; esac
   case "$SLOTS" in ''|*[!0-9]*) fail "slots is not an integer" ;; esac
-  # Host slots are local-main only. local-edit runs on a laptop's own oMLX
+  # Host slots are main-brain only. edit-brain runs on a laptop's own oMLX
   # (ADR 0033 amend); sharing the host scheduler failed the 2026-11-07 gate.
 
   who="$(listener || true)"
@@ -697,7 +697,7 @@ cmd_bench() {
   echo "thinking probe"
   TMPD="$(mktemp -d)"
   trap 'rm -rf "$TMPD"' EXIT
-  body='{"model":"local-main","max_tokens":3000,"messages":[{"role":"user","content":"Pens are 3 for $2.10 and notebooks $1.35 each. 7 pens and 4 notebooks, paid with $20. Change? Amount only."}]}'
+  body='{"model":"main-brain","max_tokens":3000,"messages":[{"role":"user","content":"Pens are 3 for $2.10 and notebooks $1.35 each. 7 pens and 4 notebooks, paid with $20. Change? Amount only."}]}'
   code="$(printf 'header = "Authorization: Bearer %s"\n' "$OMLX_HOST_TOKEN" \
     | curl -s -m 300 -o "$TMPD/out" -w '%{http_code}' -K - \
         -H 'Content-Type: application/json' -d "$body" \
@@ -714,7 +714,7 @@ else: print("ok")
   [ "$code" = "200" ] && [ "$why" = "ok" ] || fail "thinking probe failed"
 
   echo "tool smoke"
-  "${ROOT}/scripts/tool-smoke.sh" "http://127.0.0.1:${HEARTH_PORT}/v1" local-main
+  "${ROOT}/scripts/tool-smoke.sh" "http://127.0.0.1:${HEARTH_PORT}/v1" main-brain
 
   # The concurrency bench stamps a fresh session id at the front of every
   # prompt, so it never reuses a prefix. This sends one body twice.
@@ -743,7 +743,7 @@ while total < target and files:
     i += 1
 filler = "".join(parts)[:target]
 body = json.dumps({
-    "model": "local-main",
+    "model": "main-brain",
     "stream": True,
     "stream_options": {"include_usage": True},
     "temperature": 1.0,

@@ -3,7 +3,7 @@
 # oMLX on :1234 (ADR 0026).
 #
 #   scripts/bench.sh                         every resident role in roles.tsv
-#   scripts/bench.sh local-main              one loaded role
+#   scripts/bench.sh main-brain              one loaded role
 #
 # A name that is not a resident role is refused. Put candidate weights under
 # ~/.hearth/models, point a role at them, and load with scripts/omlx.sh up.
@@ -193,7 +193,7 @@ Syntax checks prove a model emitted parseable code, nothing more.
 
 - **03-refactor-judgment** hides a float-for-currency bug in money
   arithmetic. A weak model fixes the obvious `range(len())` and misses the one
-  that matters. This is the task that should decide `local-main`.
+  that matters. This is the task that should decide `main-brain`.
 - **04-long-context** feeds the repo's own docs in. It separates models that
   genuinely use long context from ones that skim the start and confabulate.
 

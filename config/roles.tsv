@@ -6,7 +6,7 @@
 #
 # role	backend	model_key	ctx	slots	weights	draft	load	min_ram
 # backend: omlx for a local role, or an explicit cloud backend (gemini).
-# Cloud rows are client-only (ADR 0037): a laptop's ask-cloud reads the id
+# Cloud rows are client-only (ADR 0038): a laptop's ask-cloud reads the id
 # here and uses that laptop's own key. The host holds no cloud key.
 # draft is "-" . The column remains so the columns keep their positions.
 # load: resident → scripts/omlx.sh up keeps it loaded. beside → loaded only by
@@ -18,8 +18,8 @@
 # min_ram: tiers (ADR 0032). A host uses, per role, the row with the largest
 # min_ram (GB of RAM) at or below its own. "-" on cloud rows. A tier gets a
 # row only after it is benched on that hardware; candidates live in MODELS.md.
-# No local-main row fits under 48 GB, so a smaller host fails loudly.
-local-main	omlx	qwen3.6-35b-a3b-mlx	131072	3	mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit	-	resident	48
-local-deep	omlx	qwen3.8-27b-mlx	65536	1	lmstudio-community/Qwen3.8-27B-MLX-4bit	-	swap	48
-local-edit	omlx	sweep-next-edit-1.5b-mlx-8bit	8192	2	hearth/sweep-next-edit-1.5B-MLX-8bit	-	edit	48
+# No main-brain row fits under 48 GB, so a smaller host fails loudly.
+main-brain	omlx	qwen3.6-35b-a3b-mlx	131072	3	mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit	-	resident	48
+deep-brain	omlx	qwen3.8-27b-mlx	65536	1	lmstudio-community/Qwen3.8-27B-MLX-4bit	-	swap	48
+edit-brain	omlx	sweep-next-edit-1.5b-mlx-8bit	8192	2	hearth/sweep-next-edit-1.5B-MLX-8bit	-	edit	48
 cloud-cheap	gemini	gemini-3.6-flash	-	-	-	-	-	-

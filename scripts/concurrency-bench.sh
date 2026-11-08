@@ -3,7 +3,7 @@
 # See bench/concurrency.py and docs/ARCHITECTURE.md.
 #
 #   scripts/concurrency-bench.sh --base-url http://127.0.0.1:1234/v1 \
-#       --token-env OMLX_HOST_TOKEN --model local-main --concurrency 3
+#       --token-env OMLX_HOST_TOKEN --model main-brain --concurrency 3
 #
 # Options (defaults): --concurrency 3, --rounds 10, --prompt-tokens 30000,
 #   --timeout 180, --proc-match '\.omlx/', --out <auto>,
@@ -42,7 +42,7 @@ done
 [ -n "$OUT" ] || OUT="${ROOT}/bench/results/$(date +%Y-%m-%d-%H%M)-concurrency-c${CONC}"
 
 # The bench process needs the API key. Nothing else in the env file
-# goes with it — the host has no cloud key (ADR 0037).
+# goes with it — the host has no cloud key (ADR 0038).
 export OMLX_HOST_TOKEN
 exec "$PY" -I "${ROOT}/bench/concurrency.py" --root "$ROOT" --out "$OUT" \
   ${ARGS[@]+"${ARGS[@]}"}

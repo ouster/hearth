@@ -190,7 +190,7 @@ function ai-ask {
     if (-not $args) { Write-Host 'usage: ai-ask "question"'; return }
     if (-not (Confirm-HearthTokenTunnel)) { return }
     $k = Get-HearthSecret ".hearth-key"; if (-not $k) { return }
-    $body = @{ model = "local-main"; messages = @(@{ role = "user"; content = ($args -join " ") }) } | ConvertTo-Json -Depth 5
+    $body = @{ model = "main-brain"; messages = @(@{ role = "user"; content = ($args -join " ") }) } | ConvertTo-Json -Depth 5
     $r = Invoke-RestMethod -TimeoutSec 300 -Method Post -Uri "$($script:HearthUrl)/chat/completions" `
         -Headers @{ Authorization = "Bearer $k" } -ContentType "application/json" -Body $body
     "$($r.choices[0].message.content)".Trim()
@@ -212,34 +212,36 @@ function Invoke-HearthAider {
     $prevBase = $env:OPENAI_API_BASE
     $prevKey = $env:OPENAI_API_KEY
     $env:OPENAI_API_BASE = $script:HearthUrl; $env:OPENAI_API_KEY = $k
-    try { aider --model openai/local-main --weak-model openai/local-main @args }
+    try { aider --model openai/main-brain --weak-model openai/main-brain @args }
     finally {
         Restore-HearthEnv OPENAI_API_KEY $prevKey
         Restore-HearthEnv OPENAI_API_BASE $prevBase
     }
 }
 function ask       { Invoke-HearthAider @args }
-function ask-arch  { Invoke-HearthAider --architect --editor-model openai/local-main @args }
+function main-brain { Invoke-HearthAider @args }   # ADR 0039, alongside ask
+function ask-arch  { Invoke-HearthAider --architect --editor-model openai/main-brain @args }
 
-# local-deep (ADR 0020): must already be loaded on the host. An unloaded role
-# would be answered by local-main without saying so, so refuse unless listed.
+# deep-brain (ADR 0020): must already be loaded on the host. An unloaded role
+# would be answered by main-brain without saying so, so refuse unless listed.
 function ask-deep {
     if (-not (Connect-HearthTunnel)) { return }
     $k = Get-HearthSecret ".hearth-key"; if (-not $k) { return }
     $ids = (Invoke-RestMethod -TimeoutSec 8 -Uri "$($script:HearthUrl)/models" -Headers @{ Authorization = "Bearer $k" }).data.id
-    if ($ids -notcontains "local-deep") {
-        Write-Host "local-deep is not loaded on the host. On the host: scripts/demand-load.sh local-deep up (a 48 GB host swaps out local-main; ... down brings it back)" -ForegroundColor Yellow
+    if ($ids -notcontains "deep-brain") {
+        Write-Host "deep-brain is not loaded on the host. On the host: scripts/demand-load.sh deep-brain up (a 48 GB host swaps out main-brain; ... down brings it back)" -ForegroundColor Yellow
         return
     }
     $prevBase = $env:OPENAI_API_BASE
     $prevKey = $env:OPENAI_API_KEY
     $env:OPENAI_API_BASE = $script:HearthUrl; $env:OPENAI_API_KEY = $k
-    try { aider --model openai/local-deep --weak-model openai/local-deep @args }
+    try { aider --model openai/deep-brain --weak-model openai/deep-brain @args }
     finally {
         Restore-HearthEnv OPENAI_API_KEY $prevKey
         Restore-HearthEnv OPENAI_API_BASE $prevBase
     }
 }
+function deep-brain { ask-deep @args }   # ADR 0039, alongside ask-deep
 
 # The only command that leaves for the cloud, with THIS machine's own key.
 function ask-cloud {

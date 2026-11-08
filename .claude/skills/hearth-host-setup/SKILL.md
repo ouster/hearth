@@ -5,7 +5,7 @@ description: Set up, repair or re-check the Hearth HOST, the Mac that runs oMLX 
 
 # Hearth host setup
 
-You are helping the operator set up the machine that serves `local-main`.
+You are helping the operator set up the machine that serves `main-brain`.
 The docs are the source of truth. This skill gives the order, the stops,
 and the checks. Read the doc section named at each step before acting.
 
@@ -15,7 +15,7 @@ and the checks. Read the doc section named at each step before acting.
 |---|---|
 | `~/.hearth-key` or `~/.ssh/hearth_tunnel` exists | **laptop**: stop and use `hearth-laptop-setup` |
 | `~/.config/hearth/env` exists | host, already partly set up |
-| neither, and `~/.omlx` exists | unclear: a laptop running `local-edit` also has `~/.omlx`. **Ask** |
+| neither, and `~/.omlx` exists | unclear: a laptop running `edit-brain` also has `~/.omlx`. **Ask** |
 | neither | fresh machine: **ask** whether it is the host |
 
 Check these with `ls -l` only. Never open the files.

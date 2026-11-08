@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build and serve the edit-prediction role (local-edit, ADR 0033). Laptop
+# Build and serve the edit-prediction role (edit-brain, ADR 0033). Laptop
 # primary: host oMLX does not load this role. Writes only under
 # ~/.hearth/models and, for `laptop-up`, the laptop's own oMLX. Never
 # touches the host's oMLX, launchd, keys or authorized_keys.
@@ -7,16 +7,16 @@
 #   client/edit-model.sh convert <gguf-repo> <gguf-rev> <gguf-file> <tok-repo> <tok-rev>
 #       Download a Qwen2-architecture GGUF at a pinned revision, check its
 #       sha256 against the Hub, convert it to MLX 8-bit, and write it to the
-#       local-edit `weights` path in config/roles.tsv. The tokenizer is
+#       edit-brain `weights` path in config/roles.tsv. The tokenizer is
 #       rebuilt from the GGUF's own vocabulary and merges, with
 #       <tok-repo>@<tok-rev> as the template for pre-tokenizer and decoder;
 #       it must round-trip a code sample. The exact arguments are in docs/MODELS.md
 #       (rule 1: no model names here).
 #   client/edit-model.sh laptop-up
 #       Laptop only: link the weights into this machine's own oMLX
-#       (~/.omlx/models/local-edit), pin and load it.
+#       (~/.omlx/models/edit-brain), pin and load it.
 #   client/edit-model.sh bench [--duration S]
-#       Gate for laptop local-edit: bench/edit_bench.py against this
+#       Gate for laptop edit-brain: bench/edit_bench.py against this
 #       machine's own oMLX, results under bench/results/<stamp>-edit-laptop.
 #   client/edit-model.sh check
 #       One timed completion in the edit format against this machine's own
@@ -51,14 +51,14 @@ mlx_py() {
 }
 
 edit_row() {
-  hearth_edit_roles | awk -F'\t' '$1 == "local-edit" {print; exit}'
+  hearth_edit_roles | awk -F'\t' '$1 == "edit-brain" {print; exit}'
 }
 
 case "$CMD" in
   convert)
     [ $# -eq 5 ] || usage
     row="$(edit_row)"
-    [ -n "$row" ] || { echo "could not run: no local-edit row resolves for this machine's RAM tier (config/roles.tsv)" >&2; exit 2; }
+    [ -n "$row" ] || { echo "could not run: no edit-brain row resolves for this machine's RAM tier (config/roles.tsv)" >&2; exit 2; }
     weights="$(printf '%s' "$row" | cut -f6)"
     out="${MODELS}/${weights}"
     [ -e "$out" ] && { echo "refused: ${out} exists. Move it aside to rebuild." >&2; exit 1; }
@@ -291,11 +291,11 @@ PY
 
   laptop-up)
     [ -d "$HOME/.hearth/models" ] && [ -f "$OMLX_HOME/settings.json" ] || { echo "could not run: needs ~/.hearth/models and ${OMLX_HOME}/settings.json" >&2; exit 2; }
-    row="$(edit_row)"; [ -n "$row" ] || { echo "could not run: no local-edit row for this RAM tier" >&2; exit 2; }
+    row="$(edit_row)"; [ -n "$row" ] || { echo "could not run: no edit-brain row for this RAM tier" >&2; exit 2; }
     weights="$(printf '%s' "$row" | cut -f6)"; ctx="$(printf '%s' "$row" | cut -f4)"
     src="${MODELS}/${weights}"
     [ -d "$src" ] || { echo "could not run: ${src} missing — run convert first" >&2; exit 2; }
-    dest="${OMLX_HOME}/models/local-edit"
+    dest="${OMLX_HOME}/models/edit-brain"
     if [ -e "$dest" ] && [ ! -L "$dest" ]; then echo "refused: ${dest} exists and is not a symlink" >&2; exit 1; fi
     ln -sfn "$src" "$dest"
     # Settings, key and port come from the laptop oMLX's own settings file;
@@ -326,15 +326,15 @@ if key:
 # oMLX discovers new model folders at start; a running server may need a restart.
 c, lst = call("GET", "/admin/api/models")
 ids = [x.get("id") for x in (lst.get("models") or [])]
-if "local-edit" not in ids:
-    raise SystemExit("local-edit linked but not discovered: restart the laptop oMLX (brew services restart omlx), then re-run")
-c, b = call("PUT", "/admin/api/models/local-edit/settings", {
+if "edit-brain" not in ids:
+    raise SystemExit("edit-brain linked but not discovered: restart the laptop oMLX (brew services restart omlx), then re-run")
+c, b = call("PUT", "/admin/api/models/edit-brain/settings", {
     "enable_thinking": False, "temperature": 0.0, "max_context_window": ctx,
     "max_tokens": 512, "is_pinned": True, "is_default": False})
 if c != 200: raise SystemExit("settings failed (%s): %s" % (c, b))
-c, b = call("POST", "/admin/api/models/local-edit/load", None, 300)
+c, b = call("POST", "/admin/api/models/edit-brain/load", None, 300)
 if c not in (200, 409): raise SystemExit("load failed (%s): %s" % (c, b))
-print("local-edit pinned and loaded on %s" % base)
+print("edit-brain pinned and loaded on %s" % base)
 PY
     exit $? ;;
 
@@ -356,7 +356,7 @@ s = json.load(open(sys.argv[1]))
 url = "http://127.0.0.1:%s/v1" % ((s.get("server") or {}).get("port") or 8000)
 key = (s.get("auth") or {}).get("api_key") or ""
 prompt = "<|file_sep|>original/a.py\ndef add(a, b):\n    return a + b\n<|file_sep|>current/a.py\ndef add(a, b):\n    return a + b\n\ndef sub(a, b):\n<|file_sep|>updated/a.py\n"
-body = {"model": "local-edit", "prompt": prompt, "max_tokens": 64, "temperature": 0, "stop": ["<|file_sep|>"]}
+body = {"model": "edit-brain", "prompt": prompt, "max_tokens": 64, "temperature": 0, "stop": ["<|file_sep|>"]}
 req = urllib.request.Request(url.rstrip("/") + "/completions", data=json.dumps(body).encode())
 req.add_header("Content-Type", "application/json")
 if key: req.add_header("Authorization", "Bearer " + key)

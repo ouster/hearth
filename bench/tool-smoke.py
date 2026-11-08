@@ -2,7 +2,7 @@
 """Zed-like multi-turn tool smoke — read then write with angle brackets in content.
 
 Usage:
-  OPENAI_API_KEY=<token> bench/tool-smoke.py --model local-main    # oMLX :1234
+  OPENAI_API_KEY=<token> bench/tool-smoke.py --model main-brain    # oMLX :1234
   bench/tool-smoke.py --url <openai-compatible base> --model <id>
 
 Exit 0 on successful write tool call in turn 2; 1 on failure.

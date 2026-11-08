@@ -1,6 +1,6 @@
 # Architecture
 
-Reference host: Apple Silicon Mac, 64 GB unified memory, macOS. A 48 GB Mac can host with a 40 GB ceiling and `local-deep` swapping (ADR 0031). oMLX serves
+Reference host: Apple Silicon Mac, 64 GB unified memory, macOS. A 48 GB Mac can host with a 40 GB ceiling and `deep-brain` swapping (ADR 0031). oMLX serves
 local roles on `127.0.0.1:1234` from `~/.hearth/models` (ADR 0026).
 `scripts/omlx.sh down` stops oMLX and leaves the port empty (ADR 0028).
 Do not also run headless `llmster`. The gateway era is in `docs/HISTORY.md`.
@@ -15,10 +15,10 @@ flowchart TB
         scripts["scripts / benches"]
         webui["Open WebUI :3000<br/>(Podman)"]
         sbx["sandboxed.sh agents"]
-        srv["oMLX 127.0.0.1:1234<br/>local-main: 128K x 3<br/>local-deep: swaps with local-main<br/>token required"]
+        srv["oMLX 127.0.0.1:1234<br/>main-brain: 128K x 3<br/>deep-brain: swaps with main-brain<br/>token required"]
     end
 
-    laptop["Laptop<br/>SSH tunnel, own token<br/>optional local-edit on own oMLX"]
+    laptop["Laptop<br/>SSH tunnel, own token<br/>optional edit-brain on own oMLX"]
     cloud["Gemini<br/>laptop ask-cloud only, laptop's own key"]
 
     aider --> srv
@@ -42,14 +42,14 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 
 | Role | Backend | What |
 |---|---|---|
-| `local-main` | oMLX | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0030) |
-| `local-deep` | oMLX | slower, more careful model for hard one-off questions. Evicts `local-main` for its session on every tier (ADR 0031, 0033). `ask-deep` unloads it on the way out and `local-main` is loaded again. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up`) |
-| `local-edit` | laptop oMLX | editor edit prediction: `/v1/completions` only, 8K × 2, on the laptop's own oMLX. Never a chat or agent model; host does not load it (ADR 0033) |
-| `cloud-cheap` | Gemini | client-only: a laptop's `ask-cloud` with that laptop's own key. Never on the host, never in oMLX (ADR 0037) |
+| `main-brain` | oMLX | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0030) |
+| `deep-brain` | oMLX | slower, more careful model for hard one-off questions. Evicts `main-brain` for its session on every tier (ADR 0031, 0033). `ask-deep` unloads it on the way out and `main-brain` is loaded again. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh deep-brain up`) |
+| `edit-brain` | laptop oMLX | editor edit prediction: `/v1/completions` only, 8K × 2, on the laptop's own oMLX. Never a chat or agent model; host does not load it (ADR 0033) |
+| `cloud-cheap` | Gemini | client-only: a laptop's `ask-cloud` with that laptop's own key. Never on the host, never in oMLX (ADR 0038) |
 
-`local-code` and `local-chat` were collapsed into `local-main` (D1): two heavy
+`local-code` and `local-chat` were collapsed into `main-brain` (D1): two heavy
 models cannot both stay resident with 3 × 128K slots, and evicting the agent
-model was failure F2. The old alias names still work and mean `local-main`.
+model was failure F2. The old alias names still work and mean `main-brain`.
 
 `scripts/omlx.sh up` loads the resident role from `~/.hearth/models`. A
 demand role stays unloaded until `scripts/demand-load.sh` or `ask-deep`.
@@ -61,7 +61,7 @@ There is no router and no key scope. The boundary is where models live:
 - **oMLX holds only local models.** Anything sent to `:1234` stays on
   the host by construction. Rule: no script adds a cloud backend to
   `config/roles.tsv` except as an explicit cloud row (`gemini`).
-- **The host holds no cloud key** (ADR 0037). Only a laptop's `ask-cloud`
+- **The host holds no cloud key** (ADR 0038). Only a laptop's `ask-cloud`
   passes one, its own, per invocation. Host Zed has no cloud provider (D3).
 - **Sandboxed agents can reach `127.0.0.1:1234` only**, so they cannot reach
   cloud at all.
@@ -86,10 +86,10 @@ console is the cap.
 
 ## Process supervision
 
-oMLX serves `local-main` on `127.0.0.1:1234` from `~/.hearth/models` (ADR 0026).
+oMLX serves `main-brain` on `127.0.0.1:1234` from `~/.hearth/models` (ADR 0026).
 Weights are linked as org/leaf under `~/.omlx/models`; the role is an oMLX
 `model_alias` so clients and the community board disagree usefully (ADR 0034).
-`ask-deep` loads `local-deep` from the same tree in its place (ADR 0031, 0033).
+`ask-deep` loads `deep-brain` from the same tree in its place (ADR 0031, 0033).
 Login runs `scripts/boot.sh`, which runs `scripts/omlx.sh up`, then starts
 Podman, SearXNG and Open WebUI. `scripts/omlx.sh down` stops oMLX and
 leaves the port empty.
@@ -98,7 +98,7 @@ leaves the port empty.
 
 | File | Read by | Contains |
 |---|---|---|
-| `~/.config/hearth/env` (mode 600) | aliases (`_hearth_var`), scripts | `OMLX_HOST_TOKEN` only. The Google key left the host on 2026-11-08 (ADR 0037); preflight fails if it is back |
+| `~/.config/hearth/env` (mode 600) | aliases (`_hearth_var`), scripts | `OMLX_HOST_TOKEN` only. The Google key left the host on 2026-11-08 (ADR 0038); preflight fails if it is back |
 
 The aliases read single values from these files and inject them per command;
 they never `source` them into the interactive shell. Do not export a provider
@@ -123,7 +123,7 @@ anything an agent spawns, would then hold it.
 Exit 2 always means "could not run", never "found a problem".
 
 An unknown model name can be answered by the loaded role. Nothing new loads,
-but a typo'd model id silently gets `local-main`. `healthcheck.sh` reports
+but a typo'd model id silently gets `main-brain`. `healthcheck.sh` reports
 it as a warning.
 
 ## Measured (2026-10-31)
@@ -141,7 +141,7 @@ memory, no evictions and no gateway hop, not concurrency.
 `bench/results/2026-10-31-phase0`, `…-phase1`. The live server is the LM
 Studio app (D6), loaded at 128K × 3 (ADR 0017). Those rows are the 64K
 measurement, not a claim that llmster is still running. The current
-`local-main` (ADR 0030) at 128K × 3: c3 TTFT p50 60.7 s / p95 61.5 s, c3 total
+`main-brain` (ADR 0030) at 128K × 3: c3 TTFT p50 60.7 s / p95 61.5 s, c3 total
 p95 62.3 s, peak 34.0 GB (`bench/results/2026-11-06-2012-concurrency-c3-qwen3.6`).
 The previous resident the same day was c3 TTFT p50 79.2 s / p95 88.2 s, total
 p95 88.9 s, peak 31.0 GB (`bench/results/2026-11-06-1956-concurrency-c3-local-main`).

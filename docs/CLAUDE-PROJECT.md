@@ -42,10 +42,10 @@ is the only path that calls a cloud API, and it calls Gemini directly.
 
 Models are addressed by ROLE, never by vendor model name:
 
-  local-main               the resident local model
-  local-deep              slow, careful local model; loaded per ask-deep session
-  local-code              alias of local-main
-  local-chat              alias of local-main
+  main-brain               the resident local model
+  deep-brain              slow, careful local model; loaded per ask-deep session
+  local-code              alias of main-brain
+  local-chat              alias of main-brain
   cloud-cheap             Gemini, a laptop's ask-cloud only (host has no key) — bulk non-sensitive work
 
 cloud-code, cloud-frontier, cloud-frontier-direct, and cloud-frontier-fast are dormant: no keys.
@@ -121,7 +121,7 @@ config/roles.tsv and docs/MODELS.md. Nowhere else. Generated copies
 # Hardware envelope
 
 64 GB unified, but macOS caps GPU-accessible memory at ~48 GB (75%).
-local-main is one model at 128K × 3 slots; local-deep is swapped in for it on demand (ADR 0020).
+main-brain is one model at 128K × 3 slots; deep-brain is swapped in for it on demand (ADR 0020).
 A second heavy model does not fit beside it. Say when a suggestion won't fit.
 ```
 

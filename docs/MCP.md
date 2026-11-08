@@ -127,7 +127,7 @@ belonged to another home directory and no longer exists here.
    that exactly those seven tools appear. Write and Ask must show none.
 
 Switching to Research is the deliberate act of saying that the query may go
-to AustLII. Keep the profile on `hearth/local-main`; host Zed has no cloud
+to AustLII. Keep the profile on `hearth/main-brain`; host Zed has no cloud
 provider. The query can carry personal information the agent has just read.
 Send it only when that is intended.
 
@@ -164,9 +164,9 @@ and a prompt-injection feed.
 ### Who may reach it
 
 Host Zed, two profiles (ADR 0022, 0029). **Web** has an empty built-in tool
-map and `default_model` `hearth/local-main`, so a search result cannot read
+map and `default_model` `hearth/main-brain`, so a search result cannot read
 a file. **Write + search** (`write-web`) has Write's tools and no pinned
-model, so a coding thread on `local-main` or `local-deep` can search. The
+model, so a coding thread on `main-brain` or `deep-brain` can search. The
 query text still leaves, and that profile can put file contents into the
 query. `confirm` on each tool call is the other gate. Write and Ask have
 neither. An agent on Write + search can exfiltrate personal information by
@@ -185,9 +185,9 @@ host once the tunnel is up — `docs/LAPTOP.md`.
 Write with it `false`. SearXNG is on in `web` and `write-web` only.
 
 **No cloud model alongside a networked tool.** Tool output re-enters the
-prompt. Host Zed has no cloud provider (D3). Web stays on `hearth/local-main`.
-Write + search sets no model, so the thread stays on `local-main` or
-`local-deep`. A laptop may have a Gemini provider for other work; neither
+prompt. Host Zed has no cloud provider (D3). Web stays on `hearth/main-brain`.
+Write + search sets no model, so the thread stays on `main-brain` or
+`deep-brain`. A laptop may have a Gemini provider for other work; neither
 search profile is switched to it.
 
 **Ask before each call.** `agent.tool_permissions.default` is `confirm`.

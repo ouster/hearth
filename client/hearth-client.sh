@@ -23,8 +23,8 @@
 #   ~/.hearth-gemini-key  this machine's own Google API key, for ask-cloud only
 #
 # Commands: ai-tunnel, ai-tunnel-install, ai-tunnel-stop, ai-ping, ai-models,
-#           ai-ask, ai-webui, ask (local-main), ask-arch, ask-deep (local-deep, only while the host
-#           has it loaded), ask-cloud
+#           ai-ask, ai-webui, ask and main-brain (main-brain), ask-arch, ask-deep and deep-brain (deep-brain, only while
+#           the host has it loaded), ask-cloud
 #
 # macOS: ai-tunnel-install once. launchd (com.hearth.tunnel) restarts the
 # forwards when the session drops, and again at login. ai-tunnel then
@@ -351,7 +351,7 @@ ai-ask() {
   # umask inside the substitution so the file is created mode 600. A later
   # redirect truncates it and keeps that mode.
   _body=$(umask 077 && mktemp "${TMPDIR:-/tmp}/hearth-ask.XXXXXX") || { unset _k; return 1; }
-  python3 -c 'import json, sys; print(json.dumps({"model": "local-main", "messages": [{"role": "user", "content": " ".join(sys.argv[1:])}]}))' "$@" \
+  python3 -c 'import json, sys; print(json.dumps({"model": "main-brain", "messages": [{"role": "user", "content": " ".join(sys.argv[1:])}]}))' "$@" \
     > "$_body"
   printf 'header = "Authorization: Bearer %s"\n' "$_k" \
     | curl -s -m 300 -K - -H 'Content-Type: application/json' \
@@ -382,35 +382,38 @@ ai-webui() {
 
 # ---------------------------------------------------------------- aider
 # The token is injected per invocation, never exported. Every local alias is
-# local-main (D1); clients call roles, never models.
+# main-brain (D1); clients call roles, never models.
 _hearth_aider() {
   _hearth_connect || return 1
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
   OPENAI_API_BASE="$HEARTH_URL" OPENAI_API_KEY="$_k" \
-    aider --model openai/local-main --weak-model openai/local-main "$@"
+    aider --model openai/main-brain --weak-model openai/main-brain "$@"
   _rc=$?; unset _k; return $_rc
 }
 alias ask='_hearth_aider'
-ask-arch() { _hearth_aider --architect --editor-model openai/local-main "$@"; }
+# Role-named commands (ADR 0039), alongside ask / ask-deep.
+main-brain() { _hearth_aider "$@"; }
+deep-brain() { ask-deep "$@"; }
+ask-arch() { _hearth_aider --architect --editor-model openai/main-brain "$@"; }
 
-# local-deep: slower, more careful model (ADR 0020). This laptop cannot load
+# deep-brain: slower, more careful model (ADR 0020). This laptop cannot load
 # it; it must already be loaded on the host. An unloaded role would be
-# answered by local-main without saying so, so refuse unless it is listed.
+# answered by main-brain without saying so, so refuse unless it is listed.
 ask-deep() {
   _hearth_connect || return 1
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
   if ! printf 'header = "Authorization: Bearer %s"\n' "$_k" \
        | curl -s -m 8 -K - "${HEARTH_URL}/models" \
        | python3 -c 'import sys, json
-sys.exit(0 if any(m.get("id") == "local-deep" for m in json.load(sys.stdin).get("data", [])) else 1)' 2>/dev/null; then
-    echo "local-deep is not loaded on the host. On the host: scripts/demand-load.sh local-deep up" >&2
-    echo "(on a 64 GB host local-main stays loaded; on 48 GB it is swapped out until scripts/demand-load.sh local-deep down)" >&2
+sys.exit(0 if any(m.get("id") == "deep-brain" for m in json.load(sys.stdin).get("data", [])) else 1)' 2>/dev/null; then
+    echo "deep-brain is not loaded on the host. On the host: scripts/demand-load.sh deep-brain up" >&2
+    echo "(on a 64 GB host main-brain stays loaded; on 48 GB it is swapped out until scripts/demand-load.sh deep-brain down)" >&2
     unset _k; return 1
   fi
-  # weak-model is local-deep too: a commit step should use the same model
+  # weak-model is deep-brain too: a commit step should use the same model
   # the session just asked.
   OPENAI_API_BASE="$HEARTH_URL" OPENAI_API_KEY="$_k" \
-    aider --model openai/local-deep --weak-model openai/local-deep "$@"
+    aider --model openai/deep-brain --weak-model openai/deep-brain "$@"
   _rc=$?; unset _k; return $_rc
 }
 

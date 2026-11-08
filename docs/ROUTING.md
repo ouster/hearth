@@ -4,7 +4,7 @@ The decision table. When in doubt, local.
 
 ## What must stay local
 
-Route to `local-*` roles (oMLX, `:1234`), always:
+Route to `*-brain` roles (oMLX, `:1234`), always:
 
 - Any repo or path you have flagged as holding sensitive or private data
 - Names, addresses, contact details, financial figures, ID documents
@@ -24,10 +24,10 @@ Route to `local-*` roles (oMLX, `:1234`), always:
 
 | Role | Use for | Reached by | State |
 |---|---|---|---|
-| `local-main` | everything local: code, agent, chat, long context | oMLX `:1234` | live |
-| `cloud-cheap` | bulk non-sensitive work, big context | a laptop's `ask-cloud` → Gemini directly, with that laptop's own key | live, client-only (ADR 0037) |
+| `main-brain` | everything local: code, agent, chat, long context | oMLX `:1234` | live |
+| `cloud-cheap` | bulk non-sensitive work, big context | a laptop's `ask-cloud` → Gemini directly, with that laptop's own key | live, client-only (ADR 0038) |
 | `local-embed` | — | — | removed 2026-11-01, nothing called it (ADR 0018) |
-| `local-code`, `local-chat` | — | alias names only; mean `local-main` (D1) | collapsed |
+| `local-code`, `local-chat` | — | alias names only; mean `main-brain` (D1) | collapsed |
 | `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`, `cloud-frontier-fast` | — | — | dormant, no keys |
 
 ## Enforcement
@@ -38,8 +38,8 @@ in a different way:
 | Path | Can it leave the host? | Why |
 |---|---|---|
 | Anything to `127.0.0.1:1234` | **no** | oMLX holds only local models |
-| Zed on this host | **no** model egress | no cloud language-model provider (D3). Edit prediction stays `"none"` or laptop `local-edit`; paid Zed Zeta (`"provider": "zed"`) is cloud and trips `zed-sync --check` (ADR 0033). Tool egress: SearXNG in the `web` and `write-web` profiles. Write and Ask have `fetch` and `search_web` off |
-| `ask`, `ask-*` on the host | **no** | point at `:1234` with the host token. There is no host `ask-cloud`: the host holds no cloud key (ADR 0037) |
+| Zed on this host | **no** model egress | no cloud language-model provider (D3). Edit prediction stays `"none"` or laptop `edit-brain`; paid Zed Zeta (`"provider": "zed"`) is cloud and trips `zed-sync --check` (ADR 0033). Tool egress: SearXNG in the `web` and `write-web` profiles. Write and Ask have `fetch` and `search_web` off |
+| `ask`, `ask-*` on the host | **no** | point at `:1234` with the host token. There is no host `ask-cloud`: the host holds no cloud key (ADR 0038) |
 | `ask-cloud` on a laptop | **yes** | the only command with a provider key, the laptop's own; it is explicit by name |
 | Sandboxed agents | **no** | egress allowed to `127.0.0.1:1234` only |
 | Open WebUI | model: **no**. Search query: **yes if enabled** | see below |
@@ -48,7 +48,7 @@ in a different way:
 What is lost against the gateway: on a laptop, nothing refuses a cloud
 request you make on purpose. Choosing `ask-cloud` on sensitive work is not
 stopped — it is only made explicit. On the host it cannot happen at all:
-there is no cloud key to use (ADR 0037).
+there is no cloud key to use (ADR 0038).
 
 **Never add a cloud model to oMLX**, and never give a remote backend an
 `omlx` row in `config/roles.tsv`. That single rule is what makes `:1234`
@@ -77,8 +77,8 @@ or documents should not have search on.
 
 Zed follows the same rule on two profiles (ADR 0022, 0029). **Web** sends
 `searxng_web_search` to public engines, has no file tools, and stays on
-`local-main`. **Write + search** has Write's tools and no pinned model, so
-a thread on `local-main` or `local-deep` can search and can read files into
+`main-brain`. **Write + search** has Write's tools and no pinned model, so
+a thread on `main-brain` or `deep-brain` can search and can read files into
 the query. Each tool call asks first (`confirm`). Write and Ask do not
 include SearXNG, or Zed's built-in `fetch` and `search_web`. `docs/MCP.md`
 uses the former legal-research profile as a setup example; it is not installed.
@@ -86,10 +86,10 @@ uses the former legal-research profile as a setup example; it is not installed.
 ## No fallbacks
 
 There is no router, so nothing can quietly reroute a request to a cloud
-model. If `local-main` is not loaded, a request for it can be answered by
+model. If `main-brain` is not loaded, a request for it can be answered by
 whatever model is loaded, under the name you asked for. That is a wrong
 local answer, not a leak. `ask-deep` and the
-laptop clients refuse to call `local-deep` unless it is actually loaded, for
+laptop clients refuse to call `deep-brain` unless it is actually loaded, for
 this reason. The earlier rule ("local roles never fall back to cloud")
 existed because the inherited gateway had `local → gemini` fallbacks; see
 `docs/HISTORY.md`.
