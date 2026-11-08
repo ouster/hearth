@@ -19,7 +19,7 @@ flowchart TB
     end
 
     laptop["Laptop<br/>SSH tunnel, own token<br/>optional local-edit on own oMLX"]
-    cloud["Gemini<br/>ask-cloud only, tool's own key"]
+    cloud["Gemini<br/>laptop ask-cloud only, laptop's own key"]
 
     aider --> srv
     zed --> srv
@@ -27,7 +27,7 @@ flowchart TB
     webui -->|"host.containers.internal"| srv
     sbx -->|"only allowed egress"| srv
     laptop -->|"ssh -L, tunnel-only key"| srv
-    aider -.-> cloud
+    laptop -.-> cloud
 
     classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
     classDef leaveCls fill:#FAEEDA,stroke:#854F0B,color:#633806
@@ -45,7 +45,7 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 | `local-main` | oMLX | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0030) |
 | `local-deep` | oMLX | slower, more careful model for hard one-off questions. Evicts `local-main` for its session on every tier (ADR 0031, 0033). `ask-deep` unloads it on the way out and `local-main` is loaded again. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh local-deep up`) |
 | `local-edit` | laptop oMLX | editor edit prediction: `/v1/completions` only, 8K × 2, on the laptop's own oMLX. Never a chat or agent model; host does not load it (ADR 0033) |
-| `cloud-cheap` | Gemini | reached directly by `ask-cloud`; never loaded into oMLX |
+| `cloud-cheap` | Gemini | client-only: a laptop's `ask-cloud` with that laptop's own key. Never on the host, never in oMLX (ADR 0037) |
 
 `local-code` and `local-chat` were collapsed into `local-main` (D1): two heavy
 models cannot both stay resident with 3 × 128K slots, and evicting the agent
@@ -61,8 +61,8 @@ There is no router and no key scope. The boundary is where models live:
 - **oMLX holds only local models.** Anything sent to `:1234` stays on
   the host by construction. Rule: no script adds a cloud backend to
   `config/roles.tsv` except as an explicit cloud row (`gemini`).
-- **Cloud needs a provider key in the calling tool.** Only `ask-cloud` passes
-  one, per invocation. Host Zed has no cloud provider (D3).
+- **The host holds no cloud key** (ADR 0037). Only a laptop's `ask-cloud`
+  passes one, its own, per invocation. Host Zed has no cloud provider (D3).
 - **Sandboxed agents can reach `127.0.0.1:1234` only**, so they cannot reach
   cloud at all.
 
@@ -98,7 +98,7 @@ leaves the port empty.
 
 | File | Read by | Contains |
 |---|---|---|
-| `~/.config/hearth/env` (mode 600) | aliases (`_hearth_var`), scripts | `OMLX_HOST_TOKEN`, `GOOGLE_API_KEY` (moved from `~/.zshenv.local` 2026-10-31, where it was exported into every shell) |
+| `~/.config/hearth/env` (mode 600) | aliases (`_hearth_var`), scripts | `OMLX_HOST_TOKEN` only. The Google key left the host on 2026-11-08 (ADR 0037); preflight fails if it is back |
 
 The aliases read single values from these files and inject them per command;
 they never `source` them into the interactive shell. Do not export a provider
@@ -162,7 +162,7 @@ deliberately unrestricted; see `docs/THREAT-MODEL.md` and ADR 0007.
 
 | Threat | Model placement | Sandbox |
 |---|---|---|
-| A prompt sends client data to a cloud model | **caught** unless you run `ask-cloud` | not caught |
+| A prompt sends client data to a cloud model | **caught** on the host (no cloud key). On a laptop, unless you run `ask-cloud` | not caught |
 | An injected agent exfiltrates a key via curl | not caught | **caught** |
 
 ## Several people

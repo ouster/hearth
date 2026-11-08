@@ -30,8 +30,9 @@ map-tokens: 4096
 
 `weak-model` is used for commit messages and summaries. With one resident
 model there is nothing cheaper to point it at, and nothing to evict.
-`ask-cloud` overrides both with the Gemini id from `config/roles.tsv`, so a
-cloud session never sends its commit messages anywhere else.
+A laptop's `ask-cloud` overrides both with the Gemini id from
+`config/roles.tsv`, so a cloud session never sends its commit messages
+anywhere else. The host has no `ask-cloud` (ADR 0037).
 
 ### Architect mode
 
@@ -53,8 +54,8 @@ answered by whatever is loaded, without saying so. To use it from Zed, run
 
 ```
 /model openai/local-main       the only local role
-                              (cloud: quit and start `ask-cloud` instead —
-                               it uses its own key and endpoint)
+                              (cloud: quit, and run `ask-cloud` on a laptop —
+                               the host holds no cloud key, ADR 0037)
 /ask                          question without editing anything
 /architect                    toggle architect mode
 ```
@@ -81,7 +82,7 @@ aider --no-auto-commits
 Directly in `~/.config/zed/settings.json` (ADR 0016). Every model slot —
 agent, inline assistant, commit message, thread summary, compaction,
 subagent — is `hearth/local-main`, so nothing ever asks for a second model.
-**No cloud provider on this host (D3)**: cloud is `ask-cloud` in a terminal.
+**No cloud provider on this host (D3)**: cloud is a laptop's `ask-cloud` (ADR 0037).
 
 ```json
 {

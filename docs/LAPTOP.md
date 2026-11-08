@@ -34,7 +34,7 @@ flowchart LR
 | `local-edit` on the laptop's own oMLX (optional) | `~/.hearth/models`, linked into `~/.omlx/models` by `client/edit-model.sh laptop-up` | local edit prediction; host does not serve it. Paid Zed Zeta is the cloud alternative (`docs/IDES.md`, ADR 0033) |
 | API keys `jetbrains-<name>`, `xcode-<name>` (optional) | typed into the IDE's own key field | revoke one editor without touching the laptop's key (`docs/IDES.md`) |
 | SSH key `hearth_tunnel` | laptop `~/.ssh/hearth_tunnel`; host `authorized_keys` with `command="/usr/bin/false",restrict,port-forwarding,permitopen=…,permitlisten="none:1"` | the key can `-L` to `127.0.0.1:1234`, `:3000` and `:8888` only — no shell, no commands, no `-R`, no other ports |
-| Google API key (optional) | laptop `~/.hearth-gemini-key` (mode 600) | `ask-cloud` with the laptop's own key; the host's key never leaves |
+| Google API key (optional) | laptop `~/.hearth-gemini-key` (mode 600) | `ask-cloud` with the laptop's own key; the host holds no Google key (ADR 0037) |
 | `client/hearth-client.sh` / `.ps1` | laptop `~/.hearth-client.sh` | `ai-tunnel`, `ai-tunnel-install` (macOS), `ai-ping`, `ai-models`, `ai-ask`, `ai-webui`, `ask*`, `ask-deep`, `ask-cloud` |
 
 Secrets are read from files per command and never exported into the

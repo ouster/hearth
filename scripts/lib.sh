@@ -84,14 +84,14 @@ ai_volume() {
   printf 'hearth-%s' "$kind"
 }
 
-# Read the two secrets into THIS shell without exporting them. `set -a` would
-# hand both to every child — including the Podman VM boot.sh starts, which
+# Read the host token into THIS shell without exporting it. `set -a` would
+# hand it to every child — including the Podman VM boot.sh starts, which
 # outlives the script. Callers that need a child to see the API key
 # export that one variable themselves. Placeholders are dropped.
 ai_load_env() {
   local line name val
   [ -f "$HEARTH_ENV" ] || return 0
-  for name in OMLX_HOST_TOKEN GOOGLE_API_KEY; do
+  for name in OMLX_HOST_TOKEN; do
     line=$(grep -E "^[[:space:]]*(export[[:space:]]+)?${name}=" "$HEARTH_ENV" | tail -1 || true)
     if [ -z "$line" ]; then
       unset "$name"

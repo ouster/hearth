@@ -46,7 +46,7 @@ Models are addressed by ROLE, never by vendor model name:
   local-deep              slow, careful local model; loaded per ask-deep session
   local-code              alias of local-main
   local-chat              alias of local-main
-  cloud-cheap             Gemini, via ask-cloud only — bulk non-sensitive work
+  cloud-cheap             Gemini, a laptop's ask-cloud only (host has no key) — bulk non-sensitive work
 
 cloud-code, cloud-frontier, cloud-frontier-direct, and cloud-frontier-fast are dormant: no keys.
 

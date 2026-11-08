@@ -219,9 +219,6 @@ function Invoke-HearthAider {
     }
 }
 function ask       { Invoke-HearthAider @args }
-function ask-big   { Invoke-HearthAider @args }
-function ask-local { Invoke-HearthAider @args }
-function ask-chat  { Invoke-HearthAider @args }
 function ask-arch  { Invoke-HearthAider --architect --editor-model openai/local-main @args }
 
 # local-deep (ADR 0020): must already be loaded on the host. An unloaded role

@@ -42,7 +42,7 @@ done
 [ -n "$OUT" ] || OUT="${ROOT}/bench/results/$(date +%Y-%m-%d-%H%M)-concurrency-c${CONC}"
 
 # The bench process needs the API key. Nothing else in the env file
-# goes with it — GOOGLE_API_KEY stays unexported (ai_load_env).
+# goes with it — the host has no cloud key (ADR 0037).
 export OMLX_HOST_TOKEN
 exec "$PY" -I "${ROOT}/bench/concurrency.py" --root "$ROOT" --out "$OUT" \
   ${ARGS[@]+"${ARGS[@]}"}

@@ -43,7 +43,8 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
    `ask-deep` session; `load` is `beside` or `swap` per RAM tier, ADR 0020, 0028, 0031, 0032 — never call it
    unless loaded), `local-edit` (editor edit prediction on a laptop's own
    oMLX, `/v1/completions` only, ADR 0033; host does not load it), `cloud-cheap`
-   (Gemini, `ask-cloud` only). `local-code` / `local-chat` are alias names that
+   (Gemini, client-only: a laptop's `ask-cloud` with that laptop's own key;
+   the host holds no cloud key, ADR 0037). `local-code` / `local-chat` are alias names that
    mean `local-main` (D1). Dormant: `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`, `cloud-frontier-fast` — no keys.
 
 2. **oMLX never holds a cloud model.** There is no router, so there are no
@@ -53,8 +54,8 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
 
 3. **Privacy is structural.** Sensitive private data, PII, credentials, and any repo or
    path the operator has flagged as sensitive goes to `local-*` only. That is
-   enforced by placement — `:1234` holds only local models, only `ask-cloud`
-   carries a cloud key, sandboxed agents can reach `127.0.0.1:1234` and nothing
+   enforced by placement — `:1234` holds only local models, the host holds no cloud key
+   (only a laptop's `ask-cloud` does, ADR 0037), sandboxed agents can reach `127.0.0.1:1234` and nothing
    else — not by key scope. Refuse to write code or config that could route that
    class of data to a cloud endpoint, including adding a cloud provider to host Zed.
 

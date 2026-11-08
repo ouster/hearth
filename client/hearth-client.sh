@@ -23,8 +23,7 @@
 #   ~/.hearth-gemini-key  this machine's own Google API key, for ask-cloud only
 #
 # Commands: ai-tunnel, ai-tunnel-install, ai-tunnel-stop, ai-ping, ai-models,
-#           ai-ask, ai-webui, ask (and ask-big/-local/-chat/-fast, all
-#           local-main), ask-arch, ask-deep (local-deep, only while the host
+#           ai-ask, ai-webui, ask (local-main), ask-arch, ask-deep (local-deep, only while the host
 #           has it loaded), ask-cloud
 #
 # macOS: ai-tunnel-install once. launchd (com.hearth.tunnel) restarts the
@@ -392,10 +391,6 @@ _hearth_aider() {
   _rc=$?; unset _k; return $_rc
 }
 alias ask='_hearth_aider'
-alias ask-big='_hearth_aider'
-alias ask-local='_hearth_aider'
-alias ask-chat='_hearth_aider'
-alias ask-fast='_hearth_aider'
 ask-arch() { _hearth_aider --architect --editor-model openai/local-main "$@"; }
 
 # local-deep: slower, more careful model (ADR 0020). This laptop cannot load

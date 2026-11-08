@@ -6,6 +6,8 @@
 #
 # role	backend	model_key	ctx	slots	weights	draft	load	min_ram
 # backend: omlx for a local role, or an explicit cloud backend (gemini).
+# Cloud rows are client-only (ADR 0037): a laptop's ask-cloud reads the id
+# here and uses that laptop's own key. The host holds no cloud key.
 # draft is "-" . The column remains so the columns keep their positions.
 # load: resident → scripts/omlx.sh up keeps it loaded. beside → loaded only by
 # ask-deep or scripts/demand-load.sh, next to the resident (ADR 0020, 0028).

@@ -15,8 +15,11 @@ aliases, IDE settings, and laptop configs means every upgrade is a scavenger
 hunt. This stack addresses **roles** instead:
 
 ```
-local-main   cloud-cheap
+local-main   cloud-cheap (client-only)
 ```
+
+`cloud-cheap` is reached only from a laptop's `ask-cloud`, with that
+laptop's own key. The host holds no cloud key (ADR 0037).
 
 Each local role is what clients ask for (`local-main`), never a concrete
 tag in aliases or IDE config. Concrete models live in exactly two files —
@@ -43,7 +46,7 @@ flowchart LR
     webui --> srv
     sbx --> srv
     laptop -->|"SSH tunnel"| srv
-    aider -.->|"ask-cloud only"| cloud
+    laptop -.->|"ask-cloud, laptop's own key"| cloud
     webui -.->|"opt-in per message"| searx
 
     classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
@@ -55,8 +58,8 @@ flowchart LR
 ## Three guarantees
 
 1. **Privacy is structural.** oMLX holds only local models, so anything
-   sent to `:1234` stays on the host by construction. Cloud needs a separate
-   provider key in the calling tool; only `ask-cloud` has one. Sandboxed agents
+   sent to `:1234` stays on the host by construction. The host holds no
+   cloud key at all; only a laptop's `ask-cloud` has one (ADR 0037). Sandboxed agents
    can reach `127.0.0.1:1234` and nothing else (`scripts/sandbox-probe.sh`).
 2. **No silent route changes.** There is no router, so there is no fallback to
    leak through. If `local-main` is down, requests fail.
@@ -153,12 +156,11 @@ Ops detail: [`docs/RUNBOOK.md`](docs/RUNBOOK.md). Architecture:
 ### On the host
 
 ```bash
-# Local models — all mean local-main (D1)
+# Local models
 ask                # aider with openai/local-main
-ask-big            # same
 ask-arch           # aider architect mode (two local-main sides)
 ask-deep           # aider on local-deep: slow, careful, loaded for the session only (ADR 0020)
-ask-cloud          # Gemini via GOOGLE_API_KEY — the only alias that leaves the host
+# No cloud alias on the host: ask-cloud is laptop-only (ADR 0037)
 
 # Server management
 ai-load            # scripts/omlx.sh up — start oMLX and load local-main
@@ -188,7 +190,7 @@ ai-models          # list models available through the tunnel
 
 # Asking
 ai-ask "question"  # one-shot question without aider
-ask                # local-main. ask-big / ask-local / ask-chat / ask-fast are the same
+ask                # aider with local-main
 ask-arch           # aider architect mode, local-main on both sides
 ask-deep           # aider on local-deep — only while the host has it loaded
 ask-cloud          # Gemini via THIS machine's own key — the only cloud alias

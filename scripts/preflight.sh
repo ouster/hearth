@@ -186,6 +186,12 @@ if [ -f "$HEARTH_ENV" ]; then
     *...|*CHANGEME*) bad "OMLX_HOST_TOKEN is a placeholder" ;;
     *) ok "OMLX_HOST_TOKEN set" ;;
   esac
+  # Name match only; the value is never read (rule 11).
+  if grep -qE '^[[:space:]]*(export[[:space:]]+)?(GOOGLE_API_KEY|GEMINI_API_KEY)=' "$HEARTH_ENV"; then
+    bad "a Google key is still in ${HEARTH_ENV} — cloud is client-only (ADR 0037); delete that line and revoke the key"
+  else
+    ok "no cloud key on the host (ADR 0037)"
+  fi
 else
   bad "${HEARTH_ENV} missing"
 fi

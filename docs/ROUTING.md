@@ -25,7 +25,7 @@ Route to `local-*` roles (oMLX, `:1234`), always:
 | Role | Use for | Reached by | State |
 |---|---|---|---|
 | `local-main` | everything local: code, agent, chat, long context | oMLX `:1234` | live |
-| `cloud-cheap` | bulk non-sensitive work, big context | `ask-cloud` → Gemini directly | live |
+| `cloud-cheap` | bulk non-sensitive work, big context | a laptop's `ask-cloud` → Gemini directly, with that laptop's own key | live, client-only (ADR 0037) |
 | `local-embed` | — | — | removed 2026-11-01, nothing called it (ADR 0018) |
 | `local-code`, `local-chat` | — | alias names only; mean `local-main` (D1) | collapsed |
 | `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`, `cloud-frontier-fast` | — | — | dormant, no keys |
@@ -39,15 +39,16 @@ in a different way:
 |---|---|---|
 | Anything to `127.0.0.1:1234` | **no** | oMLX holds only local models |
 | Zed on this host | **no** model egress | no cloud language-model provider (D3). Edit prediction stays `"none"` or laptop `local-edit`; paid Zed Zeta (`"provider": "zed"`) is cloud and trips `zed-sync --check` (ADR 0033). Tool egress: SearXNG in the `web` and `write-web` profiles. Write and Ask have `fetch` and `search_web` off |
-| `ask`, `ask-*` except `ask-cloud` | **no** | point at `:1234` with the host token |
-| `ask-cloud` | **yes** | the only alias with a provider key; it is explicit by name |
+| `ask`, `ask-*` on the host | **no** | point at `:1234` with the host token. There is no host `ask-cloud`: the host holds no cloud key (ADR 0037) |
+| `ask-cloud` on a laptop | **yes** | the only command with a provider key, the laptop's own; it is explicit by name |
 | Sandboxed agents | **no** | egress allowed to `127.0.0.1:1234` only |
 | Open WebUI | model: **no**. Search query: **yes if enabled** | see below |
 | VS Code, Cline on this host (trial) | model: **no** if set up per `docs/IDES.md` | Custom Endpoint / OpenAI Compatible at `:1234` only. Copilot completions, NES and code search go to GitHub and must stay off (`scripts/vscode-check.sh`). Cline's own provider is cloud. Web fetch sends the query, as in Zed (ADR 0036) |
 
-What is lost against the gateway: nothing refuses a cloud request you make
-on purpose. Choosing `ask-cloud` on sensitive work is no longer stopped — it
-is only made explicit.
+What is lost against the gateway: on a laptop, nothing refuses a cloud
+request you make on purpose. Choosing `ask-cloud` on sensitive work is not
+stopped — it is only made explicit. On the host it cannot happen at all:
+there is no cloud key to use (ADR 0037).
 
 **Never add a cloud model to oMLX**, and never give a remote backend an
 `omlx` row in `config/roles.tsv`. That single rule is what makes `:1234`

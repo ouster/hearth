@@ -50,14 +50,7 @@ _aider_local() {
 }
 
 # --- local: stays on this machine, safe for client / sensitive work ---
-# ask-fast, ask-local, ask-chat, ask-big and ask-architect are kept as names
-# so muscle memory still works; they all mean local-main now (D1).
 alias ask='_aider_local'
-alias ask-fast='_aider_local'
-alias ask-local='_aider_local'
-alias ask-chat='_aider_local'
-alias ask-big='_aider_local'
-alias ask-architect='_aider_local'
 
 # Architect mode with the same model on both sides: the design step stays
 # visible, and nothing is evicted because there is only one model.
@@ -95,17 +88,8 @@ ask-deep() {
   return $rc
 }
 
-# --- cloud: the only alias that can leave the host. Non-sensitive repos only.
-# Model id comes from config/roles.tsv so this file never names a model.
-ask-cloud() {
-  local id key
-  id=$(awk -F'\t' '$1 == "cloud-cheap" && $2 == "gemini" {print $3; exit}' "${HEARTH_ROOT}/config/roles.tsv")
-  [ -n "$id" ] || { echo "cloud-cheap missing from config/roles.tsv" >&2; return 1; }
-  key="$(_hearth_var GOOGLE_API_KEY)" || return 1
-  # --weak-model too: ~/.aider.conf.yml says openai/local-main, which without
-  # OPENAI_API_BASE would send commit messages to api.openai.com.
-  GEMINI_API_KEY="$key" aider --model "gemini/${id}" --weak-model "gemini/${id}" "$@"
-}
+# No cloud alias: the host holds no cloud key (ADR 0037). ask-cloud exists
+# only in client/hearth-client.sh, with the laptop's own key.
 
 # --- utilities ---
 alias ai-health='"${HEARTH_ROOT}/scripts/healthcheck.sh"'

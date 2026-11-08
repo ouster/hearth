@@ -29,7 +29,7 @@
 #     dropped. A hearth-tunnel-*
 #     line with no tunnel restriction is a full shell key: reported, left
 #     unchanged, exit 1. Options must not contain spaces.
-#   - its own Google API key for ask-cloud. The host's key never leaves.
+#   - its own Google API key for ask-cloud. The host holds none (ADR 0037).
 #
 # Exit 0 ok, 1 failed, 2 could not run.
 
