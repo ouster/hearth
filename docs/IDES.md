@@ -375,8 +375,16 @@ Cline the task should stop, and a line should appear in the log.
    `ai-tunnel` must be up first.
 3. **Settings:** `scripts/vscode-check.sh --show` prints the block to merge
    into user settings. It turns Copilot inline completions (ghost text) and
-   next edit suggestions **on** — they go to GitHub, allowed by ADR 0041 —
-   keeps Copilot code search off, turns off telemetry, and caps
+   next edit suggestions **on** — they go to GitHub, allowed by ADR 0041.
+   Copilot Free is 2,000 inline suggestions a month. Copilot Student is
+   unlimited completions and 200 AI credits a month (GitHub Education,
+   1 June 2026). Copilot Pro is $10 a month, unlimited completions, and
+   1,500 credits today (1,000 base plus 500 flex). Chat and Copilot's
+   agent spend those credits; a 30,000-token round is about 3.5 credits
+   on Claude Haiku 4.5 and about 17.5 on Claude Opus 5, so a student
+   month is a handful of agent tasks (GitHub price table, read
+   2026-11-09). The README has the table. `main-brain` spends none of
+   the credits. It keeps Copilot code search off, turns off telemetry, and caps
    `chat.agent.maxRequests` at 40. **Sensitive repos opt out:** paste
    `scripts/vscode-check.sh --show-sensitive` into that repo's
    `.vscode/settings.json` (workspace settings win), then
@@ -408,8 +416,8 @@ apply.
 2. **Provider:** API Provider **OpenAI Compatible**, Base URL
    `http://127.0.0.1:1234/v1`, the `cline-<machine>` key, Model `main-brain`,
    Context Window 131072. Turn on tool support.
-   **Never pick the Cline or ClinePass provider**: prompts sent through
-   them go to Cline's servers. Desktop: Provider → BYOK → Add Provider,
+   Cline's servers and Cline Pass are optional and not private: the prompt
+   goes to Cline. Sensitive repos stay on OpenAI Compatible. Desktop: Provider → BYOK → Add Provider,
    ID `hearth`. Leave Model Source URL empty and type `main-brain`; a
    model list would offer `deep-brain`. Capabilities: streaming, tools,
    reasoning. Prompt cache off, because oMLX's KV cache needs no client flag.

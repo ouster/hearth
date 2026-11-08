@@ -188,6 +188,28 @@ session, so editors and laptops wait until you exit. Without the weights,
 The client side, keys and tokens: *Laptops* and [`docs/LAPTOP.md`](docs/LAPTOP.md).
 What happens at each step, and how to fix things: [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
+## Community benches
+
+[Performance](https://omlx.ai/benchmarks) and [Intelligence](https://omlx.ai/benchmarks/intelligence) are runs people uploaded from the oMLX app (boards read 2026-11-09). Use them to see whether a model is even plausible on a Mac like yours. They do not make it a Hearth role. That still takes `bench/tasks` and `scripts/concurrency-bench.sh` on your machine, then a row in `config/roles.tsv` (rule 5). The names to try first are in [`docs/MODELS.md`](docs/MODELS.md) → *Candidates by RAM*.
+
+Filter **Performance** to your chip and your RAM. A row is prefill tok/s, generation tok/s, and a context length on that machine. Open the run and read peak memory. It has to land under your ceiling, RAM minus 8. A fast row from a 128 GB or 256 GB Mac does not mean the model loads on a 24 GB or 32 GB Mac.
+
+**Intelligence** is a different test on every row, often a short sample. The order is not a ranking. Treat a high score as "someone ran that test", then go back to Performance for speed and memory.
+
+Run your own. The [DMG](https://github.com/jundot/omlx/releases) is the handy way to experiment: menu bar, model list, chat, and a bench you can share to those boards from the dashboard (oMLX 0.2.6 and later). The bench uses the app's prompts, not your files. A candidate that fits there is worth Hearth's bench. One that blows the ceiling is not.
+
+### When the app should start the server
+
+Start it from the app only while Hearth is not serving. `scripts/omlx.sh status` should say nothing is listening on `127.0.0.1:1234`. A fresh app serves port 8000 until Hearth's settings are merged. Use that window to download a model, chat with it, and run a bench. Stop the server from the app when you are done.
+
+### When it should not
+
+Once `scripts/omlx.sh up` or login boot (`com.hearth.boot`) is serving `127.0.0.1:1234`, leave the app as a panel on that server. `up` sets `auto_start_on_launch: false` so opening the app does not bind the port again. Pressing Start starts a second server and the two fight.
+
+`scripts/omlx.sh down` stops a Hearth-started server. It does not stop one you started from the app. Stop that one in the app, then run `up`. If the app is already serving `:1234`, `up` attaches and does not replace the process.
+
+Keep the bind on loopback. Do not turn on Serve on Local Network. A client-only laptop has no local `hearth` and does not start a server.
+
 ## Install oMLX
 
 Quick start step 2 covers the usual way. These are all three, in detail.
@@ -336,13 +358,41 @@ per machine to cover every repo; this one is wired already
 Two files in `~/Library/Application Support/Code/User/`. Check both with
 `scripts/vscode-check.sh` (exit 0 = clean). `--show` prints the settings.
 
-`settings.json` (JSONC, so comments are allowed). These keep code off
-GitHub's servers and cap agent requests:
+Chat and the agent stay on `main-brain`. Inline completions and next
+edit suggestions are Microsoft's: they need a GitHub sign-in, and the
+text around the cursor goes to GitHub's servers (ADR 0041). A sensitive
+repo turns both off in its own `.vscode/settings.json`
+(`scripts/vscode-check.sh --show-sensitive`).
+
+Copilot Free, Student, and Pro all do that. Allowances below are from
+GitHub's billing docs and plans page, and from the GitHub Education
+post of 1 June 2026, read 2026-11-09. One AI credit is $0.01 of model
+use. Completions and next edit suggestions are not billed as credits
+on paid plans. Chat, the Copilot agent, and the Copilot CLI are.
+
+| Plan | Inline suggestions | Credits for chat and agent |
+|---|---|---|
+| Free | 2,000 a month | an allowance GitHub does not publish; auto model selection only; no extra credits for sale |
+| Student (verified) | unlimited | 200 a month; auto model selection only |
+| Pro ($10 a month) | unlimited | 1,000 base plus a 500 flex allotment, 1,500 today; GitHub says the flex part can change |
+
+A request is not one credit. A round that sends about 30,000 tokens and
+receives 1,000 back costs about 0.7 credits on MAI-Code-1.1-Flash, about
+3.5 on Claude Haiku 4.5, and about 17.5 on Claude Opus 5, before cache
+writes (GitHub's model price table, 2026-11-09). An agent task is many
+rounds and the prompt grows, so eight rounds at the Haiku size are on
+the order of 30 credits, and more once the transcript lengthens. That
+is a handful of tasks on the student allowance and a few dozen on Pro.
+`main-brain` spends none of those credits, so the long sessions belong
+on Hearth. Ghost text on the Free plan still stops at 2,000 for the month.
+
+`settings.json` (JSONC, so comments are allowed). Completions are on;
+code search stays off, and agent requests are capped:
 
 ```jsonc
-"github.copilot.enable": { "*": false },               // inline completions go to GitHub
-"github.copilot.nextEditSuggestions.enabled": false,  // so do next edit suggestions
-"github.copilot.chat.codesearch.enabled": false,      // GitHub embeddings
+"github.copilot.enable": { "*": true },                // ghost text, via Microsoft
+"github.copilot.nextEditSuggestions.enabled": true,   // next edit, via Microsoft
+"github.copilot.chat.codesearch.enabled": false,      // GitHub embeddings stay off
 "telemetry.telemetryLevel": "off",
 "chat.agent.maxRequests": 40,                          // pauses and asks to continue
 "chat.tools.global.autoApprove": false,
@@ -397,8 +447,9 @@ literal key sits in a file other users can read. Then, in Chat, pick
    and type `main-brain` as the model. Your key. Capabilities: streaming,
    tools, reasoning. Prompt cache off, because oMLX's KV cache needs no
    client flag. Context window 131072.
-2. **Never pick Cline Usage-Billing or ClinePass**: prompts sent through
-   them go to Cline's servers.
+2. **Cline's servers and Cline Pass are optional, and they are not
+   private.** Usage-Billing and Cline Pass send the prompt to Cline.
+   Sensitive repos stay on the `hearth` provider above.
 3. **General:** clear usage and error reporting.
 4. **Connectors off.** A signed-in account can receive Cline's Composio
    beta, which lets the agent connect to Slack and other services through
@@ -420,8 +471,17 @@ Cline reads `AGENTS.md` and `.clinerules/`.
 3. **Offline mode on** for sensitive repos. No JetBrains AI cloud model on
    the host.
 
-AI Assistant has no hooks. For agent work in a JetBrains IDE with the loop
-guard, use the Cline plugin (above).
+AI Assistant has no hooks.
+
+### Cline in JetBrains
+
+Cline is the option when you want the loop guard inside a JetBrains IDE.
+Install Marketplace plugin 28247, then View → Tool Windows → Cline. The
+provider is the same `hearth` BYOK setup as Cline above: base URL
+`http://127.0.0.1:1234/v1`, model `main-brain`, Model Source URL empty.
+Run `scripts/install-loop-guard.sh` once. On 2026-11-08 the global hook
+stopped the third identical read in PyCharm. Cline's servers and Cline
+Pass are the same choice as elsewhere: available, and not private.
 
 ### Zed
 
