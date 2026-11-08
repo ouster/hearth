@@ -68,10 +68,28 @@ flowchart LR
 
 ## Requirements
 
-- macOS on Apple Silicon (the reference host is 64 GB)
+- macOS on Apple Silicon (the reference host is 64 GB; see *Model size by RAM*)
 - [oMLX](https://omlx.ai) — macOS app ([DMG releases](https://github.com/jundot/omlx/releases)) and/or a headless CLI; Hearth starts or attaches with `scripts/omlx.sh up`
 - Role weights under `~/.hearth/models` (see [`docs/MODELS.md`](docs/MODELS.md))
 - [Podman](https://podman.io) for Open WebUI / SearXNG
+
+### Model size by RAM
+
+The ceiling is RAM minus 8 GB (ADR 0031). Only benched tiers get a row in
+`config/roles.tsv` (rule 5). `scripts/install-host.sh` stops on a machine
+without one. Candidates for other sizes are a starting point for a bench,
+not a recommendation to run untested. Which models these are, and the
+sources: [`docs/MODELS.md`](docs/MODELS.md) → *Candidates by RAM* (rule 1
+keeps model names there).
+
+| RAM (usable) | `main-brain` | `deep-brain` | State |
+|---|---|---|---|
+| 64 GB (56) | 35B-A3B MoE, 128K × 3 | dense 27B, swaps in | **benched**: reference host |
+| 48 GB (40) | same rows; peak 34.0 GB at 128K × 3 | same, swaps in | **benched**. On a daily-use laptop that leaves about 14 GB for apps. A 1-slot laptop tier is open (ADR 0040) |
+| 32 GB (24) | ~26B MoE, ~4B active (≈15 GB at 4-bit; one ran here as the resident at 25.2 GB peak with 3 × 128K, ADR 0019) | dense ~24–27B, swaps in | candidate. Bench with fewer slots |
+| 24 GB (16) | ~20B MoE with native tool calling | none: no room beside it | candidate. Web search 2026-11-08: sources disagree. Check tool calling against oMLX's parser first |
+
+Below 24 GB, use the machine as a client of a bigger host (*Laptops*).
 
 ## Install oMLX (either order)
 
@@ -133,6 +151,18 @@ switch back to Xcode.app so `metal` is visible. Confirm with
 `xcrun -sdk macosx metal --version`.
 
 ## Quick start
+
+Two installers. Each one is safe to re-run, reports what is left, and never
+reads a key or token (ADR 0040).
+
+| This machine is | Run |
+|---|---|
+| a **host** (its own brain on `127.0.0.1:1234`) | `scripts/install-host.sh --check`, then `scripts/install-host.sh` |
+| a **client** of another host (tunnel on `127.0.0.1:1234`) | `client/install-client.sh --host you@studio.local` |
+| **both** (its own brain, plus a bigger host through the tunnel) | `client/install-client.sh --dual`, then `scripts/install-host.sh` |
+
+`install-host.sh` runs the steps below in order. It starts oMLX only once
+nothing needs you:
 
 ```bash
 git clone <this-repo> hearth && cd hearth
@@ -211,7 +241,8 @@ directly on the host, through `ai-tunnel` on a laptop. It authenticates
 with a key: your laptop key, or a per-editor sub-key you can revoke on its
 own (`scripts/omlx.sh sub-key add <editor>-<machine>` on the host; names
 are letters, digits, `-` and `_`). **No editor gets a cloud provider on the
-host** (rule 3). Full detail and what is not yet verified:
+host** (rule 3). On a dual machine (ADR 0040), add a second provider,
+`hearth-remote`, at `http://127.0.0.1:1235/v1` for the bigger host. Full detail and what is not yet verified:
 [`docs/IDES.md`](docs/IDES.md).
 
 **Loops.** `scripts/loop-guard.sh` runs before every tool call in VS Code
@@ -395,6 +426,28 @@ curl -s -o /dev/null -D - -X OPTIONS http://127.0.0.1:8000/v1/models -H 'Origin:
 
 No output means CORS is off. The host's `scripts/omlx.sh up` writes
 `cors_origins: []` itself, and preflight fails if it is on.
+
+## One machine, both roles
+
+A laptop with the RAM for a benched tier can run its own brain and still
+reach a bigger host (ADR 0040). Its own oMLX is always `127.0.0.1:1234`, the
+port the sandbox, scripts and editors use. The tunnel moves aside:
+
+| | This machine | The bigger host, through the tunnel |
+|---|---|---|
+| oMLX | `127.0.0.1:1234` | `127.0.0.1:1235` |
+| Open WebUI, SearXNG | `:3000`, `:8888` | `:3001`, `:8889` |
+| Shell | `ask`, `main-brain`, `ask-deep`, `deep-brain` | `ask-remote`, `main-brain-remote`, `ask-deep-remote`, `deep-brain-remote` |
+| Editor provider | `hearth` | `hearth-remote` |
+
+Both are your own hardware, so both are brains (rule 3). To convert a laptop:
+
+1. `client/install-client.sh --dual`
+2. in a new shell, `ai-tunnel-stop && ai-tunnel-install`, which moves the
+   tunnel to 1235
+3. `brew services stop omlx`, if a brew-run oMLX serves `edit-brain` on 8000
+4. `scripts/install-host.sh`
+5. `client/edit-model.sh laptop-up`, to serve `edit-brain` from the new oMLX
 
 ## Using an AI assistant with this repo
 

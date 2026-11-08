@@ -18,6 +18,11 @@ before acting.
   never pick a vendor's own cloud provider for sensitive repos.
 - **Keys:** the person types or pastes them into the editor's own key
   field. Never read key files, and never ask for a key in the chat.
+- **Dual machine** (its own brain and a tunnel, ADR 0040): add two
+  providers. `hearth` points at `http://127.0.0.1:1234/v1` (this machine) and
+  `hearth-remote` at `http://127.0.0.1:1235/v1` (the bigger host). Both call
+  `main-brain`; the provider name says which machine answers. Sensitive work
+  may use either, since both are the person's own hardware (rule 3).
 - On a laptop, the tunnel must be up first. `ai-ping` should say `up`; if it
   does not, use `hearth-laptop-setup`.
 - Ask which key to use: the laptop key, or a per-editor sub-key

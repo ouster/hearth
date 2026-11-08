@@ -13,7 +13,7 @@ and the checks. Read the doc section named at each step before acting.
 
 | Signal | Means |
 |---|---|
-| `~/.hearth-key` or `~/.ssh/hearth_tunnel` exists | **laptop**: stop and use `hearth-laptop-setup` |
+| `~/.hearth-key` or `~/.ssh/hearth_tunnel` exists | a laptop. **Ask** whether it should also be a host (ADR 0040). If yes: `client/install-client.sh --dual` first, then continue here. If no: use `hearth-laptop-setup` |
 | `~/.config/hearth/env` exists | host, already partly set up |
 | neither, and `~/.omlx` exists | unclear: a laptop running `edit-brain` also has `~/.omlx`. **Ask** |
 | neither | fresh machine: **ask** whether it is the host |
@@ -35,6 +35,10 @@ Check these with `ls -l` only. Never open the files.
   and ask.
 
 ## 1. First-time setup (README *Quick start*, `docs/RUNBOOK.md` *First-time setup*)
+
+Start with `scripts/install-host.sh --check`. It runs the steps below in
+order and says which need the operator. Then run it without `--check`; it
+starts oMLX only when nothing above needs them. The detail per step:
 
 1. **oMLX installed.** Use the DMG app or the headless venv (README *Install
    oMLX*, sequences A–C). Ask which one; do not choose for them.

@@ -108,6 +108,29 @@ The laptop user:
 or `DOWN` (no tunnel — `ai-tunnel`).
 If something else is already listening on `127.0.0.1:1234`, the client refuses and does not send the token.
 
+## Installer
+
+`client/install-client.sh --host you@studio.local` does the laptop-side
+plumbing of *New machine* or *Already registered* in one go:
+
+- copies the client script
+- adds the `Host hearth` entry
+- writes one marked block in your shell rc, commenting out loose lines from
+  older setups (backup kept)
+- picks the tunnel port
+
+`--check` reports without writing anything. It never reads a key; the
+secret and host-side steps are listed for you to do (ADR 0040).
+
+### A laptop that is also a host
+
+With RAM for a benched tier, a laptop can run its own brain on
+`127.0.0.1:1234` and keep the bigger host on `127.0.0.1:1235`. Use
+`client/install-client.sh --dual`, then `scripts/install-host.sh`. The
+client's aider commands become `ask-remote`, `main-brain-remote` and
+`ask-deep-remote`, and the plain names mean this machine's brain. Steps:
+README → *One machine, both roles*.
+
 ## Keeping the tunnel up
 
 `ai-tunnel` alone is one `ssh -f`. When that session drops, nothing restarts

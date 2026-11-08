@@ -14,7 +14,7 @@ This skill adds the stops and the checks.
 
 | Signal | Means |
 |---|---|
-| `~/.config/hearth/env` exists | **host**: stop and use `hearth-host-setup` |
+| `~/.config/hearth/env` exists | a host. If it is also a client of another host: **both** (ADR 0040), so use `client/install-client.sh --dual` here. Otherwise stop and use `hearth-host-setup` |
 | `~/.hearth-key` or `~/.ssh/hearth_tunnel` exists | laptop, already set up once ("Already registered" path) |
 | neither | fresh laptop, or a fresh host: **ask** |
 
@@ -44,6 +44,11 @@ The Gemini id for `HEARTH_CLOUD_MODEL` is the `cloud-cheap` row of
 `config/roles.tsv`, column 3. Copy it only into that line.
 
 ## 2. You may run
+
+`client/install-client.sh --check`, then `client/install-client.sh --host
+user@host.local`. It does the plumbing below in one go: client copy, `Host
+hearth`, one marked rc block, and tunnel port by mode. It lists what is
+left for the person. The manual steps, if you need them:
 
 Follow *AI-assisted setup* step 2:
 

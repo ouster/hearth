@@ -12,7 +12,7 @@ the port empty. Cloud (Gemini) is reached by each tool with its own key.
   `~/.omlx` too, so that alone proves nothing — ask when unsure):
   follow `docs/LAPTOP.md` → *AI-assisted setup* and nothing else, plus
   `client/edit-model.sh` when the person asks for laptop edit prediction
-  (ADR 0033). Do not run anything in `scripts/` except the editor tools
+  (ADR 0033), and `client/install-client.sh` (ADR 0040). Do not run anything in `scripts/` except the editor tools
   `loop-guard.sh`, `install-loop-guard.sh` and `vscode-check.sh` (ADR 0036) —
   the rest are host scripts and touch the host's
   oMLX, launchd and `authorized_keys`. Host-side steps are ones you tell the
@@ -20,6 +20,12 @@ the port empty. Cloud (Gemini) is reached by each tool with its own key.
   print, grep, copy or edit** `~/.hearth-key`, `~/.hearth-gemini-key` or
   `~/.ssh/hearth_tunnel`; the person types secrets in themselves, and you may
   only check their permissions with `ls -l`.
+- **Both** (`~/.config/hearth/env` *and* `~/.hearth-key`, or a laptop the
+  person wants to make a host too; ADR 0040): its own brain on
+  `127.0.0.1:1234`, set up with `scripts/install-host.sh`; its tunnel to
+  another host on `127.0.0.1:1235` (`client/install-client.sh --dual`),
+  with `-remote` commands. Host rules apply to its own oMLX; the laptop
+  secret rules above still apply to `~/.hearth-key` and the tunnel key.
 
 Read `docs/ROUTING.md` before suggesting any routing change.
 

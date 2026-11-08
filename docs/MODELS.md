@@ -68,7 +68,8 @@ detected size. Ceiling is RAM minus 8 (ADR 0031).
 ### Candidates by RAM (unbenched)
 
 Not roles. Each needs `bench/tasks` and `scripts/concurrency-bench.sh` on
-that hardware before it gets a row (rule 5). Web search, 2026-11-07. Sources
+that hardware before it gets a row (rule 5). Web search, 2026-11-07; 24 GB row
+added 2026-11-08 (blogs, unverified; check tool calling with oMLX's parser). Sources
 are mostly blogs, Hugging Face cards and leaderboards, and they often
 disagree: sizes are as reported unless marked *(repo)*, which means measured
 here. Usable = RAM minus 8 (ADR 0031); weights plus KV cache must fit under
@@ -79,7 +80,8 @@ slower and stronger, for one-off questions.
 
 | RAM (usable) | Agent | Deep | Load |
 |---|---|---|---|
-| 32 GB (24) | Gemma 4 26B-A4B | Devstral Small 2 24B or Qwen3.8-27B | swap |
+| 24 GB (16) | gpt-oss-20b (MXFP4, ~12–13 GB; most-cited small MoE with tool calling). Alternative: Devstral Small 2 24B at 4-bit (dense, slow) | none beside it | — |
+| 32 GB (24) | Gemma 4 26B-A4B (≈15 GB 4-bit per blogs; ran here as the resident, c3 peak 25.2 GB, ADR 0019) | Devstral Small 2 24B or Qwen3.8-27B | swap |
 | 48 GB (40) | Qwen3.6 35B-A3B (tier row) | Qwen3.8-27B (tier row) | swap |
 | 64 GB (56) | Qwen3.6 35B-A3B (tier row); alternative Qwen3-Coder-Next 80B-A3B with no deep beside | Qwen3.8-27B (tier row) | beside |
 | 128 GB (120) | Qwen3.6 35B-A3B | Qwen3.5-122B-A10B or gpt-oss-120b | beside (~109 GB with the 122B, tight) |

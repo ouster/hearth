@@ -13,7 +13,9 @@
 #   HEARTH_SSH          user@host for the tunnel, e.g. colin@Colins-Mac-Studio.local
 #   HEARTH_CLOUD_MODEL  the Gemini model id for ask-cloud (from the host's roles.tsv)
 # Optional:
-#   HEARTH_LOCAL_PORT   local end of the tunnel (default 1234)
+#   HEARTH_DUAL         1 on a machine that also runs its own brain (ADR 0040):
+#                       tunnel ports default to 1235/3001/8889, commands get -remote
+#   HEARTH_LOCAL_PORT   local end of the tunnel (default 1234; 1235 when dual)
 #   HEARTH_WEBUI_PORT   local end for Open WebUI (default 3000)
 #   HEARTH_SEARXNG_PORT local end for the host's SearXNG (default 8888; 0 skips
 #                       it). For a SearXNG MCP server on this laptop (ADR 0022).
@@ -41,10 +43,21 @@ if [ -z "${HEARTH_SSH:-}" ]; then
   return 1 2>/dev/null || exit 1
 fi
 
-HEARTH_LOCAL_PORT="${HEARTH_LOCAL_PORT:-1234}"
-HEARTH_WEBUI_PORT="${HEARTH_WEBUI_PORT:-3000}"
-HEARTH_SEARXNG_PORT="${HEARTH_SEARXNG_PORT:-8888}"
-HEARTH_URL="http://127.0.0.1:${HEARTH_LOCAL_PORT}/v1"
+# HEARTH_DUAL=1: this machine also runs its own brain on 127.0.0.1:1234
+# (ADR 0040). The tunnel then moves off the ports the local oMLX, WebUI and
+# SearXNG use, and this file's aider commands get a -remote suffix so the
+# host aliases (scripts/aliases.zsh) keep ask, main-brain, ask-deep.
+HEARTH_DUAL="${HEARTH_DUAL:-0}"
+if [ "$HEARTH_DUAL" = 1 ]; then
+  HEARTH_LOCAL_PORT="${HEARTH_LOCAL_PORT:-1235}"
+  HEARTH_WEBUI_PORT="${HEARTH_WEBUI_PORT:-3001}"
+  HEARTH_SEARXNG_PORT="${HEARTH_SEARXNG_PORT:-8889}"
+else
+  HEARTH_LOCAL_PORT="${HEARTH_LOCAL_PORT:-1234}"
+  HEARTH_WEBUI_PORT="${HEARTH_WEBUI_PORT:-3000}"
+  HEARTH_SEARXNG_PORT="${HEARTH_SEARXNG_PORT:-8888}"
+fi
+HEARTH_TUNNEL_URL="http://127.0.0.1:${HEARTH_LOCAL_PORT}/v1"
 
 # Read a secret file without exporting it. Refuses a world-readable file.
 _hearth_secret() {
@@ -318,7 +331,7 @@ ai-ping() {
   _hearth_require_tunnel || return 1
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
   _c=$(printf 'header = "Authorization: Bearer %s"\n' "$_k" \
-       | curl -s -m 8 -o /dev/null -w '%{http_code}' -K - "${HEARTH_URL}/models")
+       | curl -s -m 8 -o /dev/null -w '%{http_code}' -K - "${HEARTH_TUNNEL_URL}/models")
   unset _k
   case "$_c" in
     200) echo "up" ;;
@@ -333,7 +346,7 @@ ai-models() {
   _hearth_require_tunnel || return 1
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
   printf 'header = "Authorization: Bearer %s"\n' "$_k" \
-    | curl -s -m 8 -K - "${HEARTH_URL}/models" \
+    | curl -s -m 8 -K - "${HEARTH_TUNNEL_URL}/models" \
     | python3 -c 'import sys, json
 try:
     d = json.load(sys.stdin)
@@ -355,7 +368,7 @@ ai-ask() {
     > "$_body"
   printf 'header = "Authorization: Bearer %s"\n' "$_k" \
     | curl -s -m 300 -K - -H 'Content-Type: application/json' \
-        --data-binary @"$_body" "${HEARTH_URL}/chat/completions" \
+        --data-binary @"$_body" "${HEARTH_TUNNEL_URL}/chat/completions" \
     | python3 -c 'import sys, json
 try:
     d = json.load(sys.stdin)
@@ -386,24 +399,20 @@ ai-webui() {
 _hearth_aider() {
   _hearth_connect || return 1
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
-  OPENAI_API_BASE="$HEARTH_URL" OPENAI_API_KEY="$_k" \
+  OPENAI_API_BASE="$HEARTH_TUNNEL_URL" OPENAI_API_KEY="$_k" \
     aider --model openai/main-brain --weak-model openai/main-brain "$@"
   _rc=$?; unset _k; return $_rc
 }
-alias ask='_hearth_aider'
-# Role-named commands (ADR 0039), alongside ask / ask-deep.
-main-brain() { _hearth_aider "$@"; }
-deep-brain() { ask-deep "$@"; }
-ask-arch() { _hearth_aider --architect --editor-model openai/main-brain "$@"; }
+_hearth_ask_arch() { _hearth_aider --architect --editor-model openai/main-brain "$@"; }
 
 # deep-brain: slower, more careful model (ADR 0020). This laptop cannot load
 # it; it must already be loaded on the host. An unloaded role would be
 # answered by main-brain without saying so, so refuse unless it is listed.
-ask-deep() {
+_hearth_ask_deep() {
   _hearth_connect || return 1
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
   if ! printf 'header = "Authorization: Bearer %s"\n' "$_k" \
-       | curl -s -m 8 -K - "${HEARTH_URL}/models" \
+       | curl -s -m 8 -K - "${HEARTH_TUNNEL_URL}/models" \
        | python3 -c 'import sys, json
 sys.exit(0 if any(m.get("id") == "deep-brain" for m in json.load(sys.stdin).get("data", [])) else 1)' 2>/dev/null; then
     echo "deep-brain is not loaded on the host. On the host: scripts/demand-load.sh deep-brain up" >&2
@@ -412,10 +421,30 @@ sys.exit(0 if any(m.get("id") == "deep-brain" for m in json.load(sys.stdin).get(
   fi
   # weak-model is deep-brain too: a commit step should use the same model
   # the session just asked.
-  OPENAI_API_BASE="$HEARTH_URL" OPENAI_API_KEY="$_k" \
+  OPENAI_API_BASE="$HEARTH_TUNNEL_URL" OPENAI_API_KEY="$_k" \
     aider --model openai/deep-brain --weak-model openai/deep-brain "$@"
   _rc=$?; unset _k; return $_rc
 }
+
+# Older copies defined ask as an alias; zsh cannot then define a function
+# of that name in the same shell.
+unalias ask 2>/dev/null || true
+
+# Public names. Plain on a laptop; -remote on a machine that is also a host
+# (ADR 0039 names, ADR 0040 dual mode).
+if [ "$HEARTH_DUAL" = 1 ]; then
+  ask-remote()        { _hearth_aider "$@"; }
+  main-brain-remote() { _hearth_aider "$@"; }
+  ask-arch-remote()   { _hearth_ask_arch "$@"; }
+  ask-deep-remote()   { _hearth_ask_deep "$@"; }
+  deep-brain-remote() { _hearth_ask_deep "$@"; }
+else
+  ask()        { _hearth_aider "$@"; }
+  main-brain() { _hearth_aider "$@"; }
+  ask-arch()   { _hearth_ask_arch "$@"; }
+  ask-deep()   { _hearth_ask_deep "$@"; }
+  deep-brain() { _hearth_ask_deep "$@"; }
+fi
 
 # The only command that leaves for the cloud, with THIS machine's own key.
 ask-cloud() {
