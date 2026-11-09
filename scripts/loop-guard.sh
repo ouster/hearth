@@ -1,17 +1,20 @@
 #!/bin/bash
-# Brake for agent loops (ADR 0036). Runs as a PreToolUse hook in VS Code
-# (Local or Copilot harness) and Cline. It reads the hook's JSON on stdin
-# and answers in that client's format:
+# Brake for agent loops (ADR 0036, 0043). Runs as a PreToolUse hook in
+# VS Code (Local or Copilot harness) and Cline, and via an OpenCode plugin
+# that shells out here. It reads the hook's JSON on stdin and answers in
+# that client's format:
 #
 #   - the same tool call (name + arguments) HEARTH_LOOP_REPEAT times in a
 #     row (default 3): the call is denied, and the reason tells the model
 #     to stop repeating itself and ask the operator. Cline has no deny
-#     without stopping, so there the task stops.
+#     without stopping, so there the task stops. OpenCode's plugin throws
+#     the errorMessage and the tool never runs.
 #   - more than HEARTH_LOOP_BUDGET tool calls in one session (default 80):
-#     the run is stopped.
+#     the run is stopped (OpenCode: same throw).
 #
-#   scripts/loop-guard.sh --format vscode < hook.json
-#   scripts/loop-guard.sh --format cline  < hook.json
+#   scripts/loop-guard.sh --format vscode   < hook.json
+#   scripts/loop-guard.sh --format cline    < hook.json
+#   scripts/loop-guard.sh --format opencode < hook.json
 #   scripts/loop-guard.sh --self-test
 #
 # --workspace marks the copy wired into this repo (.github/hooks,
@@ -59,6 +62,7 @@ LOG="${HEARTH_LOOP_LOG:-$HOME/Library/Logs/hearth-loop-guard.log}"
 allow() {
   case "$FORMAT" in
     cline) printf '{"cancel": false}\n' ;;
+    opencode) jq -cn '{allow: true}' ;;
     *) printf '{}\n' ;;
   esac
   exit 0
@@ -67,12 +71,15 @@ allow() {
 # usage: block deny|stop "<reason>"
 # VS Code: the deny goes both top-level (Copilot harness) and in
 # hookSpecificOutput (Local harness). "stop" adds continue:false.
+# OpenCode: the plugin throws errorMessage for both deny and stop.
 block() {
   local kind="$1" reason="$2"
   log "$kind" "$reason"
   case "$FORMAT" in
     cline)
       jq -cn --arg r "$reason" '{cancel: true, errorMessage: $r}' ;;
+    opencode)
+      jq -cn --arg r "$reason" '{allow: false, errorMessage: $r}' ;;
     *)
       jq -cn --arg r "$reason" --arg k "$kind" '
         {permissionDecision: "deny", permissionDecisionReason: $r,
@@ -162,6 +169,10 @@ self_test() {
   check "cline: 1st call allowed" cline "$c" '"cancel": false'
   check "cline: 2nd call allowed" cline "$c" '"cancel": false'
   check "cline: 3rd identical call cancels" cline "$c" '"cancel":true'
+  local o='{"session_id":"t5","tool_name":"read","tool_input":{"filePath":"a"}}'
+  check "opencode: 1st call allowed" opencode "$o" '"allow":true'
+  check "opencode: 2nd call allowed" opencode "$o" '"allow":true'
+  check "opencode: 3rd identical call denied" opencode "$o" '"allow":false'
   check "copilot camelCase shape read" vscode '{"sessionId":"t3","toolName":"edit","toolArgs":"{}"}' '^{}$'
   check "unknown shape allowed" vscode '{"hello":1}' '^{}$'
   check "empty input allowed" cline '' '"cancel": false'

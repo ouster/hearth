@@ -9,13 +9,18 @@ stay as they are (`docs/LAPTOP.md`).
 - **Cline has no native iOS or Android app.** Desktop, IDE plugins, CLI, and
   Kanban only. Their documented phone path is Tailscale plus a browser on
   the Kanban board ([Cline blog, 2026-04-15](https://cline.bot/blog/cline-mobile-how-to-vibe-code-from-your-phone)).
+- **OpenCode** is on trial as a local agent harness against `main-brain`
+  (ADR 0043). It is not a phone app.
+- **T3 Code** has a strong iOS/Android remote, but its FAQ rejects local
+  models (read 2026-11-09). Deferred — revisit later, possibly as a fork,
+  once OpenCode + Hearth is proven on the desk.
 - **MVP for Hearth:** chat with `main-brain` from the phone over a mesh
   overlay. A custom Hearth chat app is optional; any OpenAI-compatible
   client can work once the path exists.
-- **Agent drive/review from the phone:** use Cline Kanban over the same
-  overlay, not a Hearth coding IDE on day one. Bind Kanban to the Tailscale
-  interface (or localhost plus a forward), not `0.0.0.0` on every NIC.
-  Cline Pass / Usage-Billing remain optional and not private.
+- **Agent drive/review from the phone (near term):** Cline Kanban over the
+  same overlay, not a Hearth coding IDE on day one. Bind Kanban to the
+  Tailscale interface (or localhost plus a forward), not `0.0.0.0` on every
+  NIC. Cline Pass / Usage-Billing remain optional and not private.
 
 ## Architecture
 

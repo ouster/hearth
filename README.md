@@ -336,11 +336,12 @@ host** (rule 3). On a dual machine (ADR 0040), add a second provider,
 `hearth-remote`, at `http://127.0.0.1:1235/v1` for the bigger host. Full detail and what is not yet verified:
 [`docs/IDES.md`](docs/IDES.md).
 
-**Loops.** `scripts/loop-guard.sh` runs before every tool call in VS Code
-and Cline. It refuses the third identical call in a row, and stops the run
-after 80 calls in one session. Run `scripts/install-loop-guard.sh` once
-per machine to cover every repo; this one is wired already
-(`.github/hooks/`, `.clinerules/hooks/`). Refusals are logged to
+**Loops.** `scripts/loop-guard.sh` runs before every tool call in VS Code,
+Cline, and OpenCode (ADR 0036, 0043). It refuses the third identical call
+in a row, and stops the run after 80 calls in one session. Run
+`scripts/install-loop-guard.sh` once per machine to cover every repo; this
+one is wired already (`.github/hooks/`, `.clinerules/hooks/`,
+`.opencode/plugins/`). Refusals are logged to
 `~/Library/Logs/hearth-loop-guard.log`. Zed has no hooks; see below.
 
 **Check any client in a few steps** (hearth folder open):
@@ -459,6 +460,51 @@ literal key sits in a file other users can read. Then, in Chat, pick
    was verified 2026-11-08 in Cline Desktop and PyCharm.
 
 Cline reads `AGENTS.md` and `.clinerules/`.
+
+### OpenCode (trial, ADR 0043)
+
+Agent harness (CLI / TUI / desktop) on `main-brain`. Install from
+[opencode.ai](https://opencode.ai), then on the host
+`scripts/omlx.sh sub-key add opencode-<machine>`. On a laptop, `ai-tunnel`
+must be up first.
+
+`~/.config/opencode/opencode.json` (mode 600 if it holds the key). Provider
+id `hearth`, only `main-brain` listed — a model list would offer
+`deep-brain`. Shape matches what oMLX's OpenCode writer uses today:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "hearth/main-brain",
+  "provider": {
+    "hearth": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "hearth",
+      "options": {
+        "baseURL": "http://127.0.0.1:1234/v1",
+        "apiKey": "opencode-<machine> token"
+      },
+      "models": {
+        "main-brain": {
+          "name": "main-brain",
+          "limit": { "context": 131072, "output": 16384 }
+        }
+      }
+    }
+  }
+}
+```
+
+Type the sub-key yourself; never commit it. No cloud / OpenRouter provider
+on the host for sensitive work (rule 3). Dual machine (ADR 0040): add
+`hearth-remote` the same way at `http://127.0.0.1:1235/v1`.
+
+Run `scripts/install-loop-guard.sh` once, then restart OpenCode so it loads
+`~/.config/opencode/plugins/hearth-loop-guard/`. This repo already has
+`.opencode/plugins/hearth-loop-guard/`. OpenCode reads `AGENTS.md`.
+
+T3 Code can drive OpenCode from a phone later; it does not support local
+models today, so that path is deferred (`docs/MOBILE.md`).
 
 ### JetBrains IDEs (AI Assistant)
 

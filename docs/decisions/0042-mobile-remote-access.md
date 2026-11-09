@@ -25,7 +25,9 @@ is a thin OpenAI-compatible client once the path exists.
   as laptops. Token in the platform keystore.
 - **MVP product:** chat with `main-brain`. Agent control from a phone uses
   Cline Kanban over the same overlay, bound to the Tailscale IP (or
-  localhost + forward), not `0.0.0.0` on every interface.
+  localhost + forward), not `0.0.0.0` on every interface. **T3 Code is
+  deferred** (FAQ rejects local models, 2026-11-09); OpenCode is the desk
+  harness trial (ADR 0043), not the phone plan.
 - **Reject for the brain:** Facebook / consumer SSO as the gate to `:1234`,
   and a public Cloudflare Access hostname as the MVP front door. Tailscale
   IdP (Apple/Google) is network membership only. Passkeys may unlock the

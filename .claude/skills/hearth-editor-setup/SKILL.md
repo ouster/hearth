@@ -1,6 +1,6 @@
 ---
 name: hearth-editor-setup
-description: Connect an editor or agent to Hearth's main-brain, then prove it with three checks. Covers VS Code (Custom Endpoint), Cline (Desktop, VS Code, JetBrains, CLI), JetBrains AI Assistant and Zed, plus the loop guard. Works on the host and on laptops. Use when the person says "set up VS Code / Cline / PyCharm / Zed for hearth", "add the local model to my editor", "test the loop guard" or "the agent keeps looping".
+description: Connect an editor or agent to Hearth's main-brain, then prove it with three checks. Covers VS Code (Custom Endpoint), Cline (Desktop, VS Code, JetBrains, CLI), OpenCode, JetBrains AI Assistant and Zed, plus the loop guard. Works on the host and on laptops. Use when the person says "set up VS Code / Cline / OpenCode / PyCharm / Zed for hearth", "add the local model to my editor", "test the loop guard" or "the agent keeps looping".
 ---
 
 # Hearth editor setup
@@ -59,6 +59,21 @@ Files are in `~/Library/Application Support/Code/User/`.
 4. Enable Hooks, then `scripts/install-loop-guard.sh` once. This is
    laptop-safe; it writes `~/Documents/Cline/Hooks/PreToolUse`.
 
+## OpenCode (trial, ADR 0043)
+
+1. Confirm `opencode` is on PATH. If not, point the person at
+   [opencode.ai](https://opencode.ai) install docs.
+2. Ask them to run `scripts/omlx.sh sub-key add opencode-<machine>` on the
+   host (they type the token). On a laptop, `ai-tunnel` first.
+3. Help them write `~/.config/opencode/opencode.json` from the README
+   *OpenCode* block: provider `hearth`, model `hearth/main-brain`, only
+   that role listed, base URL as above. They paste the sub-key; you never
+   read or write the key value. `chmod 600` the file if it holds the key.
+4. No cloud / OpenRouter provider on the host for sensitive work.
+5. `scripts/install-loop-guard.sh` once, then restart OpenCode. Check 3
+   (triple read) should throw via the plugin; log line format is
+   `opencode deny`.
+
 ## JetBrains AI Assistant
 
 Settings → Tools → AI Assistant → Providers & API keys → OpenAI Compatible.
@@ -82,8 +97,8 @@ listed there.
 | 3 | "Read `AGENTS.md` three times in a row with the read tool. Don't change anything" | The third call is refused, or in Cline the task stops |
 
 After check 3, run `tail -3 ~/Library/Logs/hearth-loop-guard.log` yourself.
-Expect a `vscode deny` or `cline deny` line. The log holds no tool
-arguments.
+Expect a `vscode deny`, `cline deny`, or `opencode deny` line. The log
+holds no tool arguments.
 
 Optional: "Quote what your rules say about the same tool error twice.
 Don't read any files." This shows whether `AGENTS.md` is loaded. If the

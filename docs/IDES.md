@@ -1,8 +1,8 @@
-# Editors: Zed and aider (VS Code and Cline on trial)
+# Editors: Zed and aider (VS Code, Cline and OpenCode on trial)
 
-Two tools, deliberately. They are good at different halves of the work and both
-address roles rather than model names, so neither needs touching when a model
-changes.
+Two primary tools, deliberately. They are good at different halves of the work
+and both address roles rather than model names, so neither needs touching when
+a model changes. VS Code, Cline and OpenCode are on trial beside them.
 
 | | aider | Zed |
 |---|---|---|
@@ -334,13 +334,15 @@ adding a TLS proxy in front of `:1234`.
 
 ---
 
-## VS Code and Cline (trial, ADR 0036)
+## VS Code, Cline and OpenCode (trial, ADR 0036, 0043)
 
 On trial beside Zed for agent work, with a loop guard Zed cannot have.
-Both call `main-brain` at `127.0.0.1:1234` with their own sub-key: on the
-host directly, on a laptop through `ai-tunnel`. **No cloud provider in
-either on the host** (rule 3, D3). Setup follows vendor
-docs read 2026-11-08 and has not been run against oMLX yet.
+Each calls `main-brain` at `127.0.0.1:1234` with its own sub-key: on the
+host directly, on a laptop through `ai-tunnel`. **No cloud provider on the
+host** (rule 3, D3). VS Code and Cline setup follows vendor docs read
+2026-11-08; OpenCode follows oMLX's OpenCode writer and OpenCode's plugin
+docs, read 2026-11-09. Client gates against oMLX are still open for
+OpenCode.
 
 ### Loop guard
 
@@ -357,10 +359,12 @@ hash only, never the arguments.
 |---|---|
 | This repo, VS Code | `.github/hooks/hearth-loop-guard.json` |
 | This repo, Cline | `.clinerules/hooks/PreToolUse` |
-| Every other repo | `scripts/install-loop-guard.sh` writes `~/Documents/Cline/Hooks/PreToolUse` and `~/.copilot/hooks/hearth-loop-guard.json`. `--check`, `--remove` |
+| This repo, OpenCode | `.opencode/plugins/hearth-loop-guard/` (throws on deny) |
+| Every other repo | `scripts/install-loop-guard.sh` writes the Cline hook, the VS Code Copilot hook, and `~/.config/opencode/plugins/hearth-loop-guard/index.js`. `--check`, `--remove` |
 
 If VS Code's Local harness ignores `~/.copilot/hooks`, add that folder to
-`chat.hookFilesLocations`. `preflight.sh` runs `loop-guard.sh --self-test`.
+`chat.hookFilesLocations`. Restart OpenCode after installing the plugin.
+`preflight.sh` runs `loop-guard.sh --self-test`.
 
 **Check it in each client:** ask the agent to read the same file three
 times without changing anything. The third call should be refused, or in
@@ -449,6 +453,36 @@ CLI (`npm install -g cline`): set `"telemetryOptOut": true` in
 exact hook stdin field names on the installed versions, and VS Code's
 `chatLanguageModels.json` file name and location.
 
+### OpenCode (trial, ADR 0043)
+
+1. **Install** the OpenCode CLI from [opencode.ai](https://opencode.ai)
+   (`curl -fsSL https://opencode.ai/install | bash`, or their current
+   docs). Confirm `opencode --version`.
+2. **On the host:** `scripts/omlx.sh sub-key add opencode-<machine>`. On a
+   laptop, `ai-tunnel` must be up first.
+3. **Config:** `~/.config/opencode/opencode.json`, mode 600 if it holds the
+   key. Provider id `hearth`, model `hearth/main-brain`, base URL
+   `http://127.0.0.1:1234/v1`. List only `main-brain` under that provider.
+   The README has the full JSON. Type the sub-key into `options.apiKey`
+   yourself (or whatever secret path your OpenCode build documents) — never
+   commit it. Dual machine: add `hearth-remote` at
+   `http://127.0.0.1:1235/v1` the same way (ADR 0040).
+4. **No cloud provider on the host** for sensitive repos. Turn telemetry
+   off when the setting exists.
+5. **Loop guard:** `scripts/install-loop-guard.sh` once, then restart
+   OpenCode. This repo's `.opencode/plugins/hearth-loop-guard/` covers
+   work inside the hearth checkout. The plugin shells out to
+   `loop-guard.sh --format opencode` and throws on deny.
+6. OpenCode reads `AGENTS.md` (project and `~/.config/opencode/AGENTS.md`).
+
+**Not verified on this host:** tool calling and streaming against oMLX,
+token check, the installed OpenCode plugin load shape (1.x vs 2.x), and
+whether a dead base URL fails without a cloud fallback. Run the three
+editor checks in the README before treating the trial as passed.
+
+T3 Code is deferred: it can orchestrate OpenCode from a phone, but its
+FAQ rejects local models (read 2026-11-09). See `docs/MOBILE.md`.
+
 ## Why two tools, and why this matters
 
 The 2026 research on AI-assisted development is not comfortable reading.
@@ -496,4 +530,5 @@ for indexing or an agent, is for non-sensitive repos only.
 | Cursor | Custom endpoint possible; earlier it rejected non-HTTPS base URLs | Indexing and search use Cursor's cloud | Not used here |
 | Windsurf, Kiro, Antigravity | Nothing found | Agent-first cloud IDEs | Not used here |
 | Cline | OpenAI Compatible provider; VS Code, JetBrains, CLI | No (telemetry on by default) | On trial — setup above (ADR 0036) |
+| OpenCode | OpenAI-compatible provider in `opencode.json`; CLI / TUI / desktop | Bring-your-own; cloud providers exist — keep them off the host for sensitive work | On trial — setup above (ADR 0043). T3 remote control deferred |
 | aider | Any OpenAI-compatible endpoint | No | The second tool |

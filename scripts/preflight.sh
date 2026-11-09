@@ -240,7 +240,7 @@ case "$zrc" in
 esac
 
 # ---------------------------------------------------------------- vs code, cline
-hdr "VS Code and loop guard (ADR 0036)"
+hdr "VS Code and loop guard (ADR 0036, 0043)"
 vs=$("${ROOT}/scripts/vscode-check.sh" 2>&1); vrc=$?
 case "$vrc" in
   0) ok "VS Code settings keep code on the host (scripts/vscode-check.sh)" ;;
