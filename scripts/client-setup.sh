@@ -21,8 +21,8 @@
 #     already registered.
 #   - its own SSH key, authorized here with `restrict` + permitopen + a
 #     permitlisten that matches nothing, so that key can forward to
-#     127.0.0.1:1234 (oMLX), :3000 (Open WebUI) and :8888 (SearXNG, for a
-#     laptop's SearXNG MCP — ADR 0022) and do nothing else — no shell, no -R,
+#     127.0.0.1:1234 (oMLX) only. SearXNG stays on the laptop (ADR 0045).
+#     Nothing else — no shell, no -R,
 #     no other ports. --update-keys brings an older restriction up to date and
 #     keeps only options that narrow access (from=, expiry-time=, no-*);
 #     granting ones (pty, agent-forwarding, …) would undo `restrict` and are
@@ -59,7 +59,7 @@ AK="$HOME/.ssh/authorized_keys"
 # 127.0.0.1). Port 0 is rejected as "invalid permission port" on OpenSSH 10.5,
 # so the dummy port is 1. permitopen limits -L only. Without permitlisten,
 # port-forwarding re-enables remote forwards.
-RESTRICT='command="/usr/bin/false",restrict,port-forwarding,permitopen="127.0.0.1:1234",permitopen="127.0.0.1:3000",permitopen="127.0.0.1:8888",permitlisten="none:1"'
+RESTRICT='command="/usr/bin/false",restrict,port-forwarding,permitopen="127.0.0.1:1234",permitlisten="none:1"'
 TUNNEL_PREFIX='command="/usr/bin/false",restrict,port-forwarding,'
 
 # Comma-separated options this script does not own, in their original order.
@@ -231,7 +231,7 @@ if [ -n "$AUTH" ]; then
   cp -p "$AK" "${AK}.bak-$(date +%Y%m%d%H%M%S)"
   printf '%s %s hearth-tunnel-%s\n' "$RESTRICT" "$keybody" "$NAME" >> "$AK"
   echo "authorized tunnel-only key for ${NAME} in ${AK} (backup kept)"
-  echo "  can forward to 127.0.0.1:1234, :3000 and :8888; no shell, no commands, no other ports"
+  echo "  can forward to 127.0.0.1:1234 only; no shell, no commands, no other ports"
   exit 0
 fi
 
@@ -303,7 +303,6 @@ if [ "$WINDOWS" -eq 0 ]; then cat <<EOF
      ai-models            # main-brain
      ask                  # aider on main-brain (ask-remote when dual)
      ask-cloud            # Gemini with the laptop's own key
-     ai-webui             # the host's Open WebUI
    Linux: skip ai-tunnel-install. ai-tunnel-stop unloads the LaunchAgent too.
 EOF
 else cat <<EOF
@@ -329,7 +328,7 @@ else cat <<EOF
      Read-Host -AsSecureString "token" | ConvertFrom-SecureString -AsPlainText | Set-Content \$HOME\\.hearth-key      # PowerShell 7, laptop-${NAME}
      Read-Host -AsSecureString "gemini" | ConvertFrom-SecureString -AsPlainText | Set-Content \$HOME\\.hearth-gemini-key
 
-4. ON THE LAPTOP — prove it: ai-tunnel, ai-ping, ai-models, ask, ask-cloud, ai-webui
+4. ON THE LAPTOP — prove it: ai-tunnel, ai-ping, ai-models, ask, ask-cloud
    Windows stays on one-shot ai-tunnel. There is no LaunchAgent.
 EOF
 fi

@@ -25,9 +25,8 @@ if (-not $env:HEARTH_SSH) {
 }
 
 $script:HearthLocalPort = if ($env:HEARTH_LOCAL_PORT) { $env:HEARTH_LOCAL_PORT } else { "1234" }
-$script:HearthWebuiPort = if ($env:HEARTH_WEBUI_PORT) { $env:HEARTH_WEBUI_PORT } else { "3000" }
-# Host's SearXNG, for a SearXNG MCP server on this laptop (ADR 0022). "0" skips it.
-$script:HearthSearxngPort = if ($env:HEARTH_SEARXNG_PORT) { $env:HEARTH_SEARXNG_PORT } else { "8888" }
+# SearXNG is local on this machine (ADR 0045). An old HEARTH_SEARXNG_PORT or
+# HEARTH_WEBUI_PORT is ignored. The tunnel forwards oMLX only.
 $script:HearthUrl = "http://127.0.0.1:$($script:HearthLocalPort)/v1"
 
 function Get-HearthSecret([string]$Name) {
@@ -58,10 +57,18 @@ function Test-HearthPort([int]$Port) {
 }
 
 function Test-HearthForwards {
-    if (-not (Test-HearthPort ([int]$script:HearthLocalPort))) { return $false }
-    if (-not (Test-HearthPort ([int]$script:HearthWebuiPort))) { return $false }
-    if ($script:HearthSearxngPort -ne "0" -and -not (Test-HearthPort ([int]$script:HearthSearxngPort))) { return $false }
-    return $true
+    Test-HearthPort ([int]$script:HearthLocalPort)
+}
+
+function Write-HearthTunnelStale {
+    $pat = "127.0.0.1:$($script:HearthLocalPort):127.0.0.1:1234"
+    try {
+        $hit = @(Get-CimInstance Win32_Process -Filter "Name='ssh.exe'" -ErrorAction Stop |
+            Where-Object { $_.CommandLine -and ($_.CommandLine -like "*$pat*") -and ($_.CommandLine -like "*127.0.0.1:8888*") })
+        if ($hit.Count -gt 0) {
+            Write-Host "tunnel: this ssh still forwards SearXNG. Run: ai-tunnel-stop; ai-tunnel" -ForegroundColor Yellow
+        }
+    } catch { }
 }
 
 # A listener is not enough. The token goes to this port, so the process must be
@@ -126,12 +133,10 @@ function ai-tunnel {
     if ((Test-HearthOurSsh) -and (Test-HearthPort ([int]$script:HearthLocalPort))) {
         if (Test-HearthForwards) {
             Write-Host "tunnel: already listening on 127.0.0.1:$($script:HearthLocalPort)"
+            Write-HearthTunnelStale
             return $true
         }
-        $missing = @()
-        if (-not (Test-HearthPort ([int]$script:HearthWebuiPort))) { $missing += "WebUI $($script:HearthWebuiPort)" }
-        if ($script:HearthSearxngPort -ne "0" -and -not (Test-HearthPort ([int]$script:HearthSearxngPort))) { $missing += "SearXNG $($script:HearthSearxngPort)" }
-        Write-Host "tunnel: 127.0.0.1:$($script:HearthLocalPort) is open but a forward is missing ($($missing -join ', '))." -ForegroundColor Red
+        Write-Host "tunnel: 127.0.0.1:$($script:HearthLocalPort) is open but this client's ssh is not the listener." -ForegroundColor Red
         Write-Host "        Run: ai-tunnel-stop; ai-tunnel" -ForegroundColor Red
         return $false
     }
@@ -142,20 +147,15 @@ function ai-tunnel {
         "-o", "ExitOnForwardFailure=yes",
         "-o", "ServerAliveInterval=30",
         "-o", "ServerAliveCountMax=3",
-        "-L", "127.0.0.1:$($script:HearthLocalPort):127.0.0.1:1234",
-        "-L", "127.0.0.1:$($script:HearthWebuiPort):127.0.0.1:3000")
-    if ($script:HearthSearxngPort -ne "0") {
-        $sshArgs += @("-L", "127.0.0.1:$($script:HearthSearxngPort):127.0.0.1:8888")
-    }
+        "-L", "127.0.0.1:$($script:HearthLocalPort):127.0.0.1:1234")
     $sshArgs += $env:HEARTH_SSH
     & ssh @sshArgs
     if ($LASTEXITCODE -ne 0 -or -not ((Test-HearthOurSsh) -and (Test-HearthForwards))) {
         Write-Host "tunnel: FAILED — try: ssh $($env:HEARTH_SSH)" -ForegroundColor Red
         return $false
     }
-    $sx = ""
-    if ($script:HearthSearxngPort -ne "0") { $sx = ", SearXNG → 127.0.0.1:$($script:HearthSearxngPort)" }
-    Write-Host "tunnel: up (oMLX → 127.0.0.1:$($script:HearthLocalPort), WebUI → 127.0.0.1:$($script:HearthWebuiPort)$sx)"
+    Write-Host "tunnel: up (oMLX → 127.0.0.1:$($script:HearthLocalPort))"
+    Write-HearthTunnelStale
     return $true
 }
 
@@ -194,15 +194,6 @@ function ai-ask {
     $r = Invoke-RestMethod -TimeoutSec 300 -Method Post -Uri "$($script:HearthUrl)/chat/completions" `
         -Headers @{ Authorization = "Bearer $k" } -ContentType "application/json" -Body $body
     "$($r.choices[0].message.content)".Trim()
-}
-
-function ai-webui {
-    if (Test-HearthStranger) {
-        Write-Host "127.0.0.1:$($script:HearthLocalPort) is open, but not the hearth ssh tunnel." -ForegroundColor Red
-        return
-    }
-    if (-not (Test-HearthForwards)) { if (-not (ai-tunnel)) { return } }
-    Start-Process "http://127.0.0.1:$($script:HearthWebuiPort)"
 }
 
 # aider: token set only for the child process, then the previous value put back.

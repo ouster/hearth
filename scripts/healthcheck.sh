@@ -16,7 +16,7 @@
 #   6. CORS: no Access-Control-Allow-Origin for a foreign Origin
 #   7. An unknown model name is refused. A 200 that names some other model
 #      is a warning: a typo would silently get that role.
-#   8. Open WebUI and SearXNG answer (warning only)
+#   8. SearXNG answers (warning only). A leftover Open WebUI is a warning.
 #
 # Exit 0 healthy, 1 a real problem, 2 a check could not run.
 
@@ -215,14 +215,15 @@ else
 fi
 
 # ---------------------------------------------------------------- 8. UI
-hdr "8. Open WebUI / SearXNG (down is a warning; a LAN bind is a failure)"
-for pu in "Open WebUI|3000|http://127.0.0.1:3000/health" "SearXNG|8888|http://127.0.0.1:8888/"; do
-  n="${pu%%|*}"; rest="${pu#*|}"; p="${rest%%|*}"; u="${rest#*|}"
-  c=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$u" 2>/dev/null)
-  [ "$c" = "200" ] && ok "${n} answering" || wrn "${n} not answering (${c}) — the Podman VM may have stopped: scripts/boot.sh"
-  wan=$(hearth_wan_binds "$p")
-  [ -z "$wan" ] || bad "${n} is not loopback-only:${wan}"
-done
+hdr "8. SearXNG (down is a warning; a LAN bind is a failure)"
+c=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:8888/" 2>/dev/null)
+[ "$c" = "200" ] && ok "SearXNG answering" || wrn "SearXNG not answering (${c}) — the Podman VM may have stopped: scripts/boot.sh"
+wan=$(hearth_wan_binds 8888)
+[ -z "$wan" ] || bad "SearXNG is not loopback-only:${wan}"
+c=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:3000/health" 2>/dev/null)
+[ "$c" = "200" ] && wrn "Open WebUI still answering on :3000 — scripts/webui.sh down (ADR 0044)"
+wan=$(hearth_wan_binds 3000)
+[ -z "$wan" ] || bad "port 3000 is not loopback-only:${wan}"
 
 # ---------------------------------------------------------------- verdict
 printf '\n\033[1m%d passed, %d warnings, %d failed, %d errors\033[0m\n' "$pass" "$warn" "$fail" "$err"

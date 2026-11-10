@@ -10,7 +10,8 @@
 #               scripts/omlx.sh up. scripts/omlx.sh down stops it
 #               and leaves the port empty.
 #   Podman      the VM does not start itself; container restart policies only
-#               apply once it is up. SearXNG and Open WebUI live there.
+#               apply once it is up. SearXNG lives there. Open WebUI was
+#               removed (ADR 0044); a leftover container is stopped.
 #
 # Always 127.0.0.1. D8 is an SSH tunnel; there is no LAN bind switch.
 # launchd does not retry a failed boot: a Podman failure must not
@@ -42,7 +43,7 @@ fi
 # ---------------------------------------------------------------- podman
 PODMAN="$(command -v podman 2>/dev/null || true)"
 if [ -z "$PODMAN" ]; then
-  log "podman not installed — skipping SearXNG / Open WebUI"
+  log "podman not installed — skipping SearXNG"
 else
   if ! "$PODMAN" info >/dev/null 2>&1; then
     log "starting podman machine"
@@ -57,19 +58,27 @@ else
     log "podman API unreachable — skipping containers"
     rc=1
   else
-    for kind in searxng webui; do
-      c="$(ai_container "$kind")"
-      if ! "$PODMAN" container exists "$c" 2>/dev/null; then
-        log "${c}: not created (scripts/${kind}.sh up)"
-      elif [ "$("$PODMAN" inspect -f '{{.State.Running}}' "$c" 2>/dev/null)" = "true" ]; then
-        log "${c}: running"
-      elif "$PODMAN" start "$c" >/dev/null 2>&1; then
-        log "${c}: started"
+    c="$(ai_container searxng)"
+    if ! "$PODMAN" container exists "$c" 2>/dev/null; then
+      log "${c}: not created (scripts/searxng.sh up)"
+    elif [ "$("$PODMAN" inspect -f '{{.State.Running}}' "$c" 2>/dev/null)" = "true" ]; then
+      log "${c}: running"
+    elif "$PODMAN" start "$c" >/dev/null 2>&1; then
+      log "${c}: started"
+    else
+      log "${c}: FAILED to start"
+      rc=1
+    fi
+    c="$(ai_container webui)"
+    if "$PODMAN" container exists "$c" 2>/dev/null \
+      && [ "$("$PODMAN" inspect -f '{{.State.Running}}' "$c" 2>/dev/null)" = "true" ]; then
+      if "$PODMAN" stop "$c" >/dev/null 2>&1; then
+        log "${c}: stopped (Open WebUI removed, ADR 0044)"
       else
-        log "${c}: FAILED to start"
+        log "${c}: FAILED to stop"
         rc=1
       fi
-    done
+    fi
   fi
 fi
 

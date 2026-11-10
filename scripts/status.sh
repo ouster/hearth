@@ -41,11 +41,14 @@ echo "Roles"
 echo
 echo "Containers"
 if command -v podman >/dev/null 2>&1 && podman info >/dev/null 2>&1; then
-  for kind in webui searxng; do
-    c="$(ai_container "$kind")"
-    s=$(podman inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo "not created")
-    [ "$s" = "running" ] && g "${c}: running" || y "${c}: ${s}"
-  done
+  c="$(ai_container searxng)"
+  s=$(podman inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo "not created")
+  [ "$s" = "running" ] && g "${c}: running" || y "${c}: ${s}"
+  c="$(ai_container webui)"
+  if podman container exists "$c" 2>/dev/null; then
+    s=$(podman inspect -f '{{.State.Status}}' "$c" 2>/dev/null || echo "unknown")
+    y "${c}: ${s} — Open WebUI was removed (scripts/webui.sh down)"
+  fi
 else
   y "podman VM not running"
 fi

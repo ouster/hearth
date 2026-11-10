@@ -15,7 +15,7 @@ for that egress.
 
 | Server | Transport | Egress | Tools | Clients |
 |---|---|---|---|---|
-| `searxng` | stdio | local SearXNG `127.0.0.1:8888` → public search engines | 1 of 4 | host Zed, `web` and `write-web` (ADR 0022, 0029) |
+| `searxng` | stdio | this machine's SearXNG `127.0.0.1:8888` → public search engines | 1 of 4, via `scripts/searxng-mcp.mjs` | Zed `web` and `write-web`; Cline, OpenCode, Goose (ADR 0022, 0029, 0045) |
 
 ## Worked example: auslaw (not installed)
 
@@ -26,8 +26,8 @@ configuration is currently on this host. The historical source location was
 `~/dev/auslaw-mcp`; this repo does not contain or install it.
 
 **stdio, not HTTP.** Its HTTP mode calls `listen(port)` with no host, so it
-binds every interface with no authentication, and defaults to `:3000` — which
-is Open WebUI. stdio spawns a child process with no listener at all.
+binds every interface with no authentication, and defaults to `:3000`.
+stdio spawns a child process with no listener at all.
 
 ### Tools, by where they go
 
@@ -133,7 +133,7 @@ Send it only when that is intended.
 
 ## searxng
 
-Web search for the Zed agent through the host's own SearXNG (ADR 0022).
+Web search through this machine's own SearXNG (ADR 0022, 0045). The tunnel does not forward it, and the URL is never a public instance.
 Package `mcp-searxng` 2.9.0 (`ihor-sokoliuk/mcp-searxng`, MIT, npm with SLSA
 provenance, no install scripts), installed pinned with `npm install
 --ignore-scripts --save-exact` into `~/.local/share/hearth/mcp-searxng`, run by
@@ -141,9 +141,11 @@ provenance, no install scripts), installed pinned with `npm install
 whatever is newest on every start. Its lockfile is monitored by Snyk
 (`scripts/snyk-monitor.sh`, project `hearth/mcp-searxng`).
 
-**stdio.** It only listens if `MCP_HTTP_PORT` is set, which Zed's entry does
-not. Env: `SEARXNG_URL=http://127.0.0.1:8888`, `SEARXNG_LITE_TOOLS=true`
-(short schemas for a local model), `SEARXNG_MAX_RESULTS=10`.
+**stdio.** Clients run `scripts/searxng-mcp.mjs` with `/opt/homebrew/bin/node`,
+not the package entry and not `npx`. The wrapper forces
+`SEARXNG_URL=http://127.0.0.1:8888`, `SEARXNG_LITE_TOOLS=true` (short schemas
+for a local model) and `SEARXNG_MAX_RESULTS=10`, and it drops `MCP_HTTP_PORT`.
+A `SEARXNG_URL` in the client config is ignored.
 
 ### Tools, by where they go
 
@@ -154,8 +156,9 @@ not. Env: `SEARXNG_URL=http://127.0.0.1:8888`, `SEARXNG_LITE_TOOLS=true`
 | `searxng_instance_info` | local SearXNG `/config` only | **no** (not needed) |
 | `web_url_read` | **any public URL** | **no** |
 
-The server has no allow-list: the exclusions are Zed profile settings, not
-server-side. `web_url_read` refuses localhost, RFC1918,
+The package has no allow-list. `scripts/searxng-mcp.mjs` is the allow-list:
+it advertises `searxng_web_search` and refuses the other three. Zed profiles
+still enable only that tool. `web_url_read` refuses localhost, RFC1918,
 link-local and private IPv6, including names that resolve to them — checked
 2026-11-01 against `127.0.0.1:1234` and `localhost:8888`, both refused. Kept
 off anyway: an agent that can fetch any page is both an exfiltration channel
@@ -163,20 +166,25 @@ and a prompt-injection feed.
 
 ### Who may reach it
 
-Host Zed, two profiles (ADR 0022, 0029). **Web** has an empty built-in tool
-map and `default_model` `hearth/main-brain`, so a search result cannot read
-a file. **Write + search** (`write-web`) has Write's tools and no pinned
-model, so a coding thread on `main-brain` or `deep-brain` can search. The
-query text still leaves, and that profile can put file contents into the
-query. `confirm` on each tool call is the other gate. Write and Ask have
-neither. An agent on Write + search can exfiltrate personal information by
-searching with text it read from a file. See `docs/ROUTING.md`.
+The machine that runs SearXNG (ADR 0045). Zed uses two profiles (ADR 0022,
+0029). **Web** has an empty built-in tool map and `default_model`
+`hearth/main-brain`, so a search result cannot read a file. **Write + search**
+(`write-web`) has Write's tools and no pinned model, so a coding thread on
+`main-brain` or `deep-brain` can search. The query text still leaves, and
+that profile can put file contents into the query. `confirm` on each tool
+call is the other gate. Write and Ask have neither. An agent on Write +
+search can exfiltrate personal information by searching with text it read
+from a file. See `docs/ROUTING.md`.
 
-Laptops may run the same pinned server against the host's SearXNG through
-the tunnel (`127.0.0.1:8888` on the laptop; tunnel keys allow `:8888` since
-2026-11-01). Same two profiles. Do not switch either to Gemini. SearXNG has
-no authentication, so any process on the laptop can send queries through the
-host once the tunnel is up — `docs/LAPTOP.md`.
+Cline, OpenCode, and Goose on that same machine start the wrapper
+(`docs/IDES.md`). Cline cannot hide a tool in its MCP settings, which is why
+the wrapper exists. OpenCode denies `webfetch` and sets `websearch` to false.
+Goose lists `searxng_web_search` in `available_tools`. Each search asks first.
+Do not point any of them at Gemini for a thread that can search.
+
+SearXNG has no authentication. Any process on this machine can POST a query
+to `127.0.0.1:8888`. A process on another machine cannot: the tunnel does not
+forward the port, and new keys cannot `permitopen` it.
 
 ## Rules these enforce
 

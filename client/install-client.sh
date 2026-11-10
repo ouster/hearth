@@ -11,7 +11,7 @@
 # Options:
 #   --host user@host   the Hearth host, for the ~/.ssh/config entry (first time)
 #   --dual             this machine also runs its own brain on 127.0.0.1:1234:
-#                      the tunnel moves to 1235 (WebUI 3001, SearXNG 8889) and
+#                      the tunnel moves to 1235 and
 #                      the client's aider commands get a -remote suffix
 #   --laptop           force client-only mode (tunnel on 1234)
 #   Without either, dual is chosen when ~/.config/hearth/env exists (a host
@@ -98,6 +98,8 @@ fi
 
 # 3. shell rc block. Older setups appended loose lines; those are commented
 # out (backup kept) so the block is the only source of truth.
+# WEBUI_PORT and SEARXNG_PORT stay in the pattern so an old export is
+# commented out (ADR 0044, 0045). The client ignores both.
 loose='^[[:space:]]*(export[[:space:]]+HEARTH_(SSH|CLOUD_MODEL|DUAL|LOCAL_PORT|WEBUI_PORT|SEARXNG_PORT)=|(source|\.)[[:space:]]+~/\.hearth-client\.sh)'
 want="$(block)"
 have=""
@@ -134,6 +136,9 @@ else todo "token: on the host scripts/omlx.sh sub-key add laptop-<short-name>; t
 # 5. launchd tunnel on the right port
 port=1234; [ "$MODE" = dual ] && port=1235
 if [ "$(uname -s)" = Darwin ]; then
+  if [ -f "$PLIST" ] && grep -qF -- "127.0.0.1:8888" "$PLIST"; then
+    todo "launchd tunnel still forwards SearXNG — in a new shell: ai-tunnel-stop && ai-tunnel-install"
+  fi
   if [ -f "$PLIST" ] && grep -qF -- "127.0.0.1:${port}:127.0.0.1:1234" "$PLIST"; then
     ok "launchd tunnel forwards 127.0.0.1:${port}"
   elif [ -f "$PLIST" ]; then

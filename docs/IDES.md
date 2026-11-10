@@ -154,11 +154,12 @@ Search is the Web profile, or Write + search when the thread also edits.
 
 ### MCP: searxng
 
-`searxng` is a `context_servers` stdio entry for the pinned SearXNG MCP
-server (`docs/MCP.md`, ADR 0022, 0029). Its search tool sends the query text
-through the host's SearXNG to public engines. Only `searxng_web_search` is
-on. `web_url_read` (any URL) and the other two tools stay off. Each tool
-call asks first.
+`searxng` is a `context_servers` stdio entry. The command is
+`/opt/homebrew/bin/node` and the argument is this repo's
+`scripts/searxng-mcp.mjs` (`docs/MCP.md`, ADR 0022, 0029, 0045). The wrapper
+sends the query through SearXNG on this machine (`127.0.0.1:8888`) and
+ignores a `SEARXNG_URL` in the entry. Only `searxng_web_search` is advertised.
+Each tool call asks first.
 
 **Web** has an empty built-in tool map and `default_model` `hearth/main-brain`.
 A search result cannot read a file.
@@ -428,8 +429,15 @@ apply.
 3. **Settings → General:** clear "Allow error and usage reporting". It is
    on by default. The docs say it excludes code and prompts, but it still
    sends usage data.
-4. **Auto-approve:** leave web fetch and browser off. Fetch sends what the
-   model chose to look up, as with Zed's fetch (`docs/ROUTING.md`).
+4. **Web search is the local SearXNG MCP, not Cline's.** In
+   `~/.cline/data/settings/global-settings.json` set
+   `tools.web_search.enabled` to false. In
+   `~/.cline/data/globalState.json`, `autoApprovalSettings.actions.useBrowser`
+   and `useMcp` stay false, so the browser and each MCP call ask first.
+   `~/.cline/data/settings/cline_mcp_settings.json` starts
+   `scripts/searxng-mcp.mjs` with `autoApprove` empty (ADR 0045). Cline
+   cannot hide one tool of a server; the wrapper is what keeps
+   `web_url_read` off.
 5. **Feature settings → Enable Hooks.** Turn on **Use Compact Prompt** for
    local models.
 6. Cline reads `AGENTS.md` and `.clinerules/`.
@@ -445,7 +453,8 @@ JetBrains: Marketplace plugin 28247, View → Tool Windows → Cline. On
 2026-11-08 the global hook (`~/Documents/Cline/Hooks/PreToolUse`)
 stopped the third identical read in both PyCharm and Cline Desktop.
 Run `scripts/install-loop-guard.sh` once per machine.
-CLI (`npm install -g cline`): set `"telemetryOptOut": true` in
+CLI (`npm install -g cline`): set `"telemetryOptOut": true` and
+`"tools": {"web_search": {"enabled": false}}` in
 `~/.cline/data/settings/global-settings.json`. CLI hooks are off in
 `--yolo` mode.
 
@@ -474,6 +483,35 @@ exact hook stdin field names on the installed versions, and VS Code's
    work inside the hearth checkout. The plugin shells out to
    `loop-guard.sh --format opencode` and throws on deny.
 6. OpenCode reads `AGENTS.md` (project and `~/.config/opencode/AGENTS.md`).
+7. **Web search is the local SearXNG MCP** (ADR 0045). In the same config,
+   set `"websearch": false`. Add the server and these permissions. Checked
+   against the OpenCode docs on 2026-11-10: `websearch: false` removes the
+   vendor tool; `webfetch` is a separate permission; servers live under
+   `mcp.servers`; `codemode: false` puts the tool on the native list.
+
+```jsonc
+{
+  "websearch": false,
+  "mcp": {
+    "servers": {
+      "searxng": {
+        "type": "local",
+        "command": ["/opt/homebrew/bin/node", "/path/to/hearth/scripts/searxng-mcp.mjs"],
+        "codemode": false
+      }
+    }
+  },
+  "permissions": [
+    { "action": "webfetch", "resource": "*", "effect": "deny" },
+    { "action": "websearch", "resource": "*", "effect": "deny" },
+    { "action": "searxng_*", "resource": "*", "effect": "ask" }
+  ]
+}
+```
+
+Do not set a `SEARXNG_URL`. The wrapper forces `http://127.0.0.1:8888`.
+A project config replaces a global server of the same name, so a project
+that repeats `searxng` has to repeat this command.
 
 **Not verified on this host:** tool calling and streaming against oMLX,
 token check, the installed OpenCode plugin load shape (1.x vs 2.x), and
@@ -482,6 +520,32 @@ editor checks in the README before treating the trial as passed.
 
 T3 Code is deferred: it can orchestrate OpenCode from a phone, but its
 FAQ rejects local models (read 2026-11-09). See `docs/MOBILE.md`.
+
+### Goose
+
+Goose has no vendor web search. Its tools are extensions.
+`~/.config/goose/config.yaml` (checked against the Goose config docs on
+2026-11-10):
+
+```yaml
+extensions:
+  searxng:
+    type: stdio
+    name: searxng
+    enabled: true
+    cmd: /opt/homebrew/bin/node
+    args:
+      - /path/to/hearth/scripts/searxng-mcp.mjs
+    envs: {}
+    timeout: 300
+    available_tools:
+      - searxng_web_search
+```
+
+`available_tools` is a second allow-list. The wrapper is the one that holds
+if that field is emptied. Leave Goose's other extensions as they were; this
+block only adds search. Goose was not installed on the machine that wrote
+this.
 
 ## Why two tools, and why this matters
 

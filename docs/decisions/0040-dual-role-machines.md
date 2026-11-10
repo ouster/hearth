@@ -1,7 +1,7 @@
 # ADR 0040 — One machine can be a host and a client
 
 **Date:** 2026-11-08
-**Status:** accepted by the operator 2026-11-08.
+**Status:** accepted by the operator 2026-11-08. Amended 2026-11-10 by ADR 0044 (no Open WebUI forward) and ADR 0045 (no SearXNG forward).
 
 ## Context
 
@@ -16,9 +16,11 @@ for `edit-brain` on another port. Under the old split, the two cannot share
 - **A machine's own oMLX is always on `127.0.0.1:1234`.** The sandbox
   (`sandboxed.sh`), the host scripts, the editor configs and the docs all
   mean "this machine's brain" when they say 1234. Nothing there changes.
-- **On a dual machine the tunnel moves:** oMLX → `127.0.0.1:1235`, WebUI →
-  3001, SearXNG → 8889 (`HEARTH_DUAL=1` in the client). Laptop-only
-  machines keep the tunnel on 1234; existing laptops change nothing.
+- **On a dual machine the tunnel moves:** oMLX → `127.0.0.1:1235`
+  (`HEARTH_DUAL=1` in the client). Laptop-only machines keep the tunnel
+  on 1234. SearXNG is local on each machine, on `:8888` (ADR 0045).
+  Open WebUI's `:3000` / `:3001` forward was removed (ADR 0044).
+  Reinstall the tunnel so an old agent drops both.
 - **Command names:** on a dual machine, `ask`, `main-brain`, `ask-arch`,
   `ask-deep` and `deep-brain` come from `scripts/aliases.zsh` (its own
   brain). The client's versions get a `-remote` suffix. The client's

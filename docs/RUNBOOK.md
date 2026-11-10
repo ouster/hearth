@@ -13,9 +13,8 @@ Start, stop, diagnose. oMLX serves `127.0.0.1:1234` from `~/.hearth/models`
 | Roles | `config/roles.tsv` | `main-brain` resident, 128K × 3. `deep-brain` evicts `main-brain` for its session. `edit-brain` is laptop-only (ADR 0031, 0033) |
 | Token | `~/.config/hearth/env`, mode 600 | `OMLX_HOST_TOKEN`. Scripts pass it to the server as `OMLX_API_KEY` |
 | Server settings | `~/.omlx/settings.json` (mode 600) | written by `scripts/omlx.sh up`: loopback, CORS off, no model fallback |
-| Remote Login (sshd) | `:22` | laptops' tunnel; their keys are `restrict`ed to `-L` `:1234`/`:3000`/`:8888`, with `-R` denied (`scripts/client-setup.sh --update-keys` brings old keys up to date) |
-| Open WebUI | Podman, `127.0.0.1:3000` | `scripts/webui.sh` |
-| SearXNG | Podman, `:8888` | `scripts/searxng.sh` |
+| Remote Login (sshd) | `:22` | laptops' tunnel; their keys are `restrict`ed to `-L` `:1234` only, with `-R` denied (`scripts/client-setup.sh --update-keys` brings old keys up to date, ADR 0045) |
+| SearXNG | Podman, `:8888` | `scripts/searxng.sh` on this machine. Zed, Cline, OpenCode, Goose via `scripts/searxng-mcp.mjs` |
 
 Removed 2026-10-31: Ollama, LiteLLM, Postgres, Rapid-MLX, llmster and their
 launchd agents. Ports 4000, 5433 and 11434 should be free.
@@ -56,11 +55,13 @@ launchd agents. Ports 4000, 5433 and 11434 should be free.
 
 `scripts/install-autostart.sh --apply` installs `com.hearth.boot`, a launchd
 agent that runs `scripts/boot.sh` once at login. `boot.sh` runs
-`scripts/omlx.sh up`, then starts the Podman VM, SearXNG and Open WebUI.
+`scripts/omlx.sh up`, then starts the Podman VM and SearXNG. A leftover
+Open WebUI container is stopped (ADR 0044).
 
 The plist sets `AbandonProcessGroup`: without it launchd kills every process
-`boot.sh` leaves behind when it exits — which is the Podman VM, so WebUI and
-SearXNG died minutes after login (seen and reproduced 2026-10-31).
+`boot.sh` leaves behind when it exits — which is the Podman VM, so SearXNG
+died minutes after login (seen and reproduced 2026-10-31, when Open WebUI
+ran in the same VM).
 
 Log: `~/Library/Logs/hearth-boot.log`. Check it with
 `scripts/install-autostart.sh --check`. By hand: `scripts/boot.sh`.
@@ -130,79 +131,37 @@ GPU ceiling, RAM minus 8 — RSS understates it):
 footprint -p "$(cat ~/.omlx/hearth.pid)" | awk '/Footprint:/'
 ```
 
-## Chat UI and visibility
+## SearXNG
 
 ```bash
-scripts/webui.sh up            # local only — there is no cloud mode, and no login
-scripts/webui.sh down
+scripts/searxng.sh up
+scripts/searxng.sh down
 ```
 
-The container reaches the host's `127.0.0.1:1234` via
-`host.containers.internal` with "serve on local network" off. `webui.sh up`
-refuses to start unless the host token gets a 200. SearXNG stays published
-on `127.0.0.1:8888` for Zed and laptop tunnels. The WebUI container does not
-use that bind: both containers join the `hearth` Podman network and WebUI
-calls SearXNG by container name on port 8080. `up` writes that URL into the
-WebUI database, which is the value the search toggle actually uses.
+Published on `127.0.0.1:8888` for editors on this machine (ADR 0045). The tunnel does not forward it. Login boot starts
+it. Open WebUI was removed (ADR 0044). A leftover container is stopped by
+the next `scripts/boot.sh`, or by `scripts/webui.sh down`.
+`scripts/webui.sh destroy` deletes its volume and the chats in it.
 
-**The connection lives in WebUI's database.** Environment variables only seed
-a fresh database. `up` does not rewrite the saved OpenAI URL, and the
-anonymous session cannot open the admin panel. Default and task model are
-`main-brain`.
-
-### Using the chat UI from a laptop
-
-Open WebUI is a **web app** — nothing to install on the laptop. **Preferred:
-SSH tunnel**, which keeps the UI localhost-only:
-
-```bash
-ssh -N -L 3000:127.0.0.1:3000 USER@HOST     # then http://127.0.0.1:3000
-```
-
-There is no login: `WEBUI_AUTH` is off, and `webui.sh` refuses `--lan` because
-that would publish the chat UI with nothing in front of it. **Do not
-port-forward :3000 to the internet.** The tunnel is the only remote path.
-
-The anonymous session does not keep chats. Open WebUI creates that user as
-admin, and this image skips temporary-chat enforcement for admins, so
-`webui.sh up` demotes the user, turns chat sharing off, deletes saved chats,
-and refuses new chat rows. A refresh starts empty. The admin panel is not
-available in that session. `up` does not rewrite the saved OpenAI connection;
-that row in the WebUI database is what the model list uses.
-
-### Do not enable tools in Open WebUI without thinking
-
-Web search feeds arbitrary attacker-controlled page text straight into the
-model's context. That is tolerable **only** because the chat model has no tools:
-it can mislead you convincingly, but it cannot act.
-
-Enabling tools, functions, or code execution turns this into the highest-risk
-surface in the stack. Open WebUI stores these settings in its database, where
-they override the environment and survive container recreation. Treat
-enabling them as an ADR-worthy decision. See `docs/THREAT-MODEL.md` §3.
-
-### Web search: the env vars are not enough
-
-Same database-wins trap. The anonymous session cannot open the admin panel,
-so the value already stored in the volume is the one the toggle follows.
-The toggle then appears per message.
+Engines see this machine's ISP address. They do not see a browser cookie
+or a signed-in account. The query text still leaves. See `docs/ROUTING.md`.
 
 ### Vulnerability monitoring (Snyk)
 
-Hearth has no dependency manifests, so what Snyk watches is the two container
-images: `scripts/snyk-monitor.sh` exports the image each container is running
-(by ID — the tags move) and records it as Snyk projects `hearth/webui` and
-`hearth/searxng`, plus the Zed SearXNG MCP server's npm lockfile as
-`hearth/mcp-searxng` (ADR 0022). Snyk re-tests those snapshots daily and emails new issues.
+Hearth has no dependency manifests, so what Snyk watches is the SearXNG
+image: `scripts/snyk-monitor.sh` exports the image the container is running
+(by ID — the tag moves) and records it as Snyk project `hearth/searxng`,
+plus the Zed SearXNG MCP server's npm lockfile as `hearth/mcp-searxng`
+(ADR 0022). Snyk re-tests those snapshots daily and emails new issues.
 Only the image's package list leaves the machine, not this repo's code.
 
 - One-time: `brew tap snyk/tap && brew install snyk-cli`, then `snyk auth`
   (browser sign-in; free plan).
-- `scripts/webui.sh up` and `scripts/searxng.sh up` re-run it in the
-  background; output in `~/Library/Logs/hearth-snyk.log`. After pulling a new
-  image, run `scripts/snyk-monitor.sh` by hand if you did not `up`.
+- `scripts/searxng.sh up` re-runs it in the background; output in
+  `~/Library/Logs/hearth-snyk.log`. After pulling a new image, run
+  `scripts/snyk-monitor.sh` by hand if you did not `up`.
 - Exit 2 means it could not run (no CLI, not signed in, Podman down), not that
-  the images are clean.
+  the image is clean.
 
 ## Running agents contained
 
@@ -266,4 +225,4 @@ scripts/client-setup.sh m5-air --authorize key.pub          # tunnel-only key
 LAN answer means the server is not bound to loopback. Revoke a laptop with
 `scripts/omlx.sh sub-key revoke laptop-m5-air` and delete its
 `hearth-tunnel-m5-air` line in `~/.ssh/authorized_keys`.
-**Never port-forward `:22`, `:1234` or `:3000`.**
+**Never port-forward `:22`, `:1234` or `:8888`.** `:8888` is this machine's SearXNG. A laptop key cannot forward it either (ADR 0045).

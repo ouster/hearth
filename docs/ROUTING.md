@@ -46,8 +46,8 @@ in a different way:
 | `ask`, `ask-*` on the host | **no** | point at `:1234` with the host token. There is no host `ask-cloud`: the host holds no cloud key (ADR 0038) |
 | `ask-cloud` on a laptop | **yes** | the only command with a provider key, the laptop's own; it is explicit by name |
 | Sandboxed agents | **no** | egress allowed to `127.0.0.1:1234` only |
-| Open WebUI | model: **no**. Search query: **yes if enabled** | see below |
-| VS Code, Cline on this host (trial) | chat/agent model: **no** if set up per `docs/IDES.md`. Completions: **yes, to GitHub** | Custom Endpoint / OpenAI Compatible at `:1234` only. Copilot inline completions (ghost text) and next edit suggestions are **allowed** and send the text around the cursor to GitHub (ADR 0041) — except in a repo flagged sensitive, which turns both off in its own `.vscode/settings.json` (`scripts/vscode-check.sh --show-sensitive`, checked by `--workspace DIR`). Copilot code search stays off. Cline's own provider is cloud. Web fetch sends the query, as in Zed (ADR 0036) |
+| SearXNG, from Zed Web or Write + search | query: **yes** | the model stays on `:1234`. The query leaves from this machine's ISP address, with no browser cookie and no signed-in search account. See below |
+| VS Code, Cline, OpenCode, Goose | chat/agent model: **no** if set up per `docs/IDES.md`. Completions: **yes, to GitHub** (VS Code) | Custom Endpoint / OpenAI Compatible at `:1234` only. Copilot inline completions (ghost text) and next edit suggestions are **allowed** and send the text around the cursor to GitHub (ADR 0041) — except in a repo flagged sensitive, which turns both off in its own `.vscode/settings.json` (`scripts/vscode-check.sh --show-sensitive`, checked by `--workspace DIR`). Copilot code search stays off. Cline's `web_search` / `web_fetch` and OpenCode's `websearch` stay off. Keyword search is this machine's SearXNG (ADR 0045) |
 
 What is lost against the gateway: on a laptop, nothing refuses a cloud
 request you make on purpose. Choosing `ask-cloud` on sensitive work is not
@@ -60,13 +60,22 @@ safe for anything.
 
 ## Web search punctures the boundary
 
-Open WebUI can give local models web search via self-hosted SearXNG
-(`scripts/searxng.sh`). The model, the conversation and your documents all stay
-on this machine. **The search query does not.**
+Zed, Cline, OpenCode, and Goose search through SearXNG on this machine
+(`scripts/searxng.sh`, `scripts/searxng-mcp.mjs`, ADR 0022, 0029, 0045). The
+model, the conversation and the files stay here. **The search query does not.**
 
-SearXNG stops Google, Bing and DuckDuckGo seeing your IP or building a profile —
-it queries them on your behalf. That is a genuine improvement over searching
-directly. It is not privacy. The search terms still leave.
+SearXNG runs here and opens its own connections to Google, Bing and
+DuckDuckGo, so those engines see this machine's ISP address. They do not
+see a browser cookie or a signed-in account, and the query is not added to
+one. That is the gain over a signed-in browser, over Cline's web search
+(which posts the query to Cline), over OpenCode's `websearch` (Exa, Parallel,
+Firecrawl, Tavily, or TinyFish) and over Zed's built-in `search_web`
+(which posts it to Zed, then Exa). It is not anonymity. The search terms
+still leave, from this house. A public SearXNG instance would hide the ISP
+address and hand the query to whoever runs it, so the wrapper refuses any
+URL except `http://127.0.0.1:8888`. The tunnel does not forward SearXNG
+either: a laptop searches from the laptop. Open WebUI, the old chat page,
+was removed (ADR 0044).
 
 | Safe with web search on | Never with web search on |
 |---|---|
@@ -84,8 +93,10 @@ Zed follows the same rule on two profiles (ADR 0022, 0029). **Web** sends
 `main-brain`. **Write + search** has Write's tools and no pinned model, so
 a thread on `main-brain` or `deep-brain` can search and can read files into
 the query. Each tool call asks first (`confirm`). Write and Ask do not
-include SearXNG, or Zed's built-in `fetch` and `search_web`. `docs/MCP.md`
-uses the former legal-research profile as a setup example; it is not installed.
+include SearXNG, or Zed's built-in `fetch` and `search_web`. Cline, OpenCode,
+and Goose ask before the same tool and have their own web search off
+(`docs/IDES.md`). `docs/MCP.md` uses the former legal-research profile as a
+setup example; it is not installed.
 
 ## No fallbacks
 

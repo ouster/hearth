@@ -115,21 +115,20 @@ it landed*, which is knowable.
 | 1 | **aider** | files you `/add`, vendored deps, cloned repos, sample data | edit source, run commands, reach the network | **high** |
 | 2 | **Zed agents** | same, plus tool results. Write and Ask have `fetch` and `search_web` off. **Web** is search only. **Write + search** has Write's tools and `searxng_web_search` (ADR 0029) | edit or read in Write; send the query out from Web or Write + search. Write + search can put file text into that query. `confirm` is the gate | **high** |
 | 3 | **untrusted MCP** | fetched docs / tools from a server not in `docs/MCP.md` | depends entirely on what the MCP exposes | unknown |
-| 4 | **SearXNG** | arbitrary web pages; the query text leaves | Open WebUI can mislead you and, when search is on, send a query. Zed's `web` profile can search and cannot read files. **Write + search** can read files and search in one thread. The tunnel publishes SearXNG with no login, so any process on a laptop can send a query | medium |
+| 4 | **SearXNG** | arbitrary web pages; the query text leaves | Zed's `web` profile can search and cannot read files. **Write + search**, and Cline, OpenCode, and Goose, can read files and search in one thread. SearXNG has no login, so any process on this machine can send a query. The tunnel does not publish it (ADR 0045) | medium |
 
 **Surface 3 is a server that is not registered in `docs/MCP.md`.** The live
 web-search MCP server is registered there, with the tool it exposes written
 down. The legal-research server is a worked setup example, not an installed
 server. Anything else is still unknown.
 
-**Surface 4.** Open WebUI's search is opt-in per message. The Zed `web`
-profile can search and cannot read files. **Write + search** can do both,
-so a file the agent reads can leave as the query. `confirm` on each tool
-call is the gate: the query text is on screen before it is sent. SearXNG
-does not keep a log of successful queries. `podman logs hearth-searxng`
-shows a query only when an upstream engine logs an error. **The moment Open WebUI gains tools, functions, or code
-execution, that UI becomes surface 1 with a web feed attached.** Treat
-enabling them as a decision requiring an ADR, not a settings toggle.
+**Surface 4.** The Zed `web` profile can search and cannot read files.
+**Write + search** can do both, so a file the agent reads can leave as the
+query. `confirm` on each tool call is the gate: the query text is on screen
+before it is sent. SearXNG does not keep a log of successful queries.
+`podman logs hearth-searxng` shows a query only when an upstream engine logs
+an error. Open WebUI was removed (ADR 0044). Putting that chat page back,
+with tools on, would make it surface 1 with a web feed attached.
 
 ## 4. What is actually enforced
 
@@ -221,12 +220,9 @@ In order of value per effort:
    unknown on the list.
 2. Run aider under the sandbox for a week of real work and record what it
    needed widened. A profile nobody can work under gets switched off.
-3. Confirm Open WebUI still has tools disabled after any upgrade — its settings
-   live in a database that overrides the environment, a trap already documented
-   in `RUNBOOK.md`.
-4. Known vulnerabilities in the Open WebUI and SearXNG images are monitored by
-   Snyk (`scripts/snyk-monitor.sh`, RUNBOOK). That covers published CVEs in
-   their packages, not their configuration or oMLX itself.
+3. Known vulnerabilities in the SearXNG image and the SearXNG MCP lockfile
+   are monitored by Snyk (`scripts/snyk-monitor.sh`, RUNBOOK). That covers
+   published CVEs in those packages, not their configuration or oMLX itself.
 
 ## Sources
 

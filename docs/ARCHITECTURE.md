@@ -13,7 +13,7 @@ flowchart TB
         aider["aider"]
         zed["Zed"]
         scripts["scripts / benches"]
-        webui["Open WebUI :3000<br/>(Podman)"]
+        searx["SearXNG :8888<br/>(Podman)"]
         sbx["sandboxed.sh agents"]
         srv["oMLX 127.0.0.1:1234<br/>main-brain: 128K x 3<br/>deep-brain: swaps with main-brain<br/>token required"]
     end
@@ -24,7 +24,7 @@ flowchart TB
     aider --> srv
     zed --> srv
     scripts --> srv
-    webui -->|"host.containers.internal"| srv
+    zed -.->|"Web and Write + search"| searx
     sbx -->|"only allowed egress"| srv
     laptop -->|"ssh -L, tunnel-only key"| srv
     laptop -.-> cloud
@@ -32,8 +32,11 @@ flowchart TB
     classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
     classDef leaveCls fill:#FAEEDA,stroke:#854F0B,color:#633806
     class srv localCls
-    class cloud leaveCls
+    class cloud,searx leaveCls
 ```
+
+SearXNG in that diagram is the host's. A laptop runs its own on
+`127.0.0.1:8888`. The tunnel forwards oMLX only (ADR 0045).
 
 Everything addresses **roles**, never model names. Concrete models appear in
 exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
@@ -91,7 +94,7 @@ Weights are linked as org/leaf under `~/.omlx/models`; the role is an oMLX
 `model_alias` so clients and the community board disagree usefully (ADR 0034).
 `ask-deep` loads `deep-brain` from the same tree in its place (ADR 0031, 0033).
 Login runs `scripts/boot.sh`, which runs `scripts/omlx.sh up`, then starts
-Podman, SearXNG and Open WebUI. `scripts/omlx.sh down` stops oMLX and
+Podman and SearXNG. Open WebUI was removed (ADR 0044). `scripts/omlx.sh down` stops oMLX and
 leaves the port empty.
 
 ### Environment files

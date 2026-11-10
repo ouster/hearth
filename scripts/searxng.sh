@@ -5,11 +5,13 @@
 #
 # PRIVACY, read this before enabling.
 #
-# SearXNG keeps Google/Bing/DuckDuckGo from seeing your IP or building a
-# profile — it queries them on your behalf and aggregates. That is a real
-# improvement over searching directly.
+# This instance runs on the host and queries Google, Bing and DuckDuckGo
+# itself, so those engines see this machine's ISP address. They do not see
+# a browser cookie or a signed-in account, and the query is not added to
+# one. A public SearXNG instance would hide that address and give the query
+# to its operator. See docs/ROUTING.md.
 #
-# It does NOT make search private. Your QUERY still leaves this machine and
+# It does NOT make search private. The QUERY still leaves this machine and
 # reaches upstream engines. The conversation, your documents and the model stay
 # local; the search terms do not.
 #
@@ -34,7 +36,7 @@ case "${1:-status}" in
     if podman container exists "$NAME" 2>/dev/null; then
       podman start "$NAME" >/dev/null && echo "started existing ${NAME}"
     else
-      # 127.0.0.1 only — this is for Open WebUI on this machine, not the LAN.
+      # 127.0.0.1 only — Zed and the laptop tunnel, not the LAN.
       podman run -d \
         --name "$NAME" \
         --restart unless-stopped \
@@ -47,7 +49,7 @@ case "${1:-status}" in
       sleep 6
     fi
 
-    # Open WebUI needs the json format. SearXNG ships json DISABLED and returns
+    # The Zed MCP and `test` need the json format. SearXNG ships json DISABLED and returns
     # 403 Forbidden for it — which reads like an auth problem and is not.
     #
     # The generated settings.yml is minimal (use_default_settings + a secret),
@@ -77,12 +79,12 @@ use_default_settings: true
 server:
   secret_key: %s
   # Bound to 127.0.0.1 only, single user, so the bot limiter has nothing to
-  # protect against and would otherwise reject Open WebUI API calls.
+  # protect against and would otherwise reject API calls that are not a browser.
   limiter: false
   image_proxy: true
 
 search:
-  # json is what Open WebUI requires. Without it SearXNG answers 403.
+  # json is what the Zed MCP and scripts/searxng.sh test require. Without it SearXNG answers 403.
   formats:
     - html
     - json
@@ -97,8 +99,8 @@ search:
       echo
     fi
 
-    # Open WebUI reaches this container by name. The published 127.0.0.1:8888
-    # stays for Zed and laptop tunnels; the Podman VM cannot use that bind.
+    # Editors on this machine use the published 127.0.0.1:8888 (ADR 0045). The Podman VM
+    # cannot use that bind, so the container also joins the hearth network.
     hearth_podman_connect "$NAME"
 
     printf 'waiting'
@@ -119,7 +121,7 @@ search:
     if printf '%s' "$out" | head -c 1 | grep -q '{'; then
       n=$(printf '%s' "$out" | python3 -c 'import sys,json; print(len(json.load(sys.stdin).get("results",[])))' 2>/dev/null || echo "?")
       echo "  OK — json works, ${n} results"
-      echo "  Open WebUI can use this."
+      echo "  Zed's SearXNG MCP can use this."
     elif printf '%s' "$out" | grep -qi '403\|forbidden'; then
       echo "  FAILED — 403 Forbidden."
       echo

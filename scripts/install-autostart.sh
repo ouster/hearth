@@ -8,7 +8,7 @@
 #   scripts/install-autostart.sh --remove
 #
 # The agent runs scripts/boot.sh once at login (RunAtLoad, no KeepAlive):
-# start oMLX, load the resident role, start Podman + SearXNG + Open WebUI. Log:
+# start oMLX, load the resident role, start Podman + SearXNG. Log:
 # ~/Library/Logs/hearth-boot.log
 #
 # Exit 0 ok, 1 not installed / broken (--check), 2 could not run.

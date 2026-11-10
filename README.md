@@ -95,8 +95,7 @@ model.
   `deep-brain` (the 48 GB tier's weights).
 - **Software.** [Homebrew](https://brew.sh), git, `jq`, oMLX, and the
   Hugging Face CLI for downloads (*Quick start* installs the last two).
-  [Podman](https://podman.io) only if you want the Open WebUI chat page or
-  SearXNG web search.
+  [Podman](https://podman.io) only if you want SearXNG web search for Zed.
 
 ## Quick start
 
@@ -319,8 +318,6 @@ ask-deep           # aider on deep-brain. A laptop cannot load it: someone on th
 deep-brain         # same as ask-deep
 ask-cloud          # Gemini via THIS machine's own key — the only cloud alias
 
-# Open WebUI through the tunnel
-ai-webui           # open host's Open WebUI (http://127.0.0.1:3000)
 ```
 
 aider and `ask-*` are in [`docs/IDES.md`](docs/IDES.md).
@@ -476,6 +473,7 @@ id `hearth`, only `main-brain` listed — a model list would offer
 {
   "$schema": "https://opencode.ai/config.json",
   "model": "hearth/main-brain",
+  "websearch": false,
   "provider": {
     "hearth": {
       "npm": "@ai-sdk/openai-compatible",
@@ -495,7 +493,7 @@ id `hearth`, only `main-brain` listed — a model list would offer
 }
 ```
 
-Type the sub-key yourself; never commit it. No cloud / OpenRouter provider
+Type the sub-key yourself; never commit it. Add the SearXNG MCP server and the `webfetch` deny from `docs/IDES.md` (ADR 0045). Do not set `SEARXNG_URL`. No cloud / OpenRouter provider
 on the host for sensitive work (rule 3). Dual machine (ADR 0040): add
 `hearth-remote` the same way at `http://127.0.0.1:1235/v1`.
 
@@ -567,8 +565,8 @@ its traffic goes, never in Write. See [`docs/MCP.md`](docs/MCP.md).
 ## Laptops
 
 SSH tunnel only — the server never listens on the LAN. Each laptop gets its
-own host token and an SSH key that can forward to `:1234` / `:3000` / `:8888` and
-nothing else. The token name is `laptop-` plus a short name, for example
+own host token and an SSH key that can forward to `:1234` and
+nothing else. SearXNG stays on the laptop (ADR 0045). The token name is `laptop-` plus a short name, for example
 `laptop-m5-air`:
 
 ```bash
@@ -580,7 +578,7 @@ scripts/client-setup.sh m5-air               # prints both paths
 already in `scripts/omlx.sh sub-key list`, skip add. The laptop uses the
 token already in `~/.hearth-key`. The list prints names only, so a lost token
 is replaced with revoke, then add. Details in [`docs/LAPTOP.md`](docs/LAPTOP.md).
-Never port-forward `:22`, `:1234`, `:3000` or `:8888`.
+Never port-forward `:22`, `:1234` or `:8888`.
 
 A laptop may also run its own oMLX for `edit-brain` (edit prediction with
 the tunnel down, ADR 0033; `client/edit-model.sh laptop-up`). Lock it the
@@ -612,7 +610,7 @@ port the sandbox, scripts and editors use. The tunnel moves aside:
 | | This machine | The bigger host, through the tunnel |
 |---|---|---|
 | oMLX | `127.0.0.1:1234` | `127.0.0.1:1235` |
-| Open WebUI, SearXNG | `:3000`, `:8888` | `:3001`, `:8889` |
+| SearXNG | `:8888` on this machine | its own `:8888`. The tunnel does not forward it |
 | Shell | `ask`, `main-brain`, `ask-deep`, `deep-brain` | `ask-remote`, `main-brain-remote`, `ask-deep-remote`, `deep-brain-remote` |
 | Editor provider | `hearth` | `hearth-remote` |
 
@@ -642,7 +640,6 @@ flowchart LR
     subgraph host["Host"]
         editors["Editors<br/>VS Code, Cline, JetBrains, Zed"]
         aider["aider: ask, ask-deep"]
-        webui["Open WebUI :3000"]
         sbx["sandboxed agents<br/>can reach 127.0.0.1:1234 only"]
         srv["oMLX 127.0.0.1:1234<br/>main-brain, 3 slots<br/>deep-brain on demand<br/>token required"]
     end
@@ -655,12 +652,11 @@ flowchart LR
 
     editors --> srv
     aider --> srv
-    webui --> srv
     sbx --> srv
     lapps -->|"SSH tunnel: :1234, or :1235 on a dual machine"| srv
     lapps --> own
     lapps -.->|"ask-cloud only"| cloud
-    webui -.->|"opt-in per message"| searx
+    editors -.->|"Zed Web and Write + search"| searx
 
     classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
     classDef leaveCls fill:#FAEEDA,stroke:#854F0B,color:#633806

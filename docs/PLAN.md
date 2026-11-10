@@ -25,8 +25,8 @@ preserved in `docs/decisions/0001-inherited-state.md`.
 | local-chat thinking disabled | done — ADR 0006. 29.7 s to 5.1 s |
 | digest pinning | recorded + drift-checked (not enforceable in Ollama) |
 | 5 — auto-update pipeline | deferred |
-| 6 — Open WebUI | **done** — chat UI on :3000, private-scoped, local-chat default |
-| Web search via SearXNG | **done** — opt-in per message, :8888, verified end to end |
+| 6 — Open WebUI | **removed** — ADR 0044. Editors are the chat page |
+| Web search via SearXNG | **done** — this machine's `:8888`; Zed, Cline, OpenCode, Goose (ADR 0045) |
 | `usage.sh` visibility | done — role, tier, model, tokens, LOCAL/CLOUD split |
 | 7 — verification tooling | done — preflight, deploy, healthcheck, audit |
 
@@ -121,5 +121,5 @@ Optional, when the need arises:
   Console API key, which bills separately from any subscription.
 - Enable `cloud-frontier` (OpenRouter) for Kimi K3 and day-zero access to new
   models. There is no local K3 at any quantisation.
-- A second Open WebUI without search configured, if you want "no web search on
-  sensitive work" to be structural rather than remembered.
+- Open WebUI was removed (ADR 0044). Search stays off unless the Zed thread
+  is on Web or Write + search.

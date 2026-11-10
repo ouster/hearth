@@ -16,7 +16,7 @@ Hearth — Local + Cloud
 ```
 Private-first local inference on a Mac Studio. oMLX serves local
 roles on 127.0.0.1:1234. One cloud path, ask-cloud, calls Gemini with its own
-key. Routing rules, the model registry, and the clients (Zed, Open WebUI,
+key. Routing rules, the model registry, and the clients (Zed,
 shell aliases). Roles are re-pointed without rewriting clients.
 ```
 
@@ -28,7 +28,7 @@ shell aliases). Roles are re-pointed without rewriting clients.
 # Context
 
 Solo developer. Local inference on this Mac; one cloud caller for work that
-is not sensitive. Uses Zed and Open WebUI. Laptops reach the host through an
+is not sensitive. Uses Zed. Laptops reach the host through an
 SSH tunnel, not the LAN.
 
 This project covers the AI stack itself — not the applications built on it.

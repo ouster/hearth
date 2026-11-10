@@ -14,18 +14,17 @@
 #   HEARTH_CLOUD_MODEL  the Gemini model id for ask-cloud (from the host's roles.tsv)
 # Optional:
 #   HEARTH_DUAL         1 on a machine that also runs its own brain (ADR 0040):
-#                       tunnel ports default to 1235/3001/8889, commands get -remote
+#                       the tunnel port defaults to 1235, commands get -remote
 #   HEARTH_LOCAL_PORT   local end of the tunnel (default 1234; 1235 when dual)
-#   HEARTH_WEBUI_PORT   local end for Open WebUI (default 3000)
-#   HEARTH_SEARXNG_PORT local end for the host's SearXNG (default 8888; 0 skips
-#                       it). For a SearXNG MCP server on this laptop (ADR 0022).
+#                       SearXNG is local on this machine (ADR 0045). An old
+#                       HEARTH_SEARXNG_PORT or HEARTH_WEBUI_PORT is ignored.
 #
 # Secrets (files, mode 600 — never exported into this shell):
 #   ~/.hearth-key         this machine's API key (laptop-<name>)
 #   ~/.hearth-gemini-key  this machine's own Google API key, for ask-cloud only
 #
 # Commands: ai-tunnel, ai-tunnel-install, ai-tunnel-stop, ai-ping, ai-models,
-#           ai-ask, ai-webui, ask and main-brain (main-brain), ask-arch, ask-deep and deep-brain (deep-brain, only while
+#           ai-ask, ask and main-brain (main-brain), ask-arch, ask-deep and deep-brain (deep-brain, only while
 #           the host has it loaded), ask-cloud
 #
 # macOS: ai-tunnel-install once. launchd (com.hearth.tunnel) restarts the
@@ -44,18 +43,14 @@ if [ -z "${HEARTH_SSH:-}" ]; then
 fi
 
 # HEARTH_DUAL=1: this machine also runs its own brain on 127.0.0.1:1234
-# (ADR 0040). The tunnel then moves off the ports the local oMLX, WebUI and
-# SearXNG use, and this file's aider commands get a -remote suffix so the
-# host aliases (scripts/aliases.zsh) keep ask, main-brain, ask-deep.
+# (ADR 0040). The tunnel then moves off the port the local oMLX uses, and
+# this file's aider commands get a -remote suffix so the host aliases
+# (scripts/aliases.zsh) keep ask, main-brain, ask-deep.
 HEARTH_DUAL="${HEARTH_DUAL:-0}"
 if [ "$HEARTH_DUAL" = 1 ]; then
   HEARTH_LOCAL_PORT="${HEARTH_LOCAL_PORT:-1235}"
-  HEARTH_WEBUI_PORT="${HEARTH_WEBUI_PORT:-3001}"
-  HEARTH_SEARXNG_PORT="${HEARTH_SEARXNG_PORT:-8889}"
 else
   HEARTH_LOCAL_PORT="${HEARTH_LOCAL_PORT:-1234}"
-  HEARTH_WEBUI_PORT="${HEARTH_WEBUI_PORT:-3000}"
-  HEARTH_SEARXNG_PORT="${HEARTH_SEARXNG_PORT:-8888}"
 fi
 HEARTH_TUNNEL_URL="http://127.0.0.1:${HEARTH_LOCAL_PORT}/v1"
 
@@ -89,15 +84,10 @@ _hearth_our_ssh() {
     >/dev/null 2>&1
 }
 
-# Every forward this client asked for, not just :1234. An old ssh that
-# only has :1234 must not look like a finished tunnel.
+# The tunnel forwards oMLX only (ADR 0045). An old ssh that also forwards
+# SearXNG is still "up" for the model; _hearth_tunnel_stale says so.
 _hearth_forwards_open() {
-  _hearth_port_open "$HEARTH_LOCAL_PORT" || return 1
-  _hearth_port_open "$HEARTH_WEBUI_PORT" || return 1
-  if [ "${HEARTH_SEARXNG_PORT}" != "0" ]; then
-    _hearth_port_open "$HEARTH_SEARXNG_PORT" || return 1
-  fi
-  return 0
+  _hearth_port_open "$HEARTH_LOCAL_PORT"
 }
 
 # 0 when it is safe to send the token. Prints the reason on failure.
@@ -128,27 +118,35 @@ _hearth_connect() {
   fi
 }
 
-# One argv line per ssh argument. HEARTH_SEARXNG_PORT=0 leaves SearXNG out.
+# One argv line per ssh argument. oMLX only (ADR 0045).
 _hearth_tunnel_argv() {
   printf '%s\n' /usr/bin/ssh -N \
     -o ExitOnForwardFailure=yes \
     -o ServerAliveInterval=30 \
     -o ServerAliveCountMax=3 \
     -L "127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" \
-    -L "127.0.0.1:${HEARTH_WEBUI_PORT}:127.0.0.1:3000"
-  if [ "${HEARTH_SEARXNG_PORT}" != "0" ]; then
-    printf '%s\n' -L "127.0.0.1:${HEARTH_SEARXNG_PORT}:127.0.0.1:8888"
+    "$HEARTH_SSH"
+}
+
+_hearth_tunnel_stale() {
+  _plist="$(_hearth_tunnel_plist)"
+  if [ -f "$_plist" ] && grep -F -- "127.0.0.1:3000" "$_plist" >/dev/null 2>&1; then
+    echo "tunnel: this agent still forwards Open WebUI (:3000). Run: ai-tunnel-stop && ai-tunnel-install" >&2
   fi
-  printf '%s\n' "$HEARTH_SSH"
+  if [ -f "$_plist" ] && grep -F -- "127.0.0.1:8888" "$_plist" >/dev/null 2>&1; then
+    echo "tunnel: this agent still forwards SearXNG. Search stays on this machine (ADR 0045). Run: ai-tunnel-stop && ai-tunnel-install" >&2
+  fi
+  if ps axww -o command= 2>/dev/null \
+      | grep -F -- "-L 127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" \
+      | grep -F -- "127.0.0.1:8888" >/dev/null 2>&1; then
+    echo "tunnel: this ssh still forwards SearXNG. Run: ai-tunnel-stop && ai-tunnel" >&2
+  fi
+  unset _plist
 }
 
 _hearth_tunnel_up_msg() {
-  _sx=""
-  if [ "${HEARTH_SEARXNG_PORT}" != "0" ]; then
-    _sx=", SearXNG → 127.0.0.1:${HEARTH_SEARXNG_PORT}"
-  fi
-  echo "tunnel: up (oMLX → 127.0.0.1:${HEARTH_LOCAL_PORT}, WebUI → 127.0.0.1:${HEARTH_WEBUI_PORT}${_sx})"
-  unset _sx
+  echo "tunnel: up (oMLX → 127.0.0.1:${HEARTH_LOCAL_PORT})"
+  _hearth_tunnel_stale
 }
 
 _hearth_tunnel_plist() {
@@ -170,7 +168,7 @@ _hearth_tunnel_names_ok() {
       return 1
       ;;
   esac
-  for _p in "$HEARTH_LOCAL_PORT" "$HEARTH_WEBUI_PORT" "$HEARTH_SEARXNG_PORT"; do
+  for _p in "$HEARTH_LOCAL_PORT"; do
     case "$_p" in
       ''|*[!0-9]*)
         echo "tunnel: port '${_p}' is not a number." >&2
@@ -245,15 +243,8 @@ _hearth_launchd_start() {
 }
 
 _hearth_refuse_partial() {
-  _miss=""
-  _hearth_port_open "$HEARTH_WEBUI_PORT" || _miss="WebUI ${HEARTH_WEBUI_PORT}"
-  if [ "${HEARTH_SEARXNG_PORT}" != "0" ] && ! _hearth_port_open "$HEARTH_SEARXNG_PORT"; then
-    [ -n "$_miss" ] && _miss="${_miss}, "
-    _miss="${_miss}SearXNG ${HEARTH_SEARXNG_PORT}"
-  fi
-  echo "tunnel: 127.0.0.1:${HEARTH_LOCAL_PORT} is open but a forward is missing (${_miss:-one of its ports})." >&2
+  echo "tunnel: 127.0.0.1:${HEARTH_LOCAL_PORT} is open but this client's ssh is not the listener." >&2
   echo "        Run: ai-tunnel-stop && ai-tunnel" >&2
-  echo "        If that does not clear it, something else is listening on ${HEARTH_LOCAL_PORT}." >&2
 }
 
 ai-tunnel-install() {
@@ -283,6 +274,7 @@ ai-tunnel() {
   if _hearth_port_open "$HEARTH_LOCAL_PORT"; then
     if _hearth_forwards_open; then
       echo "tunnel: already listening on 127.0.0.1:${HEARTH_LOCAL_PORT}"
+      _hearth_tunnel_stale
       return 0
     fi
     _hearth_refuse_partial
@@ -295,17 +287,9 @@ ai-tunnel() {
     _hearth_tunnel_up_msg
     return 0
   fi
-  # "$@" splits the same way in bash and zsh; an unquoted ${x:+...} does not.
-  if [ "${HEARTH_SEARXNG_PORT}" != "0" ]; then
-    set -- -L "127.0.0.1:${HEARTH_SEARXNG_PORT}:127.0.0.1:8888"
-  else
-    set --
-  fi
   ssh -f -N \
     -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
     -L "127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" \
-    -L "127.0.0.1:${HEARTH_WEBUI_PORT}:127.0.0.1:3000" \
-    "$@" \
     "$HEARTH_SSH" \
     && _hearth_tunnel_up_msg
 }
@@ -379,18 +363,6 @@ print((d["choices"][0]["message"].get("content") or "").strip())'
   _rc=$?
   rm -f "$_body"; unset _k _body
   return $_rc
-}
-
-ai-webui() {
-  if _hearth_port_open "$HEARTH_LOCAL_PORT" && ! _hearth_our_ssh; then
-    echo "127.0.0.1:${HEARTH_LOCAL_PORT} is open, but not the hearth ssh tunnel." >&2
-    return 1
-  fi
-  _hearth_forwards_open || ai-tunnel || return 1
-  _u="http://127.0.0.1:${HEARTH_WEBUI_PORT}"
-  echo "Open WebUI: ${_u}  (the host's instance — no login, same history)"
-  command -v open >/dev/null 2>&1 && open "$_u" || { command -v xdg-open >/dev/null 2>&1 && xdg-open "$_u" >/dev/null 2>&1; }
-  unset _u
 }
 
 # ---------------------------------------------------------------- aider

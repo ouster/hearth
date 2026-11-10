@@ -1,14 +1,14 @@
 #!/bin/bash
 # Send the images that are actually running to Snyk for ongoing monitoring.
 #
-#   scripts/snyk-monitor.sh            # Open WebUI, SearXNG and the SearXNG MCP server
-#   scripts/snyk-monitor.sh webui      # one of them (webui, searxng, mcp-searxng)
+#   scripts/snyk-monitor.sh            # SearXNG and the SearXNG MCP server
+#   scripts/snyk-monitor.sh searxng    # one of them (searxng, mcp-searxng)
 #
 # Hearth has no dependency manifests, so the third-party code worth watching
-# is these containers. Both use moving tags (:main, :latest), so the image the
+# is the SearXNG container. It uses a moving tag (:latest), so the image the
 # container runs is exported by ID and snapshotted, not the tag: Snyk then
 # re-tests that snapshot daily and emails new vulnerabilities. Re-run after an
-# image update — scripts/webui.sh and searxng.sh do, after `up`.
+# image update — scripts/searxng.sh does, after `up`. Open WebUI is gone (ADR 0044).
 #
 # Only the image's package list goes to Snyk (projects hearth/<kind>), not
 # this repo's code. Needs the snyk CLI, signed in with `snyk auth`.
@@ -19,7 +19,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "${ROOT}/scripts/lib.sh"
 
-KINDS="${1:-webui searxng mcp-searxng}"
+KINDS="${1:-searxng mcp-searxng}"
 # The Zed SearXNG MCP server (ADR 0022): a pinned npm install whose lockfile is
 # monitored like any npm project.
 MCP_SEARXNG_DIR="${HEARTH_MCP_SEARXNG_DIR:-$HOME/.local/share/hearth/mcp-searxng}"
@@ -45,6 +45,9 @@ ensure_podman() {
 TMPD=$(mktemp -d); trap 'rm -rf "$TMPD"' EXIT
 rc=0; ran=0
 for kind in $KINDS; do
+  if [ "$kind" = webui ]; then
+    echo "skip   webui: removed (ADR 0044)"; continue
+  fi
   if [ "$kind" = mcp-searxng ]; then
     if [ ! -f "${MCP_SEARXNG_DIR}/package-lock.json" ]; then
       echo "skip   ${kind}: no install at ${MCP_SEARXNG_DIR}"; continue
