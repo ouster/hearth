@@ -259,7 +259,7 @@ Same provider as the host, through the tunnel:
       "hearth": {
         "api_url": "http://127.0.0.1:1234/v1",
         "available_models": [
-          { "name": "main-brain", "display_name": "main-brain", "max_tokens": 131072 }
+          { "name": "main-brain", "display_name": "main-brain", "max_tokens": 262144 }
         ]
       }
     }

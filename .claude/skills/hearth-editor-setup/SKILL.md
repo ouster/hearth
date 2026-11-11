@@ -51,7 +51,7 @@ Files are in `~/Library/Application Support/Code/User/`.
 
 1. Provider → BYOK → Add Provider (OpenAI Compatible). ID `hearth`. Base URL
    as above. **Model Source URL empty.** Model `main-brain`. Capabilities:
-   streaming, tools, reasoning. Prompt cache off. Context 131072.
+   streaming, tools, reasoning. Prompt cache off. Context 262144.
 2. **Never** select Cline Usage-Billing or ClinePass. Telemetry off
    (General).
 3. **Composio connectors off.** If the agent offers a Slack or Composio auth

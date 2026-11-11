@@ -15,7 +15,7 @@ flowchart TB
         scripts["scripts / benches"]
         searx["SearXNG :8888<br/>(Podman)"]
         sbx["sandboxed.sh agents"]
-        srv["oMLX 127.0.0.1:1234<br/>main-brain: 128K x 3<br/>deep-brain: swaps with main-brain<br/>token required"]
+        srv["oMLX 127.0.0.1:1234<br/>main-brain: 256K x 3<br/>deep-brain: 64K, swaps with main-brain<br/>token required"]
     end
 
     laptop["Laptop<br/>SSH tunnel, own token<br/>optional edit-brain on own oMLX"]
@@ -45,13 +45,13 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 
 | Role | Backend | What |
 |---|---|---|
-| `main-brain` | oMLX | the resident local model. 128K context, 3 concurrent predictions (ADR 0017, 0030) |
+| `main-brain` | oMLX | the resident local model. 256K context (262,144), 3 concurrent predictions (ADR 0046) |
 | `deep-brain` | oMLX | slower, more careful model for hard one-off questions. Evicts `main-brain` for its session on every tier (ADR 0031, 0033). `ask-deep` unloads it on the way out and `main-brain` is loaded again. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh deep-brain up`) |
 | `edit-brain` | laptop oMLX | editor edit prediction: `/v1/completions` only, 8K × 2, on the laptop's own oMLX. Never a chat or agent model; host does not load it (ADR 0033) |
 | `cloud-cheap` | Gemini | client-only: a laptop's `ask-cloud` with that laptop's own key. Never on the host, never in oMLX (ADR 0038) |
 
 `local-code` and `local-chat` were collapsed into `main-brain` (D1): two heavy
-models cannot both stay resident with 3 × 128K slots, and evicting the agent
+models cannot both stay resident with 3 × 256K slots, and evicting the agent
 model was failure F2. The old alias names still work and mean `main-brain`.
 
 `scripts/omlx.sh up` loads the resident role from `~/.hearth/models`. A
@@ -144,8 +144,11 @@ memory, no evictions and no gateway hop, not concurrency.
 `bench/results/2026-10-31-phase0`, `…-phase1`. The live server is the LM
 Studio app (D6), loaded at 128K × 3 (ADR 0017). Those rows are the 64K
 measurement, not a claim that llmster is still running. The current
-`main-brain` (ADR 0030) at 128K × 3: c3 TTFT p50 60.7 s / p95 61.5 s, c3 total
+`main-brain` (ADR 0030) at the old 128K cap: c3 TTFT p50 60.7 s / p95 61.5 s, c3 total
 p95 62.3 s, peak 34.0 GB (`bench/results/2026-11-06-2012-concurrency-c3-qwen3.6`).
+The cap is now 262,144 (ADR 0046). The 30k c3 on 2026-11-10 matched that
+TTFT (p50 59.8 s / p95 60.4 s). One 200,266-token prompt took 377.6 s and
+peaked at 40.0 GB (`bench/results/2026-11-10-262144-main-200k`).
 The previous resident the same day was c3 TTFT p50 79.2 s / p95 88.2 s, total
 p95 88.9 s, peak 31.0 GB (`bench/results/2026-11-06-1956-concurrency-c3-local-main`).
 Earlier, ADR 0024: c1 TTFT p95 25.0 s, c3 total p95 75.2 s, peak 25.2 GB

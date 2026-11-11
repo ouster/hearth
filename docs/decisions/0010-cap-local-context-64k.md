@@ -1,7 +1,7 @@
 # 0010 — Cap local Ollama context at 64K
 
 Date: 2026-09-04
-Status: accepted for the Ollama era. The live cap is ADR 0017 (128K on LM Studio).
+Status: accepted for the Ollama era. The live cap is ADR 0046 (262144 on oMLX). ADR 0017 was the 128K cap.
 
 ## Context
 

@@ -21,15 +21,17 @@ oMLX serves these from `~/.hearth/models`. Machine-read copy:
 
 | Role | Model key | Source | Size | Load | Set | Why |
 |---|---|---|---|---|---|---|
-| `main-brain` | `qwen3.6-35b-a3b-mlx` | `mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit` @ `08567bc` | 22 GB | 128K × 3 parallel, no draft, **thinking on (set by `scripts/omlx.sh`)** | 2026-11-07 | MoE, ~3B active, OptiQ mixed 4/8-bit. Won the 2026-11-07 quant A/B: c3 30/30, TTFT p50 61.9 s / p95 62.1 s (tightest of lmstudio uniform-4bit, Jundot oQ4e, Unsloth UD). Tool-smoke pass. Previous uniform pin stays on disk unloaded. ADR 0035. Native window 262,144 |
+| `main-brain` | `qwen3.6-35b-a3b-mlx` | `mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit` @ `08567bc` | 22 GB | 256K × 3 (262,144), no draft, **thinking on (set by `scripts/omlx.sh`)** | 2026-11-10 | MoE, ~3B active, OptiQ mixed 4/8-bit. Won the 2026-11-07 quant A/B: c3 30/30, TTFT p50 61.9 s / p95 62.1 s (tightest of lmstudio uniform-4bit, Jundot oQ4e, Unsloth UD). Tool-smoke pass. Previous uniform pin stays on disk unloaded. ADR 0035. Prompt cap raised to the native 262,144 window (ADR 0046) |
 | `deep-brain` | `qwen3.8-27b-mlx` | `lmstudio-community/Qwen3.8-27B-MLX-4bit` @ `6067b15` | 16.1 GB | 64K × 1, **on demand**: `ask-deep` loads it, evicting `main-brain` for the session (swap on every tier, ADR 0033), and unloads it on the way out | 2026-11-01 | Dense 27B. Best `bench/tasks` 03 answer of the three benched; ~26 tok/s and 2.5–5.5× the tokens of the 26B-A4B, so 10–24× slower. For hard one-off questions, never agent loops. Thinks by default (its template). Beside the resident, both peaked at 49.9 GB on 2026-11-01, over the old ~48 GB cap, and the resident's requests timed out during a long prefill. The cap is now 56 GB, so the two may be loaded together on 64 GB (ADR 0028). On a 48 GB host (40 GB ceiling) `ask-deep` evicts `main-brain` instead (ADR 0031). ADR 0020 |
 | `edit-brain` | `sweep-next-edit-1.5b-mlx-8bit` | `sweepai/sweep-next-edit-1.5B` @ `4090165` (`sweep-next-edit-1.5b.q8_0.v2.gguf`, sha256 `1321ea5e…`), tokenizer rebuilt from the GGUF's pruned 43,839-token vocabulary (template `Qwen/Qwen2.5-Coder-1.5B` @ `df3ce67`), converted to MLX 8-bit at `~/.hearth/models/hearth/sweep-next-edit-1.5B-MLX-8bit` | 1.4 GB | 8K × 2, **edit**: laptop oMLX only, `/v1/completions`, greedy, 512 max tokens | 2026-11-07 | Editor edit prediction (Zed `open_ai_compatible_api`, prompt format `sweep`). Apache 2.0, Qwen2.5-Coder base. Laptop bench 2026-11-07: p50 350 / p95 398 ms, 24/30 (misses `02-add-field`). Host alone p95 281 ms; beside c3 p95 5747 ms and `main-brain` TTFT p95 89.7 s — **host does not load it** (ADR 0033 amend). Paid Zed Zeta is a separate cloud opt-in (`docs/IDES.md`) |
 | `cloud-cheap` | `gemini-3.6-flash` | Google, laptop `ask-cloud` only (client-only, ADR 0038) | — | — | 2026-10-22 | 1M ctx, 65K output. ADR 0014 |
 
-**Resident set:** OptiQ c3 tool gate 30/30 at 128K × 3, ~30K-token prompts
-(`bench/results/2026-11-07-1542-concurrency-c3-optiq`; footprint probe
-returned 0 that run — re-measure if needed). The previous uniform-4bit
-resident peaked at 34.0 GB
+**Resident set:** OptiQ c3 tool gate 30/30 at the 256K cap, ~30K-token
+prompts, TTFT p50 59.8 s / p95 60.4 s
+(`bench/results/2026-11-10-262144-concurrency-c3-main`). One 200,266-token
+prompt peaked at 40.0 GB
+(`bench/results/2026-11-10-262144-main-200k`). The previous uniform-4bit
+resident peaked at 34.0 GB on ~30K prompts
 (`bench/results/2026-11-06-2012-concurrency-c3-qwen3.6`). Loaded beside
 `deep-brain` was not re-measured; the last combined peak was 49.9 GB with
 the smaller resident (ADR 0028).
@@ -63,7 +65,7 @@ detected size. Ceiling is RAM minus 8 (ADR 0031).
 | RAM | Ceiling | `main-brain` | `deep-brain` | Status |
 |---|---|---|---|---|
 | < 48 GB | — | none: `omlx.sh up` refuses | — | no tier benched |
-| 48 GB and up | RAM − 8 | `qwen3.6-35b-a3b-mlx`, 128K × 3 | `qwen3.8-27b-mlx`, **swap** | live on 64 GB. The same row is what a 48 GB host loads (`min_ram` 48); a c3 on 48 GB hardware is still outstanding: 30/30, peak ≤ 36 GB, host's `\.omlx/` matcher. `edit-brain` is laptop-only (ADR 0033 amend) |
+| 48 GB and up | RAM − 8 | `qwen3.6-35b-a3b-mlx`, 256K × 3 | `qwen3.8-27b-mlx`, **swap**, 64K | live on 64 GB. The same row is what a 48 GB host loads (`min_ram` 48). A 200k prompt peaked at 40.0 GB here, which is that host's whole ceiling, so its guard refuses it. A c3 on 48 GB hardware is still outstanding: 30/30, peak ≤ 36 GB, host's `\.omlx/` matcher. `edit-brain` is laptop-only (ADR 0033 amend) |
 
 ### Candidates by RAM (unbenched)
 

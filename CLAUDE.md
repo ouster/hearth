@@ -86,7 +86,7 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
    applies until `scripts/iogpu-wired.sh` runs. Roles are tiered by RAM
    (`min_ram` in `roles.tsv`, ADR 0032); only benched tiers have rows, and
    candidates for other sizes are in `docs/MODELS.md`.
-   `main-brain` (ADR 0030) peaks at 34.0 GB at 128K × 3 with three concurrent ~30K-token prompts (measured 2026-11-06, oMLX process footprint). `deep-brain` swaps it out on every tier (ADR 0033). `edit-brain` (~1.4 GB) is laptop-only after the host paired gate failed (edit p95 5747 ms beside c3). Say when a suggestion will not fit, or
+   `main-brain` is 262144 × 3 (ADR 0046). Three ~30K-token prompts match the old 128K-cap c3. One 200k prompt peaked at 40.0 GB (2026-11-10). The 34.0 GB figure is three ~30K prompts on the previous quant (2026-11-06). `deep-brain` stays at 65536 and swaps `main-brain` out on every tier (ADR 0033). `edit-brain` (~1.4 GB) is laptop-only after the host paired gate failed (edit p95 5747 ms beside c3). Say when a suggestion will not fit, or
    will evict something that needs to stay loaded — on this machine the resident
    set matters more than any one model's quality.
 

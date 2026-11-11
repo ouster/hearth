@@ -93,14 +93,14 @@ subagent — is `hearth/main-brain`, so nothing ever asks for a second model.
     "thread_summary_model":   { "provider": "hearth", "model": "main-brain" },
     "compaction_model":       { "provider": "hearth", "model": "main-brain" },
     "subagent_model":         { "provider": "hearth", "model": "main-brain" },
-    "auto_compact":           { "enabled": true, "threshold": 110000 }
+    "auto_compact":           { "enabled": true, "threshold": 170000 }
   },
   "language_models": {
     "openai_compatible": {
       "hearth": {
         "api_url": "http://127.0.0.1:1234/v1",
         "available_models": [
-          { "name": "main-brain", "display_name": "<written by scripts/zed-sync.sh>", "max_tokens": 131072 }
+          { "name": "main-brain", "display_name": "<written by scripts/zed-sync.sh>", "max_tokens": 262144 }
         ]
       }
     }
@@ -108,11 +108,11 @@ subagent — is `hearth/main-brain`, so nothing ever asks for a second model.
 }
 ```
 
-Automatic compaction runs at 110,000 tokens. The loaded window is 131,072.
+Automatic compaction runs at 170,000 tokens. The loaded window is 262,144.
 Past that the server refuses the prompt, and Zed compacts on that error.
-110,000 leaves about 21,000 tokens for the turn that crosses the line and
-for Zed's count running behind the server. Zed's default of 90% (about
-118,000) sits inside that lag. Compaction summarizes the older turns, sends
+170,000 leaves the old ~21,000-token count lag plus Zed's 65,536 output
+budget inside the trained window. A 90% threshold (about 236,000) would
+let a long think run past 262,144. Compaction summarizes the older turns, sends
 that summary plus the recent turns, and leaves the original thread in the
 panel under **Context Compacted**. `/compact` does the same by hand.
 **New From Summary** starts a fresh thread from it. The summary replaces the
@@ -397,7 +397,8 @@ Cline the task should stop, and a line should appear in the log.
    work in its own window: Copilot also reads other open tabs.
 4. **Model:** Chat: Manage Language Models → Add Models → Custom Endpoint →
    Chat Completions. URL `http://127.0.0.1:1234/v1`, model id
-   `main-brain`, tool calling on, max input tokens 131072 (the role's `ctx`
+   `main-brain`, tool calling on, max input tokens 245760 (262144 minus
+   the 16384 output budget; the role's `ctx`
    in `roles.tsv`). Set the key in Manage Language Models → `hearth`. VS
    Code keeps it in its secret store and writes a `${input:…}` reference
    into `chatLanguageModels.json`. A hand-typed placeholder has no secret
@@ -420,7 +421,7 @@ apply.
    `ai-tunnel` must be up first.
 2. **Provider:** API Provider **OpenAI Compatible**, Base URL
    `http://127.0.0.1:1234/v1`, the `cline-<machine>` key, Model `main-brain`,
-   Context Window 131072. Turn on tool support.
+   Context Window 262144. Turn on tool support.
    Cline's servers and Cline Pass are optional and not private: the prompt
    goes to Cline. Sensitive repos stay on OpenAI Compatible. Desktop: Provider → BYOK → Add Provider,
    ID `hearth`. Leave Model Source URL empty and type `main-brain`; a

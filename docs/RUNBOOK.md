@@ -10,7 +10,7 @@ Start, stop, diagnose. oMLX serves `127.0.0.1:1234` from `~/.hearth/models`
 |---|---|---|
 | Server | `127.0.0.1:1234` | oMLX, `scripts/omlx.sh up`. `down` stops it |
 | Weights | `~/.hearth/models` | the directories named in `config/roles.tsv` |
-| Roles | `config/roles.tsv` | `main-brain` resident, 128K × 3. `deep-brain` evicts `main-brain` for its session. `edit-brain` is laptop-only (ADR 0031, 0033) |
+| Roles | `config/roles.tsv` | `main-brain` resident, 256K × 3 (ADR 0046). `deep-brain` is 64K and evicts `main-brain` for its session. `edit-brain` is laptop-only (ADR 0031, 0033) |
 | Token | `~/.config/hearth/env`, mode 600 | `OMLX_HOST_TOKEN`. Scripts pass it to the server as `OMLX_API_KEY` |
 | Server settings | `~/.omlx/settings.json` (mode 600) | written by `scripts/omlx.sh up`: loopback, CORS off, no model fallback |
 | Remote Login (sshd) | `:22` | laptops' tunnel; their keys are `restrict`ed to `-L` `:1234` only, with `-R` denied (`scripts/client-setup.sh --update-keys` brings old keys up to date, ADR 0045) |

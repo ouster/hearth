@@ -121,7 +121,7 @@ config/roles.tsv and docs/MODELS.md. Nowhere else. Generated copies
 # Hardware envelope
 
 64 GB unified, but macOS caps GPU-accessible memory at ~48 GB (75%).
-main-brain is one model at 128K × 3 slots; deep-brain is swapped in for it on demand (ADR 0020).
+main-brain is one model at 262144 × 3 slots (ADR 0046); deep-brain is 65536 and swapped in for it on demand (ADR 0020).
 A second heavy model does not fit beside it. Say when a suggestion won't fit.
 ```
 

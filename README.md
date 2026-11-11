@@ -13,7 +13,7 @@ New here? Read *Words used here*, check *Before you start*, then follow
 
 - **A coding model on hardware you own.** `main-brain` stays loaded and
   serves agents in VS Code, Cline, JetBrains IDEs, Zed and aider. On the
-  tested tiers it works on three requests at once, each up to 128K tokens.
+  tested tiers it works on three requests at once, each up to 256K tokens.
 - **A bigger model when you need one (optional).** `ask-deep` loads
   `deep-brain`, a slower, more careful model. It swaps `main-brain` out for
   the session and loads it back afterwards. Skip it and everything else
@@ -48,7 +48,7 @@ New here? Read *Words used here*, check *Before you start*, then follow
 | tunnel | An SSH connection that makes the host's oMLX appear at `127.0.0.1` on the laptop, so it is never open on the network |
 | token | A password every request must carry. Each laptop and editor gets its own, so you can cancel one without touching the others |
 | RAM tier | Settings tested for one memory size. 8 GB is always held back for macOS and your apps |
-| context, 128K | How much text the model reads at once, in tokens. 128K tokens is roughly 100,000 words |
+| context, 256K | How much text `main-brain` reads at once, in tokens. 256K (262,144) is roughly 200,000 words. `deep-brain` stays at 64K |
 | slots | How many requests the model works on at the same time |
 | aider | A terminal coding assistant. `ask` and `ask-deep` start it |
 | ADR | A short decision record in [`docs/decisions/`](docs/decisions/). "ADR 0040" is number 40 |
@@ -65,7 +65,7 @@ tunnel, or both (ADR 0040).
 | Needs | 24 GB RAM or more; 48 GB tested (*Before you start*) | network, host awake | laptop's own key |
 | Works offline | yes | no | no |
 | Sensitive code | yes | yes: your hardware, your tunnel | **never** |
-| Cost to this machine | up to 34 GB at peak on the 48 GB tier, plus battery and heat | almost none | none |
+| Cost to this machine | about 34 GB on a short turn, 40 GB measured for a 200k prompt, plus battery and heat | almost none | none |
 | Best when | travelling, no network, host asleep | on battery, long agent runs, RAM needed for other work | throwaway, non-sensitive questions |
 | Fails when | not enough free RAM | tunnel down or host asleep (`ai-ping` says which) | no key or no network |
 
@@ -81,8 +81,8 @@ model.
 
   | RAM (usable) | `main-brain` | `deep-brain` | State |
   |---|---|---|---|
-  | 64 GB (56) | 35B MoE, ~3B active, 3 slots × 128K | dense 27B, swaps in | **tested**: reference host |
-  | 48 GB (40) | same | same | **tested**. Peaks about 34 GB, leaving about 14 GB for your apps |
+  | 64 GB (56) | 35B MoE, ~3B active, 3 slots × 256K | dense 27B at 64K, swaps in | **tested**: reference host. A 200k prompt peaked at 40 GB |
+  | 48 GB (40) | same cap | same | **tested** on short turns (about 34 GB). A 200k prompt is the whole 40 GB ceiling, so the guard refuses it |
   | 32 GB (24) | ~26B MoE, ~4B active, 1 slot | dense 27B, swaps in | candidate, not tested |
   | 24 GB (16) | dense ~12B, 1 slot | none | candidate, not tested |
   | under 24 GB | none: use another host (*Laptops*) | — | — |
@@ -422,7 +422,7 @@ code search stays off, and agent requests are capped:
         "vision": false,
         "thinking": true,
         "streaming": true,
-        "maxInputTokens": 114688,
+        "maxInputTokens": 245760,
         "maxOutputTokens": 16384
       }
     ]
@@ -444,7 +444,7 @@ literal key sits in a file other users can read. Then, in Chat, pick
    Base URL `http://127.0.0.1:1234/v1`. **Leave Model Source URL empty**,
    and type `main-brain` as the model. Your key. Capabilities: streaming,
    tools, reasoning. Prompt cache off, because oMLX's KV cache needs no
-   client flag. Context window 131072.
+   client flag. Context window 262144.
 2. **Cline's servers and Cline Pass are optional, and they are not
    private.** Usage-Billing and Cline Pass send the prompt to Cline.
    Sensitive repos stay on the `hearth` provider above.
@@ -485,7 +485,7 @@ id `hearth`, only `main-brain` listed — a model list would offer
       "models": {
         "main-brain": {
           "name": "main-brain",
-          "limit": { "context": 131072, "output": 16384 }
+          "limit": { "context": 262144, "output": 16384 }
         }
       }
     }
@@ -532,8 +532,8 @@ Pass are the same choice as elsewhere: available, and not private.
 `~/.config/zed/settings.json`, provider `hearth` (OpenAI-compatible) →
 `main-brain`, in every model slot. `scripts/zed-sync.sh` writes the labels
 and context from `roles.tsv`. Tool calls ask first
-(`agent.tool_permissions.default: "confirm"`). Threads compact at 110,000
-tokens, under the 128K window; a longer prompt is refused, and `/compact`
+(`agent.tool_permissions.default: "confirm"`). Threads compact at 170,000
+tokens, under the 256K window; a longer prompt is refused, and `/compact`
 compacts by hand.
 
 **Zed loops, and Hearth cannot stop it there.** Zed has no tool hooks and
