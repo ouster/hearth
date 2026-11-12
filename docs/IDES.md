@@ -420,17 +420,21 @@ apply.
 
 ### Cline (VS Code, JetBrains, Desktop, CLI)
 
+README → *Cline* has the field table. Extra detail here:
+
 1. **On the host:** `scripts/omlx.sh sub-key add cline-<machine>`. On a laptop,
    `ai-tunnel` must be up first.
-2. **Provider:** API Provider **OpenAI Compatible**, Base URL
-   `http://127.0.0.1:1234/v1`, the `cline-<machine>` key, Model `coding-brain`,
-   Context Window 262144. Turn on tool support.
-   Cline's servers and Cline Pass are optional and not private: the prompt
-   goes to Cline. Sensitive repos stay on OpenAI Compatible. Desktop: Provider → BYOK → Add Provider,
-   ID `hearth`. Leave Model Source URL empty and type `coding-brain`; also
-   list `main-brain` / `deep-brain` only if you demand-load first.
-   Capabilities: streaming, tools, reasoning. Prompt cache off, because
-   oMLX's KV cache needs no client flag.
+2. **Past Sign in, then provider:** Desktop first run pushes Sign in —
+   skip it. Path: Get started → **Use your own API key** (not Sign in) →
+   OpenAI Compatible → fill README → *Cline* (field + models tables).
+   Later: Settings → Provider → BYOK → Add Provider. ID `hearth`, Base URL
+   `http://127.0.0.1:1234/v1`, Model Source URL empty. Add models
+   `coding-brain` (98304), `main-brain` (262144), `deep-brain` (65536);
+   default `coding-brain`. Cline selects a role; it does not demand-load —
+   run `scripts/demand-load.sh <role> up` on the host before picking a
+   swap role, then `down` and switch Cline back. Capabilities: streaming,
+   tools, reasoning; prompt cache off. Do **not** use Sign in, Cline Pass,
+   or Usage-Billing for sensitive repos.
 3. **Settings → General:** clear "Allow error and usage reporting". It is
    on by default. The docs say it excludes code and prompts, but it still
    sends usage data.
@@ -446,13 +450,11 @@ apply.
 5. **Feature settings → Enable Hooks.** Turn on **Use Compact Prompt** for
    local models.
 6. Cline reads `AGENTS.md` and `.clinerules/`.
-7. **Composio connectors off.** A signed-in Cline account can receive the
-   `COMPOSIO_BETA` feature flag. That gives the agent tools that
-   connect to Slack and other services through Composio's cloud. On
-   2026-11-08 a `main-brain` session offered a Slack auth link nobody had
-   asked for. That is egress with no cloud model involved. Do not
-   authorise one. Turn connectors off, or sign out: Hearth needs only the
-   key.
+7. **Composio connectors off.** A signed-in account can get
+   `COMPOSIO_BETA` (Slack and other services via Composio's cloud). On
+   2026-11-08 a session offered a Slack auth link unprompted — egress with
+   no cloud model. Do not authorise. Sign out if there is no switch;
+   Hearth needs only the key.
 
 JetBrains: Marketplace plugin 28247, View → Tool Windows → Cline. On
 2026-11-08 the global hook (`~/Documents/Cline/Hooks/PreToolUse`)

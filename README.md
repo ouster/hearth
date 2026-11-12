@@ -458,24 +458,60 @@ picking `main-brain`.
 
 ### Cline (Desktop, VS Code, JetBrains, CLI — trial, ADR 0036)
 
-1. **Provider → BYOK → Add Provider** (OpenAI Compatible). ID `hearth`.
-   Base URL `http://127.0.0.1:1234/v1`. **Leave Model Source URL empty**,
-   and type `coding-brain` as the model. Your key. Capabilities: streaming,
-   tools, reasoning. Prompt cache off, because oMLX's KV cache needs no
-   client flag. Context window 98304 (use 262144 only with demand-loaded
-   `main-brain`).
-2. **Cline's servers and Cline Pass are optional, and they are not
-   private.** Usage-Billing and Cline Pass send the prompt to Cline.
-   Sensitive repos stay on the `hearth` provider above.
-3. **General:** clear usage and error reporting.
-4. **Connectors off.** A signed-in account can receive Cline's Composio
-   beta, which lets the agent connect to Slack and other services through
-   Composio's cloud. Never authorise a connection. Sign out if there is no
-   switch: Hearth needs only the key.
-5. **Enable Hooks**, then run `scripts/install-loop-guard.sh` once. This
-   was verified 2026-11-08 in Cline Desktop and PyCharm.
+Cline's first screens push **Sign in** / Cline Pass. Skip them. Hearth is
+BYOK OpenAI Compatible only — Sign in, Cline Pass, and Usage-Billing send
+the prompt to Cline's cloud.
 
-Cline reads `AGENTS.md` and `.clinerules/`.
+**0. Past Sign in (Desktop first run)**
+
+1. **Get started**
+2. Skip the purple **Sign in** / **Sign up** card (marked Recommended)
+3. Open **Use your own API key** (key icon, under the Sign-in card)
+4. **Choose a provider** → **OpenAI Compatible** (scroll; not OpenAI)
+5. Fill the table below → **Connect**
+
+Already past onboarding? Settings → Provider → BYOK → Add Provider →
+OpenAI Compatible. Same fields.
+
+**1. Provider fields**
+
+| Field | Value |
+|---|---|
+| Provider ID | `hearth` |
+| Base URL | `http://127.0.0.1:1234/v1` |
+| Model Source URL | leave empty (do not fetch a remote model list) |
+| API key | paste your hearth token (host key or `cline-<machine>` sub-key) |
+| Capabilities | streaming, tools, reasoning |
+| Prompt cache | off (oMLX already caches; no client flag) |
+
+**Models** — add all three roles by hand (empty Model Source URL). Default
+selection: `coding-brain`.
+
+| Model id | Context | When to pick it |
+|---|---|---|
+| `coding-brain` | `98304` | Default. Resident on 64 GB; always up after boot |
+| `main-brain` | `262144` | After `scripts/demand-load.sh main-brain up` on the host |
+| `deep-brain` | `65536` | After `scripts/demand-load.sh deep-brain up` on the host |
+
+Cline only **selects** a role. It does not load or unload weights. On the
+host, `demand-load.sh <role> up` / `down` (or `ask-main` / `ask-deep`)
+swaps RAM; on 64 GB, `main-brain` and `deep-brain` each evict
+`coding-brain` for the session (ADR 0047). Pick a swap role in Cline only
+while it is loaded; after `down`, switch the model picker back to
+`coding-brain`. A call to a role that is not loaded fails loudly — there
+is no cloud fallback.
+
+**2. Privacy** — Settings → General: turn off usage and error reporting.
+Connectors / Composio: off. If a Slack (or other) auth link appears, do
+not authorise it. Sign out of a Cline account if there is no switch;
+Hearth needs only the key above.
+
+**3. Hooks** — Feature settings → Enable Hooks, then run
+`scripts/install-loop-guard.sh` once (verified 2026-11-08 in Desktop and
+PyCharm).
+
+Cline reads `AGENTS.md` and `.clinerules/`. Detail and SearXNG notes:
+`docs/IDES.md`.
 
 ### OpenCode (trial, ADR 0043)
 
@@ -509,6 +545,10 @@ writer uses today:
         "main-brain": {
           "name": "main-brain",
           "limit": { "context": 262144, "output": 16384 }
+        },
+        "deep-brain": {
+          "name": "deep-brain",
+          "limit": { "context": 65536, "output": 16384 }
         }
       }
     }
@@ -704,6 +744,16 @@ Claude Code reads `CLAUDE.md`; Cursor reads `AGENTS.md` (a symlink to it) and
 `CLAUDE.md`. Both pick the rules up from the repo root with no setup. The top
 of `CLAUDE.md` tells the assistant which machine it is on, because the host and
 a laptop get very different instructions.
+
+**Portable user rules** (every project, not only Hearth): run
+`scripts/install-global-rules.sh`. It installs `rules/global-rules.md` and
+`rules/user-bootstrap.md` into Claude, Cursor (`~/.cursor/rules/hearth-*.mdc`),
+Cline, OpenCode and Zed. Marker blocks and those `hearth-*` filenames update
+in place; text outside markers and Cursor Settings → User Rules are left
+alone. Legacy `ai-stack` markers migrate to `hearth`. Check without writing:
+`scripts/install-global-rules.sh --check`. VS Code Chat, JetBrains AI
+Assistant, aider and Xcode use the repo `AGENTS.md` / `CLAUDE.md` inside this
+checkout instead.
 
 Three setup skills live in `.claude/skills/`. Claude Code, VS Code (Agent
 Skills) and Cline all load them from there. Ask in plain words, for example

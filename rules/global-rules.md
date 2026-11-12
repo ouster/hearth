@@ -1,8 +1,10 @@
 # Global engineering rules
 
-Portable rules that apply to every project, not just hearth. Installed into
-`~/.claude/CLAUDE.md` by `scripts/install-global-rules.sh`, and pasted into
-Cursor's Settings → Rules → User Rules.
+Portable rules that apply to every project, not just hearth. Installed by
+`scripts/install-global-rules.sh` into Claude (`~/.claude/CLAUDE.md`), Cursor
+(`~/.cursor/rules/hearth-global-rules.mdc`), Cline, OpenCode, and Zed. Edit
+here, then re-run the script. Do not edit between markers or the dedicated
+`hearth-*` files. Cursor Settings → User Rules are left alone.
 
 Each rule here earned its place by causing a real bug.
 

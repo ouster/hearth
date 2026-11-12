@@ -54,16 +54,21 @@ Files are in `~/Library/Application Support/Code/User/`.
 
 ## Cline (Desktop, VS Code, PyCharm, CLI)
 
-1. Provider → BYOK → Add Provider (OpenAI Compatible). ID `hearth`. Base URL
-   as above. **Model Source URL empty.** Model `coding-brain`. Capabilities:
-   streaming, tools, reasoning. Prompt cache off. Context 98304 (or 262144
-   only when using demand-loaded `main-brain`).
-2. **Never** select Cline Usage-Billing or ClinePass. Telemetry off
-   (General).
-3. **Composio connectors off.** If the agent offers a Slack or Composio auth
-   link, tell the person not to click it (README → *Cline*).
-4. Enable Hooks, then `scripts/install-loop-guard.sh` once. This is
-   laptop-safe; it writes `~/Documents/Cline/Hooks/PreToolUse`.
+Follow README → *Cline* (past Sign in + field + models tables). Short form:
+
+1. **Past Sign in:** Get started → **Use your own API key** (skip Sign in /
+   Sign up) → OpenAI Compatible. Later: Settings → Provider → BYOK → Add
+   Provider.
+2. Provider `hearth`, Base URL as above, Model Source URL empty. Add all
+   three models: `coding-brain` (98304, default), `main-brain` (262144),
+   `deep-brain` (65536). Capabilities: streaming, tools, reasoning;
+   prompt cache off. Person pastes the key. Cline does **not** load
+   weights — host runs `demand-load.sh` before a swap role.
+3. **Never** Sign in / Usage-Billing / Cline Pass. Telemetry off (General).
+4. **Composio connectors off.** If a Slack or Composio auth link appears,
+   tell the person not to click it.
+5. Enable Hooks, then `scripts/install-loop-guard.sh` once (laptop-safe;
+   writes `~/Documents/Cline/Hooks/PreToolUse`).
 
 ## OpenCode (trial, ADR 0043)
 

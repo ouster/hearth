@@ -1,0 +1,42 @@
+---
+description: STE80 prose for README, ADRs, and HISTORY (Karpathy 80% ASD-STE100)
+globs: README.md,docs/HISTORY.md,docs/decisions/**/*.md
+alwaysApply: false
+---
+
+# STE80 for Hearth docs
+
+When you write or edit `README.md`, `docs/HISTORY.md`, or any file under
+`docs/decisions/`, use **80% ASD-STE100** (Karpathy STE80). Keep hearth
+tech nouns (`oMLX`, `roles.tsv`, `coding-brain`, `demand-load`).
+
+## Do
+
+- Short sentences. Aim ≤ 25 words (procedures ≤ 20).
+- One idea per sentence. One topic per paragraph (≤ 6 sentences).
+- Active voice. Imperative for steps (`Run`, `Set`, `Skip`).
+- Simple tenses. Plain verbs: use, start, stop, load, set, check.
+- Noun clusters ≤ 3 words (`host token file`, not longer stacks).
+- Diagrams: Mermaid only (AGENTS rule 10). Prefer a table if Mermaid cannot say it.
+
+## Do not
+
+- AI filler: delve, leverage, tapestry, seamless, revolutionize, testament,
+  beacon, cutting-edge, holistic, game-changer, robust, comprehensive.
+- Passive procedure steps (`the model is loaded` → `Load the model`).
+- Semicolons, Latin abbreviations (`e.g.`, `i.e.`, `etc.`), contractions in
+  procedure text.
+- Full ASD-STE100 dictionary enforcement — allow domain terms.
+- SVG, PNG, HTML explainer pages, or Manim video in these files.
+
+## Example
+
+```markdown
+# Bad
+oMLX has been leveraged to seamlessly serve the resident role, which is
+comprehensive and robust for agent workloads.
+
+# Good
+oMLX serves the resident role on `127.0.0.1:1234`.
+Agents call `coding-brain` by default.
+```
