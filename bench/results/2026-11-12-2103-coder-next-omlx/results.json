@@ -1,0 +1,55 @@
+{
+  "finished_at": "2026-11-12T21:03:12",
+  "queue_status": {
+    "running": false,
+    "phase": null,
+    "current_model": null,
+    "current_bench_id": null
+  },
+  "results": [
+    {
+      "benchmark": "humaneval",
+      "accuracy": 0.92,
+      "correct": 92,
+      "total": 100,
+      "time_s": 211.3,
+      "thinking_used": true,
+      "sampling_profile": "deterministic",
+      "upload_url": "https://omlx.ai/benchmarks/intelligence/u05uucwd",
+      "upload_id": "u05uucwd"
+    },
+    {
+      "benchmark": "mbpp",
+      "accuracy": 0.82,
+      "correct": 82,
+      "total": 100,
+      "time_s": 227.8,
+      "thinking_used": true,
+      "sampling_profile": "deterministic",
+      "upload_url": "https://omlx.ai/benchmarks/intelligence/gtcvpozv",
+      "upload_id": "gtcvpozv"
+    },
+    {
+      "benchmark": "livecodebench",
+      "accuracy": 0.73,
+      "correct": 73,
+      "total": 100,
+      "time_s": 3000.0,
+      "thinking_used": true,
+      "sampling_profile": "deterministic",
+      "upload_url": "https://omlx.ai/benchmarks/intelligence/jsd5ldmv",
+      "upload_id": "jsd5ldmv"
+    },
+    {
+      "benchmark": "gsm8k",
+      "accuracy": 0.94,
+      "correct": 94,
+      "total": 100,
+      "time_s": 422.3,
+      "thinking_used": true,
+      "sampling_profile": "deterministic",
+      "upload_url": "https://omlx.ai/benchmarks/intelligence/5ml1ff2q",
+      "upload_id": "5ml1ff2q"
+    }
+  ]
+}
