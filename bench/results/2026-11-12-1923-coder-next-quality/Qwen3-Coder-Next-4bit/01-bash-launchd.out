@@ -1,0 +1,17 @@
+#!/bin/bash
+set -euo pipefail
+
+plist_path="$HOME/Library/LaunchAgents/com.example.service.plist"
+
+if [[ ! -f "$plist_path" ]]; then
+  echo "Error: Plist file not found at $plist_path" >&2
+  exit 1
+fi
+
+# Check if the agent is loaded by querying launchctl
+if ! launchctl list | grep -q "com.example.service"; then
+  launchctl load "$plist_path"
+  echo "Loaded com.example.service"
+else
+  echo "com.example.service is already loaded"
+fi

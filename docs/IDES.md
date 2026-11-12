@@ -20,40 +20,39 @@ a model changes. VS Code, Cline and OpenCode are on trial beside them.
 ```yaml
 # ~/.aider.conf.yml
 # Roles, not model names. OPENAI_API_BASE + OPENAI_API_KEY come from
-# scripts/aliases.zsh per invocation. One local model (ADR 0016, D1).
-model: openai/main-brain
-weak-model: openai/main-brain
+# scripts/aliases.zsh per invocation. Default resident is coding-brain (ADR 0047).
+model: openai/coding-brain
+weak-model: openai/coding-brain
 dark-mode: true
 auto-commits: true
 map-tokens: 4096
 ```
 
-`weak-model` is used for commit messages and summaries. With one resident
-model there is nothing cheaper to point it at, and nothing to evict.
-A laptop's `ask-cloud` overrides both with the Gemini id from
-`config/roles.tsv`, so a cloud session never sends its commit messages
-anywhere else. The host has no `ask-cloud` (ADR 0038).
+`weak-model` is used for commit messages and summaries. Point it at the same
+resident role as `model`. A laptop's `ask-cloud` overrides both with the
+Gemini id from `config/roles.tsv`. The host has no `ask-cloud` (ADR 0038).
 
 ### Architect mode
 
-aider can split planning from editing. With one local model both sides are
-`main-brain`; the value left is that the design step stays visible.
+aider can split planning from editing. Both sides use the resident role; the
+value left is that the design step stays visible.
 
 ```bash
-ask-arch    # aider --architect --model openai/main-brain --editor-model openai/main-brain
+ask-arch    # aider --architect on the resident role (coding-brain on 64 GB)
+ask-main    # demand-load main-brain, then aider on openai/main-brain
 ```
 
-`ask-deep` runs aider on `deep-brain`, a slower, more careful model, loaded
-beside `main-brain` for that session (ADR 0020, 0028). It is also in Zed's
-model picker, labelled "load first": a request to an unloaded role can be
-answered by whatever is loaded, without saying so. To use it from Zed, run
-`scripts/demand-load.sh deep-brain up` on the host, and
-`scripts/demand-load.sh deep-brain down` when done. `main-brain` stays loaded.
+`ask-deep` runs aider on `deep-brain`, loaded in place of the current agent
+(ADR 0020, 0028, 0047). Swap roles are also in Zed's model picker, labelled
+"load first": a request to an unloaded role can be answered by whatever is
+loaded, without saying so. Run `scripts/demand-load.sh <role> up` on the host
+before picking `main-brain` or `deep-brain` in an editor.
 
 ### Switching mid-session
 
 ```
-/model openai/main-brain       the only local role
+/model openai/coding-brain    default resident (64 GB)
+/model openai/main-brain      only after demand-load main-brain up
                               (cloud: quit, and run `ask-cloud` on a laptop —
                                the host holds no cloud key, ADR 0038)
 /ask                          question without editing anything
@@ -81,26 +80,29 @@ aider --no-auto-commits
 
 Directly in `~/.config/zed/settings.json` (ADR 0016). Every model slot —
 agent, inline assistant, commit message, thread summary, compaction,
-subagent — is `hearth/main-brain`, so nothing ever asks for a second model.
+subagent — defaults to `hearth/coding-brain` (ADR 0047). List `main-brain`
+and `deep-brain` too; their `display_name` says to demand-load first.
 **No cloud provider on this host (D3)**: cloud is a laptop's `ask-cloud` (ADR 0038).
 
 ```json
 {
   "agent": {
-    "default_model":          { "provider": "hearth", "model": "main-brain" },
-    "inline_assistant_model": { "provider": "hearth", "model": "main-brain" },
-    "commit_message_model":   { "provider": "hearth", "model": "main-brain" },
-    "thread_summary_model":   { "provider": "hearth", "model": "main-brain" },
-    "compaction_model":       { "provider": "hearth", "model": "main-brain" },
-    "subagent_model":         { "provider": "hearth", "model": "main-brain" },
-    "auto_compact":           { "enabled": true, "threshold": 170000 }
+    "default_model":          { "provider": "hearth", "model": "coding-brain" },
+    "inline_assistant_model": { "provider": "hearth", "model": "coding-brain" },
+    "commit_message_model":   { "provider": "hearth", "model": "coding-brain" },
+    "thread_summary_model":   { "provider": "hearth", "model": "coding-brain" },
+    "compaction_model":       { "provider": "hearth", "model": "coding-brain" },
+    "subagent_model":         { "provider": "hearth", "model": "coding-brain" },
+    "auto_compact":           { "enabled": true, "threshold": 80000 }
   },
   "language_models": {
     "openai_compatible": {
       "hearth": {
         "api_url": "http://127.0.0.1:1234/v1",
         "available_models": [
-          { "name": "main-brain", "display_name": "<written by scripts/zed-sync.sh>", "max_tokens": 262144 }
+          { "name": "coding-brain", "display_name": "<written by scripts/zed-sync.sh>", "max_tokens": 98304 },
+          { "name": "main-brain", "display_name": "<written by scripts/zed-sync.sh>", "max_tokens": 262144 },
+          { "name": "deep-brain", "display_name": "<written by scripts/zed-sync.sh>", "max_tokens": 65536 }
         ]
       }
     }
@@ -108,7 +110,8 @@ subagent — is `hearth/main-brain`, so nothing ever asks for a second model.
 }
 ```
 
-Automatic compaction runs at 170,000 tokens. The loaded window is 262,144.
+Automatic compaction for `coding-brain` runs near 80,000 tokens (98K window).
+For a `main-brain` thread, 170,000 is appropriate (262,144 window).
 Past that the server refuses the prompt, and Zed compacts on that error.
 170,000 leaves the old ~21,000-token count lag plus Zed's 65,536 output
 budget inside the trained window. A 90% threshold (about 236,000) would
@@ -161,7 +164,7 @@ sends the query through SearXNG on this machine (`127.0.0.1:8888`) and
 ignores a `SEARXNG_URL` in the entry. Only `searxng_web_search` is advertised.
 Each tool call asks first.
 
-**Web** has an empty built-in tool map and `default_model` `hearth/main-brain`.
+**Web** has an empty built-in tool map and `default_model` `hearth/coding-brain`.
 A search result cannot read a file.
 
 **Write + search** (`write-web`) has Write's tools and no pinned model, so
@@ -179,7 +182,7 @@ Through an SSH tunnel to the host — `docs/LAPTOP.md`. Zed points at
 with the **laptop's own** token (`laptop-m5-air` in `~/.hearth-key`). On macOS,
 `ai-tunnel-install` keeps the tunnel up; otherwise run `ai-tunnel` before
 opening Zed. A Gemini
-provider is allowed on the laptop (D3). Web stays on `hearth/main-brain`.
+provider is allowed on the laptop (D3). Web stays on `hearth/coding-brain`.
 Write + search has no pinned model. Do not switch either profile to Gemini.
 
 Zed's SSH remote projects also work: edit files on the host over SSH while
@@ -294,7 +297,7 @@ The distinction is not about safety. It is about which mode you are in.
 
 ## JetBrains AI Assistant
 
-Optional. Calls `main-brain` the same way Zed does. On a laptop the tunnel
+Optional. Calls `coding-brain` the same way Zed does. On a laptop the tunnel
 must be up (`ai-tunnel`).
 
 1. **Host:** a key for this IDE, so it can be revoked on its own:
@@ -304,8 +307,8 @@ must be up (`ai-tunnel`).
    into the API key field; the IDE keeps it in its own password store.
    **Test Connection**.
 3. **Assign the model by hand.** Models from an OpenAI-compatible endpoint
-   are not assigned to features automatically. Pick `main-brain` for chat
-   and each feature you use. Never `deep-brain` unless it is loaded.
+   are not assigned to features automatically. Pick `coding-brain` for chat
+   and each feature you use. Demand-load before `main-brain` or `deep-brain`.
 4. **Offline mode on** for sensitive repos, and no cloud provider or JetBrains
    AI subscription model on the host (rule 3). A feature with no local model
    assigned may use JetBrains' cloud if a subscription is signed in.
@@ -323,7 +326,7 @@ Optional. Swift work only.
 2. **Xcode:** Settings → Intelligence → Add a Chat Provider → **Internet
    Hosted**. URL `http://127.0.0.1:1234` (no `/v1`: Xcode adds the path).
    Header `Authorization`; type the key, without `Bearer` (Xcode adds it).
-   Model `main-brain`.
+   Model `coding-brain` (default). Also list `main-brain` / `deep-brain`; demand-load before picking them.
 3. **No Claude, Gemini or OpenAI agent** in Intelligence for sensitive repos,
    and none on the host. ACP agents added to Xcode follow
    *External agents (ACP)* above.
@@ -338,9 +341,9 @@ adding a TLS proxy in front of `:1234`.
 ## VS Code, Cline and OpenCode (trial, ADR 0036, 0043)
 
 On trial beside Zed for agent work, with a loop guard Zed cannot have.
-Each calls `main-brain` at `127.0.0.1:1234` with its own sub-key: on the
-host directly, on a laptop through `ai-tunnel`. **No cloud provider on the
-host** (rule 3, D3). VS Code and Cline setup follows vendor docs read
+Each defaults to `coding-brain` at `127.0.0.1:1234` with its own sub-key: on
+the host directly, on a laptop through `ai-tunnel`. **No cloud provider on
+the host** (rule 3, D3). VS Code and Cline setup follows vendor docs read
 2026-11-08; OpenCode follows oMLX's OpenCode writer and OpenCode's plugin
 docs, read 2026-11-09. Client gates against oMLX are still open for
 OpenCode.
@@ -388,7 +391,7 @@ Cline the task should stop, and a line should appear in the log.
    agent spend those credits; a 30,000-token round is about 3.5 credits
    on Claude Haiku 4.5 and about 17.5 on Claude Opus 5, so a student
    month is a handful of agent tasks (GitHub price table, read
-   2026-11-09). The README has the table. `main-brain` spends none of
+   2026-11-09). The README has the table. `coding-brain` spends none of
    the credits. It keeps Copilot code search off, turns off telemetry, and caps
    `chat.agent.maxRequests` at 40. **Sensitive repos opt out:** paste
    `scripts/vscode-check.sh --show-sensitive` into that repo's
@@ -397,15 +400,15 @@ Cline the task should stop, and a line should appear in the log.
    work in its own window: Copilot also reads other open tabs.
 4. **Model:** Chat: Manage Language Models → Add Models → Custom Endpoint →
    Chat Completions. URL `http://127.0.0.1:1234/v1`, model id
-   `main-brain`, tool calling on, max input tokens 245760 (262144 minus
-   the 16384 output budget; the role's `ctx`
-   in `roles.tsv`). Set the key in Manage Language Models → `hearth`. VS
-   Code keeps it in its secret store and writes a `${input:…}` reference
+   `coding-brain`, tool calling on, max input tokens ~90000 (98304 minus
+   output budget; see `roles.tsv`). Optionally add `main-brain` at 245760
+   for after demand-load. Set the key in Manage Language Models → `hearth`.
+   VS Code keeps it in its secret store and writes a `${input:…}` reference
    into `chatLanguageModels.json`. A hand-typed placeholder has no secret
    behind it ("API key required", 1.144). The README has both files'
    full format.
 5. **Utility models:** set `chat.utilityModel` and `chat.utilitySmallModel`
-   to the same `main-brain` entry. Their default is GitHub Copilot, which
+   to the same `coding-brain` entry. Their default is GitHub Copilot, which
    sends titles and commit messages to GitHub if you are signed in.
 6. **Harness:** use the Local session target. The Copilot harness needs the
    experimental `chat.agentHost.byokModels.enabled` setting for your own
@@ -420,13 +423,14 @@ apply.
 1. **On the host:** `scripts/omlx.sh sub-key add cline-<machine>`. On a laptop,
    `ai-tunnel` must be up first.
 2. **Provider:** API Provider **OpenAI Compatible**, Base URL
-   `http://127.0.0.1:1234/v1`, the `cline-<machine>` key, Model `main-brain`,
+   `http://127.0.0.1:1234/v1`, the `cline-<machine>` key, Model `coding-brain`,
    Context Window 262144. Turn on tool support.
    Cline's servers and Cline Pass are optional and not private: the prompt
    goes to Cline. Sensitive repos stay on OpenAI Compatible. Desktop: Provider → BYOK → Add Provider,
-   ID `hearth`. Leave Model Source URL empty and type `main-brain`; a
-   model list would offer `deep-brain`. Capabilities: streaming, tools,
-   reasoning. Prompt cache off, because oMLX's KV cache needs no client flag.
+   ID `hearth`. Leave Model Source URL empty and type `coding-brain`; also
+   list `main-brain` / `deep-brain` only if you demand-load first.
+   Capabilities: streaming, tools, reasoning. Prompt cache off, because
+   oMLX's KV cache needs no client flag.
 3. **Settings → General:** clear "Allow error and usage reporting". It is
    on by default. The docs say it excludes code and prompts, but it still
    sends usage data.
@@ -471,8 +475,9 @@ exact hook stdin field names on the installed versions, and VS Code's
 2. **On the host:** `scripts/omlx.sh sub-key add opencode-<machine>`. On a
    laptop, `ai-tunnel` must be up first.
 3. **Config:** `~/.config/opencode/opencode.json`, mode 600 if it holds the
-   key. Provider id `hearth`, model `hearth/main-brain`, base URL
-   `http://127.0.0.1:1234/v1`. List only `main-brain` under that provider.
+   key. Provider id `hearth`, model `hearth/coding-brain`, base URL
+   `http://127.0.0.1:1234/v1`. Default `coding-brain`; list `main-brain` /
+   `deep-brain` too and demand-load before using them.
    The README has the full JSON. Type the sub-key into `options.apiKey`
    yourself (or whatever secret path your OpenCode build documents) — never
    commit it. Dual machine: add `hearth-remote` at

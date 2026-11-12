@@ -207,10 +207,19 @@ else:
             bad("chatLanguageModels.json holds a key and is mode %o — chmod 600 it" % mode)
         else:
             ok("key file mode 600")
-    if "main-brain" in ids:
-        ok("model id main-brain (the role)")
+    if "coding-brain" in ids:
+        ok("model id coding-brain (default resident role, ADR 0047)")
+    elif "main-brain" in ids:
+        warn("model id main-brain only — prefer coding-brain as default on 64 GB (ADR 0047); main-brain needs demand-load")
     else:
-        warn("no model with id main-brain — call the role, never a model name (rule 1)")
+        warn("no model with id coding-brain — call the role, never a model name (rule 1)")
+    if "main-brain" in ids and "coding-brain" in ids:
+        ok("main-brain also listed (swap; demand-load before picking)")
+    bad_ids = [i for i in ids if i not in ("coding-brain", "main-brain", "deep-brain")]
+    if bad_ids:
+        bad("non-role model id(s) %s — roles only (rule 1)" % ", ".join(bad_ids))
+    elif ids:
+        ok("no non-role model ids")
 
 sys.exit(rc)
 PY

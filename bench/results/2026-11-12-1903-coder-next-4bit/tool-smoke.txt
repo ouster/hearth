@@ -1,0 +1,8 @@
+==== tool-smoke ====
+=== tool-smoke openai model=Qwen3-Coder-Next-4bit ===
+turn1: tool_calls=1 content_len=153
+  read_file
+turn2: tool_calls=1 content_len=65
+  write_file
+  has_lt=True head='# hearth tool smoke\n#!/bin/bash\n\nhealthcheck() {\n    if [[ $x < 1 ]]; then echo '
+PASS — write/edit tool in turn 2

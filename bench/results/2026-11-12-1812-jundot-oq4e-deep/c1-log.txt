@@ -1,0 +1,37 @@
+==== concurrency c1 ====
+round 1 slot 0: status=200 ttft=136.436 total=137.481 tool_ok=1 finish=tool_calls 
+round 2 slot 0: status=200 ttft=136.71 total=137.775 tool_ok=1 finish=tool_calls 
+round 3 slot 0: status=200 ttft=129.574 total=130.513 tool_ok=1 finish=tool_calls 
+round 4 slot 0: status=200 ttft=129.535 total=130.468 tool_ok=1 finish=tool_calls 
+round 5 slot 0: status=200 ttft=129.546 total=130.479 tool_ok=1 finish=tool_calls 
+round 6 slot 0: status=200 ttft=129.537 total=130.472 tool_ok=1 finish=tool_calls 
+round 7 slot 0: status=200 ttft=129.552 total=130.48 tool_ok=1 finish=tool_calls 
+round 8 slot 0: status=200 ttft=129.629 total=130.573 tool_ok=1 finish=tool_calls 
+round 9 slot 0: status=200 ttft=129.611 total=130.584 tool_ok=1 finish=tool_calls 
+round 10 slot 0: status=200 ttft=129.642 total=130.576 tool_ok=1 finish=tool_calls 
+# Concurrency bench — jundot-qwen3.8-27b-oq4e-mtp deep challenger
+
+| | |
+|---|---|
+| Base URL | `http://127.0.0.1:1234/v1` |
+| Role | `Qwen3.8-27B-oQ4e-mtp` |
+| Concurrency × rounds | 1 × 10 = 10 requests |
+| Target prompt tokens | 30000 (actual median 30356) |
+| Client timeout | 180 s |
+| Run | 2026-11-12T18:12:34 → 2026-11-12T18:34:33 (1319 s wall) |
+| Footprint process match | `omlx-server` |
+
+## Result
+
+| Metric | Value |
+|---|---|
+| Valid `read_file` tool calls | 10 / 10 |
+| Timeouts (client, 180 s) | 0 |
+| HTTP errors | 0 |
+| Other failures (bad/no tool call, stream error) | 0 |
+| TTFB p50 / p95 | 0.0 s / 0.1 s |
+| TTFT p50 / p95 (requests that produced a token) | 129.6 s / 136.7 s |
+| Total time p50 / p95 (successful) | 130.5 s / 137.8 s |
+| Peak footprint (sum of matched processes) | 38.0 GB |
+
+Raw: `raw.tsv`, `footprint.tsv`.

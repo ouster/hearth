@@ -81,11 +81,11 @@ ok "127.0.0.1:1234 is not held by a client tunnel"
 # 2. A benched tier row for this much RAM (ADR 0032, rule 5).
 ram=$(hearth_ram_gb) || { echo "could not run: cannot read RAM"; exit 2; }
 roles=$(hearth_resolved_roles | awk -F'\t' '$2 == "omlx"')
-if printf '%s\n' "$roles" | awk -F'\t' '$1 == "main-brain"' | grep -q .; then
-  ok "${ram} GB RAM: benched main-brain row, ceiling $(hearth_gpu_ceiling_gb) GB"
+if printf '%s\n' "$roles" | awk -F'\t' '$8 == "resident" && $1 !~ /edit/' | grep -q .; then
+  ok "${ram} GB RAM: benched resident chat role, ceiling $(hearth_gpu_ceiling_gb) GB"
 else
   suggest_unbenched "$ram"
-  stop "${ram} GB RAM has no benched main-brain row. The suggestion above is not installed. A row needs bench/tasks and scripts/concurrency-bench.sh on this hardware first (rule 5)."
+  stop "${ram} GB RAM has no benched resident chat role. The suggestion above is not installed. A row needs bench/tasks and scripts/concurrency-bench.sh on this hardware first (rule 5)."
 fi
 
 # 3. oMLX installed (README → Install oMLX).

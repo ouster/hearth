@@ -226,11 +226,11 @@ key works, the second that it can do nothing else.
 | `ai-tunnel` | `tunnel: up` (the first run asks the person to confirm the host fingerprint) |
 | `ai-tunnel-install` | macOS: `tunnel: installed com.hearth.tunnel`. Linux: skip this |
 | `ai-ping` | `up` |
-| `ai-models` | `main-brain` (plus `deep-brain` only while the host has it loaded) |
-| `ai-ask "say ok"` | a short reply from main-brain |
+| `ai-models` | `coding-brain` (plus `main-brain` / `deep-brain` while the host has them loaded) |
+| `ai-ask "say ok"` | a short reply from coding-brain |
 | `ssh hearth true; echo $?` | **non-zero**, no shell: the key is tunnel-only |
 | `ask-cloud` (optional) | aider on Gemini with the laptop's own key |
-| `ask-deep` (optional) | refuses with "not loaded on the host" unless the host ran `scripts/demand-load.sh deep-brain up`; the laptop cannot load it (tunnel-only key). `main-brain` stays loaded beside it |
+| `ask-deep` (optional) | refuses with "not loaded on the host" unless the host ran `scripts/demand-load.sh deep-brain up`; the laptop cannot load it (tunnel-only key) |
 
 If `ai-ping` says `BAD TOKEN`, the person re-runs the `read -rs` step with
 the right token; `NO ANSWER` means the host is asleep or oMLX is down
@@ -245,12 +245,13 @@ with the laptop's token entered through Zed's UI by the person.
 the model call, not the laptop, so a `localhost` base URL never reaches the
 tunnel; the only workaround is a public endpoint, which the *Never* list
 forbids, and prompts would still pass through Cursor's servers (checked
-2026-10-31). Use Zed, aider or `ask` for main-brain on the laptop; Cursor
+2026-10-31). Use Zed, aider or `ask` for `coding-brain` on the laptop; Cursor
 with its own models only, and not on sensitive repos.
 
 ## Zed on the laptop
 
-Same provider as the host, through the tunnel:
+Same provider as the host, through the tunnel. Default is `coding-brain`
+(ADR 0047). List swap roles too; demand-load them on the host before picking.
 
 ```json
 {
@@ -259,12 +260,14 @@ Same provider as the host, through the tunnel:
       "hearth": {
         "api_url": "http://127.0.0.1:1234/v1",
         "available_models": [
-          { "name": "main-brain", "display_name": "main-brain", "max_tokens": 262144 }
+          { "name": "coding-brain", "display_name": "coding-brain — 98K × 1", "max_tokens": 98304 },
+          { "name": "main-brain", "display_name": "main-brain — 256K × 3 — load first", "max_tokens": 262144 },
+          { "name": "deep-brain", "display_name": "deep-brain — 64K × 1 — load first", "max_tokens": 65536 }
         ]
       }
     }
   },
-  "agent": { "default_model": { "provider": "hearth", "model": "main-brain" } }
+  "agent": { "default_model": { "provider": "hearth", "model": "coding-brain" } }
 }
 ```
 
@@ -274,7 +277,7 @@ tunnel at login. Run `ai-tunnel` before Zed when that agent is not installed,
 or Zed's models show as unavailable.
 
 A Gemini provider **is allowed on the laptop** (D3), with the laptop's own
-key. The host has none. Keep sensitive repos on `hearth/main-brain`.
+key. The host has none. Keep sensitive repos on `hearth/coding-brain`.
 
 If using the legal-research worked example from `docs/MCP.md`, install and
 review its source on the laptop too; its stdio process runs beside Zed, not on

@@ -348,7 +348,7 @@ ai-ask() {
   # umask inside the substitution so the file is created mode 600. A later
   # redirect truncates it and keeps that mode.
   _body=$(umask 077 && mktemp "${TMPDIR:-/tmp}/hearth-ask.XXXXXX") || { unset _k; return 1; }
-  python3 -c 'import json, sys; print(json.dumps({"model": "main-brain", "messages": [{"role": "user", "content": " ".join(sys.argv[1:])}]}))' "$@" \
+  python3 -c 'import json, sys; print(json.dumps({"model": "coding-brain", "messages": [{"role": "user", "content": " ".join(sys.argv[1:])}]}))' "$@" \
     > "$_body"
   printf 'header = "Authorization: Bearer %s"\n' "$_k" \
     | curl -s -m 300 -K - -H 'Content-Type: application/json' \
@@ -366,20 +366,21 @@ print((d["choices"][0]["message"].get("content") or "").strip())'
 }
 
 # ---------------------------------------------------------------- aider
-# The token is injected per invocation, never exported. Every local alias is
-# main-brain (D1); clients call roles, never models.
+# The token is injected per invocation, never exported. Default tunnel role
+# is coding-brain (host resident on 64 GB, ADR 0047). Clients call roles,
+# never models.
 _hearth_aider() {
   _hearth_connect || return 1
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
   OPENAI_API_BASE="$HEARTH_TUNNEL_URL" OPENAI_API_KEY="$_k" \
-    aider --model openai/main-brain --weak-model openai/main-brain "$@"
+    aider --model openai/coding-brain --weak-model openai/coding-brain "$@"
   _rc=$?; unset _k; return $_rc
 }
-_hearth_ask_arch() { _hearth_aider --architect --editor-model openai/main-brain "$@"; }
+_hearth_ask_arch() { _hearth_aider --architect --editor-model openai/coding-brain "$@"; }
 
 # deep-brain: slower, more careful model (ADR 0020). This laptop cannot load
 # it; it must already be loaded on the host. An unloaded role would be
-# answered by main-brain without saying so, so refuse unless it is listed.
+# answered by the resident without saying so, so refuse unless it is listed.
 _hearth_ask_deep() {
   _hearth_connect || return 1
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
@@ -388,7 +389,7 @@ _hearth_ask_deep() {
        | python3 -c 'import sys, json
 sys.exit(0 if any(m.get("id") == "deep-brain" for m in json.load(sys.stdin).get("data", [])) else 1)' 2>/dev/null; then
     echo "deep-brain is not loaded on the host. On the host: scripts/demand-load.sh deep-brain up" >&2
-    echo "(main-brain is swapped out until scripts/demand-load.sh deep-brain down, so the host's editors and other laptops wait)" >&2
+    echo "(the resident agent is swapped out until scripts/demand-load.sh deep-brain down)" >&2
     unset _k; return 1
   fi
   # weak-model is deep-brain too: a commit step should use the same model
@@ -408,17 +409,19 @@ sys.exit(0 if any(m.get("id") == "deep-brain" for m in json.load(sys.stdin).get(
 # file also defined ask as an alias; laptop mode drops that one.
 [ "$HEARTH_DUAL" = 1 ] || unalias ask 2>/dev/null || true
 if [ "$HEARTH_DUAL" = 1 ]; then
-  function ask-remote        { _hearth_aider "$@"; }
-  function main-brain-remote { _hearth_aider "$@"; }
-  function ask-arch-remote   { _hearth_ask_arch "$@"; }
-  function ask-deep-remote   { _hearth_ask_deep "$@"; }
-  function deep-brain-remote { _hearth_ask_deep "$@"; }
+  function ask-remote          { _hearth_aider "$@"; }
+  function coding-brain-remote { _hearth_aider "$@"; }
+  function main-brain-remote   { _hearth_aider "$@"; }
+  function ask-arch-remote     { _hearth_ask_arch "$@"; }
+  function ask-deep-remote     { _hearth_ask_deep "$@"; }
+  function deep-brain-remote   { _hearth_ask_deep "$@"; }
 else
-  function ask        { _hearth_aider "$@"; }
-  function main-brain { _hearth_aider "$@"; }
-  function ask-arch   { _hearth_ask_arch "$@"; }
-  function ask-deep   { _hearth_ask_deep "$@"; }
-  function deep-brain { _hearth_ask_deep "$@"; }
+  function ask          { _hearth_aider "$@"; }
+  function coding-brain { _hearth_aider "$@"; }
+  function main-brain   { _hearth_aider "$@"; }
+  function ask-arch     { _hearth_ask_arch "$@"; }
+  function ask-deep     { _hearth_ask_deep "$@"; }
+  function deep-brain   { _hearth_ask_deep "$@"; }
 fi
 
 # The only command that leaves for the cloud, with THIS machine's own key.

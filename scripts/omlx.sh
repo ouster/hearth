@@ -8,12 +8,13 @@
 #   scripts/omlx.sh sub-key add <name>      # token on stdin, not echoed
 #   scripts/omlx.sh sub-key revoke <name>
 #
-# Weights, context, and slots come from the resident main-brain row. The API
-# key is the existing host token, written to ~/.omlx/settings.json (mode 600)
-# and never printed. Clients that already send that token keep working.
-# A laptop token is a different key. `sub-key add` registers one the operator
-# pastes; it can call the model and cannot log in as admin. `up` keeps
-# sub-keys already in the settings file.
+# Weights, context, and slots come from this host's resident oMLX chat role
+# (coding-brain on 64 GB, main-brain on 48 GB; ADR 0047). The API key is the
+# existing host token, written to ~/.omlx/settings.json (mode 600) and never
+# printed. Clients that already send that token keep working. A laptop token
+# is a different key. `sub-key add` registers one the operator pastes; it can
+# call the model and cannot log in as admin. `up` keeps sub-keys already in
+# the settings file.
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -62,10 +63,11 @@ find_omlx() {
   return 1
 }
 
-# This host's main-brain row (tier resolved from RAM, ADR 0032).
+# This host's resident oMLX chat role (tier resolved from RAM, ADR 0032, 0047).
+# Prints: role \t ctx \t slots \t weights
 role_fields() {
-  hearth_resolved_roles | awk -F'\t' '$1=="main-brain" && $2=="omlx" && $8=="resident" {
-    print $4 "\t" $5 "\t" $6; exit
+  hearth_resolved_roles | awk -F'\t' '$2=="omlx" && $8=="resident" && $1 !~ /edit/ {
+    print $1 "\t" $4 "\t" $5 "\t" $6; exit
   }'
 }
 
@@ -291,12 +293,21 @@ remove_flat_role_link() {
 link_weights() {
   mkdir -p "$MODEL_DIR"
   link_weights_path "$WEIGHTS" || fail "weights missing: ${HOME}/.hearth/models/${WEIGHTS}"
-  remove_flat_role_link main-brain
-  deep=$(hearth_resolved_roles | awk -F'\t' '$1=="deep-brain" && ($8=="beside" || $8=="swap") { print $6; exit }')
-  if [ -n "$deep" ]; then
-    link_weights_path "$deep" || echo "omlx: deep-brain weights not under ~/.hearth/models — ask-deep cannot load it until the weights are copied" >&2
-  fi
+  # Link every demand/swap chat role so aliases can be claimed without a restart.
+  while IFS="$(printf '\t')" read -r role load weights; do
+    [ -n "$role" ] || continue
+    [ "$weights" = "$WEIGHTS" ] && continue
+    case "$load" in
+      beside|swap)
+        link_weights_path "$weights" || echo "omlx: ${role} weights not under ~/.hearth/models — demand-load cannot load it until copied" >&2
+        ;;
+    esac
+  done <<EOF
+$(hearth_resolved_roles | awk -F'\t' '$2=="omlx" && $5!="-" {print $1 "\t" $8 "\t" $6}')
+EOF
   # edit-brain is laptop-primary (ADR 0033 amend). Host does not link or load it.
+  remove_flat_role_link coding-brain
+  remove_flat_role_link main-brain
   remove_flat_role_link deep-brain
   remove_flat_role_link edit-brain
   # Retired ADR 0039 discovery ids. Names built at runtime so preflight does
@@ -407,11 +418,26 @@ for line in os.environ["OMLX_ROLES_TSV"].splitlines():
         continue
     weights = f[5]
     leaf = weights.rstrip("/").split("/")[-1]
-    roles[f[0]] = {"ctx": int(f[3]), "load": f[7], "leaf": leaf, "weights": weights}
+    try:
+        slots = int(f[4])
+    except ValueError:
+        slots = 1
+    roles[f[0]] = {
+        "ctx": int(f[3]),
+        "slots": slots,
+        "load": f[7],
+        "leaf": leaf,
+        "weights": weights,
+    }
 
-if "main-brain" not in roles:
-    raise SystemExit("no main-brain row in resolved roles")
-main_leaf = roles["main-brain"]["leaf"]
+resident_role = None
+for name, meta in roles.items():
+    if meta["load"] == "resident" and "edit" not in name:
+        resident_role = name
+        break
+if not resident_role:
+    raise SystemExit("no resident omlx chat role in resolved roles")
+resident_leaf = roles[resident_role]["leaf"]
 
 # Pick up org/leaf symlinks (and drop removed flat role dirs).
 code, body = call("POST", "/admin/api/reload", None, timeout=120)
@@ -430,10 +456,10 @@ def admin_models():
     return {m.get("id"): m for m in body.get("models") or [] if m.get("id")}
 
 admin = admin_models()
-if main_leaf not in admin:
+if resident_leaf not in admin:
     raise SystemExit(
-        "main-brain leaf %r was not discovered under ~/.omlx/models "
-        "(expected org/leaf symlink from roles.tsv)" % main_leaf
+        "%s leaf %r was not discovered under ~/.omlx/models "
+        "(expected org/leaf symlink from roles.tsv)" % (resident_role, resident_leaf)
     )
 
 def apply(mid, settings):
@@ -443,7 +469,7 @@ def apply(mid, settings):
 
 # Clear leftover flat role ids so they are not pinned/preloaded. Includes
 # retired ADR 0039 names, built at runtime so this file does not spell them.
-stale_ids = ["main-brain", "deep-brain", "edit-brain"]
+stale_ids = ["coding-brain", "main-brain", "deep-brain", "edit-brain"]
 stale_ids.extend("%s-%s" % ("local", n) for n in ("main", "deep", "edit"))
 retired_aliases = set("%s-%s" % ("local", n) for n in ("main", "deep", "edit"))
 for stale in stale_ids:
@@ -458,15 +484,11 @@ for stale in stale_ids:
         else:
             print("stale %s clear failed (%s)" % (stale, code))
 
-# Role aliases must be unique. When swapping candidate weights, clear the
-# alias from every other leaf before claiming it on the new one. Also strip
-# retired ADR 0039 aliases so /v1 does not keep advertising them.
-wanted_alias = {"main-brain": main_leaf}
-if "deep-brain" in roles:
-    wanted_alias["deep-brain"] = roles["deep-brain"]["leaf"]
-for mid, meta in admin.items():
-    # Admin list may expose alias on the model object or only in settings.
-    pass
+# Role aliases must be unique. Claim every chat role (resident + swap/beside).
+wanted_alias = {}
+for name, meta in roles.items():
+    if meta["load"] in ("resident", "beside", "swap") and "edit" not in name:
+        wanted_alias[name] = meta["leaf"]
 code, all_settings = call("GET", "/admin/api/models")
 if code == 200:
     for m in all_settings.get("models") or []:
@@ -520,35 +542,30 @@ if parser is None:
     )
 print("reasoning_parser=%s" % parser)
 
-main = dict(common)
-main.update({
-    "model_alias": "main-brain",
-    "reasoning_parser": parser,
-    "top_k": 20,
-    "max_context_window": ctx,
-    "max_tokens": 65536,
-    "is_pinned": True,
-    "is_default": True,
-    # May have been hidden earlier as a non-role discovery during an A/B swap.
-    "is_hidden": False,
-})
-apply(main_leaf, main)
-print("alias main-brain → %s" % main_leaf)
-
-if "deep-brain" in roles:
-    deep_leaf = roles["deep-brain"]["leaf"]
-    if deep_leaf in admin:
-        deep = dict(common)
-        deep.update({
-            "model_alias": "deep-brain",
-            "max_context_window": roles["deep-brain"]["ctx"],
-            "max_tokens": 32768,
-            "is_pinned": False,
-            "is_default": False,
-            "is_hidden": False,
-        })
-        apply(deep_leaf, deep)
-        print("alias deep-brain → %s" % deep_leaf)
+# Alias every chat role. Only the resident is pinned and loaded at boot.
+aliased = []
+for name, meta in roles.items():
+    if meta["load"] not in ("resident", "beside", "swap") or "edit" in name:
+        continue
+    leaf = meta["leaf"]
+    if leaf not in admin:
+        print("skip alias %s: leaf %s not discovered" % (name, leaf))
+        continue
+    cfg = dict(common)
+    is_res = name == resident_role
+    cfg.update({
+        "model_alias": name,
+        "reasoning_parser": parser,
+        "top_k": 20 if name in ("main-brain", "coding-brain") else 64,
+        "max_context_window": meta["ctx"],
+        "max_tokens": 65536 if name != "deep-brain" else 32768,
+        "is_pinned": is_res,
+        "is_default": is_res,
+        "is_hidden": False,
+    })
+    apply(leaf, cfg)
+    aliased.append(name)
+    print("alias %s → %s%s" % (name, leaf, " (resident)" if is_res else ""))
 
 # Host does not serve edit-brain (ADR 0033 amend).
 if "edit-brain" in admin:
@@ -585,7 +602,22 @@ for mid in admin:
     else:
         print("hide %s failed (%s)" % (mid, code))
 
-code, body = call("POST", "/admin/api/models/%s/load" % main_leaf, None, timeout=600)
+# Unload non-resident chat leaves so boot RAM is the resident only (ADR 0047).
+for name, meta in roles.items():
+    if name == resident_role:
+        continue
+    if meta["load"] not in ("beside", "swap"):
+        continue
+    leaf = meta["leaf"]
+    m = admin_models().get(leaf) or {}
+    if m.get("loaded"):
+        code, body = call("POST", "/admin/api/models/%s/unload" % leaf, None, timeout=120)
+        if code in (200, 202, 400):
+            print("unloaded non-resident %s" % name)
+        else:
+            print("unload %s failed (%s)" % (name, code))
+
+code, body = call("POST", "/admin/api/models/%s/load" % resident_leaf, None, timeout=600)
 detail = str(body.get("detail", ""))
 if code not in (200, 409):
     raise SystemExit("load failed (%s): %s" % (code, detail[:300]))
@@ -595,38 +627,43 @@ if code == 409 and "already loading" not in detail and "already loaded" not in d
 deadline = time.time() + 300
 loaded = False
 while time.time() < deadline:
-    m = admin_models().get(main_leaf) or {}
+    m = admin_models().get(resident_leaf) or {}
     if m.get("loaded"):
         loaded = True
         break
     time.sleep(2)
 if not loaded:
     raise SystemExit("model did not report loaded")
-print("loaded %s (alias main-brain)" % main_leaf)
+print("loaded %s (alias %s)" % (resident_leaf, resident_role))
 
 code, listing = call("GET", "/v1/models")
 if code == 200:
     v1_ids = [m.get("id") for m in listing.get("data") or [] if m.get("id")]
-    if "main-brain" not in v1_ids:
-        raise SystemExit("/v1/models missing alias main-brain (have %s)" % v1_ids)
+    if resident_role not in v1_ids:
+        raise SystemExit("/v1/models missing alias %s (have %s)" % (resident_role, v1_ids))
+    for need in aliased:
+        if need not in v1_ids:
+            raise SystemExit("/v1/models missing alias %s (have %s)" % (need, v1_ids))
     leftover = [i for i in v1_ids if i in retired_aliases]
     if leftover:
         raise SystemExit("/v1/models still lists retired ids %s (have %s)" % (leftover, v1_ids))
-    print("clients see main-brain via model_alias")
+    print("clients see %s via model_alias" % ", ".join(aliased))
 PY
 }
 
 cmd_up() {
   OMLX="$(find_omlx)" || fail "omlx not installed"
   row="$(role_fields)"
-  [ -n "$row" ] || fail "no resident main-brain row in config/roles.tsv fits $(hearth_ram_gb || echo ?) GB of RAM (tiers, ADR 0032)"
-  CTX="$(printf '%s' "$row" | cut -f1)"
-  SLOTS="$(printf '%s' "$row" | cut -f2)"
-  WEIGHTS="$(printf '%s' "$row" | cut -f3)"
+  [ -n "$row" ] || fail "no resident omlx chat role in config/roles.tsv fits $(hearth_ram_gb || echo ?) GB of RAM (tiers, ADR 0032)"
+  RESIDENT="$(printf '%s' "$row" | cut -f1)"
+  CTX="$(printf '%s' "$row" | cut -f2)"
+  SLOTS="$(printf '%s' "$row" | cut -f3)"
+  WEIGHTS="$(printf '%s' "$row" | cut -f4)"
   case "$CTX" in ''|*[!0-9]*) fail "context is not an integer" ;; esac
   case "$SLOTS" in ''|*[!0-9]*) fail "slots is not an integer" ;; esac
-  # Host slots are main-brain only. edit-brain runs on a laptop's own oMLX
-  # (ADR 0033 amend); sharing the host scheduler failed the 2026-11-07 gate.
+  # Host slots follow the resident role (1 under coding-brain, 3 under
+  # main-brain). edit-brain runs on a laptop's own oMLX (ADR 0033 amend).
+  echo "omlx: resident role ${RESIDENT} (${SLOTS} slot(s), ctx ${CTX})"
 
   who="$(listener || true)"
   already=""
@@ -717,15 +754,22 @@ cmd_status() {
 
 cmd_bench() {
   omlx_running || fail "oMLX is not running"
-  echo "thinking probe"
+  row="$(role_fields)"
+  [ -n "$row" ] || fail "no resident role"
+  RESIDENT="$(printf '%s' "$row" | cut -f1)"
   TMPD="$(mktemp -d)"
   trap 'rm -rf "$TMPD"' EXIT
-  body='{"model":"main-brain","max_tokens":3000,"messages":[{"role":"user","content":"Pens are 3 for $2.10 and notebooks $1.35 each. 7 pens and 4 notebooks, paid with $20. Change? Amount only."}]}'
-  code="$(printf 'header = "Authorization: Bearer %s"\n' "$OMLX_HOST_TOKEN" \
-    | curl -s -m 300 -o "$TMPD/out" -w '%{http_code}' -K - \
-        -H 'Content-Type: application/json' -d "$body" \
-        "http://127.0.0.1:${HEARTH_PORT}/v1/chat/completions")"
-  why="$(/usr/bin/python3 -I -c '
+
+  # Thinking probe is OptiQ/main-brain only (ADR 0047); coder is not the
+  # thinking gate. When main-brain is resident (48 GB), probe it here.
+  if [ "$RESIDENT" = "main-brain" ]; then
+    echo "thinking probe"
+    body='{"model":"main-brain","max_tokens":3000,"messages":[{"role":"user","content":"Pens are 3 for $2.10 and notebooks $1.35 each. 7 pens and 4 notebooks, paid with $20. Change? Amount only."}]}'
+    code="$(printf 'header = "Authorization: Bearer %s"\n' "$OMLX_HOST_TOKEN" \
+      | curl -s -m 300 -o "$TMPD/out" -w '%{http_code}' -K - \
+          -H 'Content-Type: application/json' -d "$body" \
+          "http://127.0.0.1:${HEARTH_PORT}/v1/chat/completions")"
+    why="$(/usr/bin/python3 -I -c '
 import json, sys
 m = json.load(open(sys.argv[1]))["choices"][0]["message"]
 c = m.get("content") or ""
@@ -733,19 +777,23 @@ if not (m.get("reasoning_content") or "").strip(): print("no reasoning_content")
 elif any(t in c for t in ("<think>", "</think>", "<|channel>", "<channel|>")): print("thinking markers in the answer")
 else: print("ok")
 ' "$TMPD/out" 2>/dev/null || echo "unreadable reply")"
-  echo "thinking: ${code} ${why}"
-  [ "$code" = "200" ] && [ "$why" = "ok" ] || fail "thinking probe failed"
+    echo "thinking: ${code} ${why}"
+    [ "$code" = "200" ] && [ "$why" = "ok" ] || fail "thinking probe failed"
+  else
+    echo "thinking probe: skipped (resident is ${RESIDENT}; probe main-brain after demand-load)"
+  fi
 
   echo "tool smoke"
-  "${ROOT}/scripts/tool-smoke.sh" "http://127.0.0.1:${HEARTH_PORT}/v1" main-brain
+  "${ROOT}/scripts/tool-smoke.sh" "http://127.0.0.1:${HEARTH_PORT}/v1" "$RESIDENT"
 
   # The concurrency bench stamps a fresh session id at the front of every
   # prompt, so it never reuses a prefix. This sends one body twice.
   echo "two identical ~30k prompts (second turn is the cache)"
   ROOT="$ROOT" OMLX_HOST_TOKEN="$OMLX_HOST_TOKEN" \
-  HEARTH_PORT="$HEARTH_PORT" /usr/bin/python3 -I - <<'PY'
+  HEARTH_PORT="$HEARTH_PORT" HEARTH_BENCH_MODEL="$RESIDENT" /usr/bin/python3 -I - <<'PY'
 import json, os, time, urllib.request
 root = os.environ["ROOT"]
+model = os.environ["HEARTH_BENCH_MODEL"]
 files = []
 for sub in ("docs", "scripts", "docs/decisions", "bench/tasks"):
     d = os.path.join(root, sub)
@@ -766,7 +814,7 @@ while total < target and files:
     i += 1
 filler = "".join(parts)[:target]
 body = json.dumps({
-    "model": "main-brain",
+    "model": model,
     "stream": True,
     "stream_options": {"include_usage": True},
     "temperature": 1.0,

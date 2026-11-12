@@ -11,19 +11,20 @@ New here? Read *Words used here*, check *Before you start*, then follow
 
 ## What you get
 
-- **A coding model on hardware you own.** `main-brain` stays loaded and
-  serves agents in VS Code, Cline, JetBrains IDEs, Zed and aider. On the
-  tested tiers it works on three requests at once, each up to 256K tokens.
+- **A coding model on hardware you own.** On 64 GB, `coding-brain` stays
+  loaded (98K × 1) and serves agents in VS Code, Cline, JetBrains IDEs, Zed
+  and aider (ADR 0047). `ask-main` swaps in `main-brain` for 256K × 3 when
+  you need concurrency or a longer window.
 - **A bigger model when you need one (optional).** `ask-deep` loads
-  `deep-brain`, a slower, more careful model. It swaps `main-brain` out for
-  the session and loads it back afterwards. Skip it and everything else
+  `deep-brain`, a slower, more careful model. It swaps the current agent out
+  for the session and restores it afterwards. Skip it and everything else
   still works.
 - **Another host's brain (optional).** A laptop can use a more powerful
   Mac's brain over an SSH tunnel, with a key that can only open the tunnel
   and a token you can cancel on its own. A machine can run its own brain and
   use a bigger host too (ADR 0040).
 - **The same names everywhere.** Editors and commands ask for a role such as
-  `main-brain`, never a specific model, so upgrading a model changes no
+  `coding-brain`, never a specific model, so upgrading a model changes no
   editor setting or command.
 - **Edit prediction on a laptop.** `edit-brain` is a small model that
   suggests your next edit, on the laptop's own oMLX (ADR 0033).
@@ -41,16 +42,16 @@ New here? Read *Words used here*, check *Before you start*, then follow
 |---|---|
 | model, weights | The AI itself is a set of large files called weights, 16–22 GB each here, kept under `~/.hearth/models` |
 | oMLX | The free Mac program that loads the weights and answers requests, in the same format as cloud AI services ([omlx.ai](https://omlx.ai)) |
-| role, brain | A job name such as `main-brain`. Editors ask for the role; [`config/roles.tsv`](config/roles.tsv) says which model fills it. A *brain* is a role running on hardware you own |
+| role, brain | A job name such as `coding-brain`. Editors ask for the role; [`config/roles.tsv`](config/roles.tsv) says which model fills it. A *brain* is a role running on hardware you own |
 | host | The Mac that runs oMLX and serves a brain |
 | laptop, client | A machine that uses a host's brain over the network |
 | `127.0.0.1:1234` | "This machine, port 1234": where oMLX answers. Nothing else on the network can reach it |
 | tunnel | An SSH connection that makes the host's oMLX appear at `127.0.0.1` on the laptop, so it is never open on the network |
 | token | A password every request must carry. Each laptop and editor gets its own, so you can cancel one without touching the others |
 | RAM tier | Settings tested for one memory size. 8 GB is always held back for macOS and your apps |
-| context, 256K | How much text `main-brain` reads at once, in tokens. 256K (262,144) is roughly 200,000 words. `deep-brain` stays at 64K |
-| slots | How many requests the model works on at the same time |
-| aider | A terminal coding assistant. `ask` and `ask-deep` start it |
+| context, 98K / 256K | How much text a role reads at once. `coding-brain` is 98K; `main-brain` is 256K (262,144); `deep-brain` stays at 64K |
+| slots | How many requests the model works on at the same time (1 under coding-brain, 3 under main-brain) |
+| aider | A terminal coding assistant. `ask`, `ask-main` and `ask-deep` start it |
 | ADR | A short decision record in [`docs/decisions/`](docs/decisions/). "ADR 0040" is number 40 |
 
 ## Local brain or remote brain
@@ -61,7 +62,7 @@ tunnel, or both (ADR 0040).
 | | **hearth** (this machine) | **hearth-remote** (another host) | **cloud-cheap** |
 |---|---|---|---|
 | Address | `127.0.0.1:1234` | `127.0.0.1:1235` on a dual machine; `:1234` on a plain laptop | Gemini |
-| Commands | `ask`, `main-brain`, `ask-deep` | `ask-remote`, `main-brain-remote`, `ask-deep-remote` (no suffix on a plain laptop) | `ask-cloud` |
+| Commands | `ask`, `coding-brain`, `ask-main`, `ask-deep` | `ask-remote`, `coding-brain-remote`, `ask-deep-remote` (no suffix on a plain laptop) | `ask-cloud` |
 | Needs | 24 GB RAM or more; 48 GB tested (*Before you start*) | network, host awake | laptop's own key |
 | Works offline | yes | no | no |
 | Sensitive code | yes | yes: your hardware, your tunnel | **never** |
@@ -79,10 +80,10 @@ model.
 - **Memory.** Hearth holds back 8 GB for macOS and your apps, so a brain
   needs at least 24 GB of RAM. Only 48 GB and up is tested today:
 
-  | RAM (usable) | `main-brain` | `deep-brain` | State |
+  | RAM (usable) | Resident | Swap | State |
   |---|---|---|---|
-  | 64 GB (56) | 35B MoE, ~3B active, 3 slots × 256K | dense 27B at 64K, swaps in | **tested**: reference host. A 200k prompt peaked at 40 GB |
-  | 48 GB (40) | same cap | same | **tested** on short turns (about 34 GB). A 200k prompt is the whole 40 GB ceiling, so the guard refuses it |
+  | 64 GB (56) | `coding-brain` 98K × 1 | `main-brain` 256K × 3; `deep-brain` 64K | **tested**: reference host (ADR 0047) |
+  | 48 GB (40) | `main-brain` 256K × 3 | `deep-brain` 64K | **tested** on short turns. No `coding-brain` (40 GB ceiling) |
   | 32 GB (24) | ~26B MoE, ~4B active, 1 slot | dense 27B, swaps in | candidate, not tested |
   | 24 GB (16) | dense ~12B, 1 slot | none | candidate, not tested |
   | under 24 GB | none: use another host (*Laptops*) | — | — |
@@ -99,11 +100,12 @@ model.
 
 ## Quick start
 
-The default is one Mac running `main-brain`. `deep-brain` and a remote host
-are optional extras. Every Hearth script here is safe to re-run, says what
-is left to do, and never reads your token.
+The default is one Mac running `coding-brain` (64 GB) or `main-brain`
+(48 GB). `ask-main`, `deep-brain` and a remote host are optional extras.
+Every Hearth script here is safe to re-run, says what is left to do, and
+never reads your token.
 
-### 1. Your own `main-brain`
+### 1. Your own resident brain
 
 1. **Get the code.** Clone this repo (you need read access to it on
    GitHub) and open a terminal in it:
@@ -275,9 +277,10 @@ switch back to Xcode.app so `metal` is visible. Confirm with
 
 ```bash
 # Brains (ADR 0039)
-ask                # aider with openai/main-brain
-main-brain         # same as ask
-ask-arch           # aider architect mode (two main-brain sides)
+ask                # aider with openai/coding-brain (resident)
+coding-brain       # same as ask
+ask-main           # demand-load main-brain, then aider
+ask-arch           # aider architect mode (resident on both sides)
 ask-deep           # aider on deep-brain: slow, careful, loaded for the session only (ADR 0020)
 deep-brain         # same as ask-deep
 # No cloud alias on the host: ask-cloud is laptop-only (ADR 0038)
@@ -311,8 +314,9 @@ ai-models          # list models available through the tunnel
 
 # Asking
 ai-ask "question"  # one-shot question without aider
-ask                # aider with main-brain (also: main-brain)
-ask-arch           # aider architect mode, main-brain on both sides
+ask                # aider with coding-brain (also: coding-brain)
+ask-main           # OptiQ main-brain after demand-load
+ask-arch           # aider architect mode, resident on both sides
 ask-deep           # aider on deep-brain. A laptop cannot load it: someone on the host runs
                    # ask-deep or scripts/demand-load.sh deep-brain up first
 deep-brain         # same as ask-deep
@@ -324,14 +328,16 @@ aider and `ask-*` are in [`docs/IDES.md`](docs/IDES.md).
 
 ## Editors
 
-Every editor calls the role `main-brain` at `http://127.0.0.1:1234/v1`:
-directly on the host, through `ai-tunnel` on a laptop. It authenticates
-with a token: your laptop's token, or a per-editor token you can revoke on its
-own (`scripts/omlx.sh sub-key add <editor>-<machine>` on the host; names
-are letters, digits, `-` and `_`). **No editor gets a cloud provider on the
+Every editor defaults to the role `coding-brain` at
+`http://127.0.0.1:1234/v1` (ADR 0047): directly on the host, through
+`ai-tunnel` on a laptop. List `main-brain` / `deep-brain` only after
+`scripts/demand-load.sh <role> up` on the host. Authenticate with a token:
+your laptop's token, or a per-editor token you can revoke on its own
+(`scripts/omlx.sh sub-key add <editor>-<machine>` on the host; names are
+letters, digits, `-` and `_`). **No editor gets a cloud provider on the
 host** (rule 3). On a dual machine (ADR 0040), add a second provider,
-`hearth-remote`, at `http://127.0.0.1:1235/v1` for the bigger host. Full detail and what is not yet verified:
-[`docs/IDES.md`](docs/IDES.md).
+`hearth-remote`, at `http://127.0.0.1:1235/v1` for the bigger host. Full
+detail: [`docs/IDES.md`](docs/IDES.md).
 
 **Loops.** `scripts/loop-guard.sh` runs before every tool call in VS Code,
 Cline, and OpenCode (ADR 0036, 0043). It refuses the third identical call
@@ -356,7 +362,7 @@ one is wired already (`.github/hooks/`, `.clinerules/hooks/`,
 Two files in `~/Library/Application Support/Code/User/`. Check both with
 `scripts/vscode-check.sh` (exit 0 = clean). `--show` prints the settings.
 
-Chat and the agent stay on `main-brain`. Inline completions and next
+Chat and the agent default to `coding-brain`. Inline completions and next
 edit suggestions are Microsoft's: they need a GitHub sign-in, and the
 text around the cursor goes to GitHub's servers (ADR 0041). A sensitive
 repo turns both off in its own `.vscode/settings.json`
@@ -381,7 +387,7 @@ writes (GitHub's model price table, 2026-11-09). An agent task is many
 rounds and the prompt grows, so eight rounds at the Haiku size are on
 the order of 30 credits, and more once the transcript lengthens. That
 is a handful of tasks on the student allowance and a few dozen on Pro.
-`main-brain` spends none of those credits, so the long sessions belong
+`coding-brain` spends none of those credits, so the long sessions belong
 on Hearth. Ghost text on the Free plan still stops at 2,000 for the month.
 
 `settings.json` (JSONC, so comments are allowed). Completions are on;
@@ -400,11 +406,11 @@ code search stays off, and agent requests are capped:
 },
 "chat.useHooks": true,                                 // runs the loop guard
 "chat.useAgentsMdFile": true,
-"chat.planAgent.defaultModel": "main-brain (customendpoint)"
+"chat.planAgent.defaultModel": "coding-brain (customendpoint)"
 ```
 
 `chatLanguageModels.json` holds the model. Give it no provider-level
-`url`: that would list every role oMLX reports, `deep-brain` included.
+`url`: that would list every role oMLX reports.
 
 ```jsonc
 [
@@ -414,6 +420,17 @@ code search stays off, and agent requests are capped:
     "apiKey": "${input:…}",          // written by VS Code, see below
     "apiType": "chat-completions",
     "models": [
+      {
+        "id": "coding-brain",
+        "name": "coding-brain",
+        "url": "http://127.0.0.1:1234/v1",
+        "toolCalling": true,
+        "vision": false,
+        "thinking": true,
+        "streaming": true,
+        "maxInputTokens": 90000,
+        "maxOutputTokens": 16384
+      },
       {
         "id": "main-brain",
         "name": "main-brain",
@@ -436,15 +453,17 @@ and writes the `${input:…}` reference itself. A placeholder typed by hand
 has no secret behind it, so requests fail with "API key required" (1.144).
 Never paste the key itself into the file. `vscode-check.sh` fails if a
 literal key sits in a file other users can read. Then, in Chat, pick
-`main-brain` and the **Local** session target.
+`coding-brain` and the **Local** session target. Demand-load before
+picking `main-brain`.
 
 ### Cline (Desktop, VS Code, JetBrains, CLI — trial, ADR 0036)
 
 1. **Provider → BYOK → Add Provider** (OpenAI Compatible). ID `hearth`.
    Base URL `http://127.0.0.1:1234/v1`. **Leave Model Source URL empty**,
-   and type `main-brain` as the model. Your key. Capabilities: streaming,
+   and type `coding-brain` as the model. Your key. Capabilities: streaming,
    tools, reasoning. Prompt cache off, because oMLX's KV cache needs no
-   client flag. Context window 262144.
+   client flag. Context window 98304 (use 262144 only with demand-loaded
+   `main-brain`).
 2. **Cline's servers and Cline Pass are optional, and they are not
    private.** Usage-Billing and Cline Pass send the prompt to Cline.
    Sensitive repos stay on the `hearth` provider above.
@@ -460,19 +479,19 @@ Cline reads `AGENTS.md` and `.clinerules/`.
 
 ### OpenCode (trial, ADR 0043)
 
-Agent harness (CLI / TUI / desktop) on `main-brain`. Install from
+Agent harness (CLI / TUI / desktop) on `coding-brain`. Install from
 [opencode.ai](https://opencode.ai), then on the host
 `scripts/omlx.sh sub-key add opencode-<machine>`. On a laptop, `ai-tunnel`
 must be up first.
 
 `~/.config/opencode/opencode.json` (mode 600 if it holds the key). Provider
-id `hearth`, only `main-brain` listed — a model list would offer
-`deep-brain`. Shape matches what oMLX's OpenCode writer uses today:
+id `hearth`, default `coding-brain`. Shape matches what oMLX's OpenCode
+writer uses today:
 
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "hearth/main-brain",
+  "model": "hearth/coding-brain",
   "websearch": false,
   "provider": {
     "hearth": {
@@ -483,6 +502,10 @@ id `hearth`, only `main-brain` listed — a model list would offer
         "apiKey": "opencode-<machine> token"
       },
       "models": {
+        "coding-brain": {
+          "name": "coding-brain",
+          "limit": { "context": 98304, "output": 16384 }
+        },
         "main-brain": {
           "name": "main-brain",
           "limit": { "context": 262144, "output": 16384 }
@@ -509,9 +532,9 @@ models today, so that path is deferred (`docs/MOBILE.md`).
 1. Settings → Tools → AI Assistant → Providers & API keys → **OpenAI
    Compatible**. Base URL `http://127.0.0.1:1234/v1`, your key (kept in
    the IDE's password store). **Test Connection**.
-2. **Assign `main-brain` by hand** to chat and every feature you use. A
+2. **Assign `coding-brain` by hand** to chat and every feature you use. A
    feature with no local model assigned can fall back to JetBrains' cloud
-   if a subscription is signed in.
+   if a subscription is signed in. Demand-load before assigning `main-brain`.
 3. **Offline mode on** for sensitive repos. No JetBrains AI cloud model on
    the host.
 
@@ -522,7 +545,7 @@ AI Assistant has no hooks.
 Cline is the option when you want the loop guard inside a JetBrains IDE.
 Install Marketplace plugin 28247, then View → Tool Windows → Cline. The
 provider is the same `hearth` BYOK setup as Cline above: base URL
-`http://127.0.0.1:1234/v1`, model `main-brain`, Model Source URL empty.
+`http://127.0.0.1:1234/v1`, model `coding-brain`, Model Source URL empty.
 Run `scripts/install-loop-guard.sh` once. On 2026-11-08 the global hook
 stopped the third identical read in PyCharm. Cline's servers and Cline
 Pass are the same choice as elsewhere: available, and not private.
@@ -530,11 +553,10 @@ Pass are the same choice as elsewhere: available, and not private.
 ### Zed
 
 `~/.config/zed/settings.json`, provider `hearth` (OpenAI-compatible) →
-`main-brain`, in every model slot. `scripts/zed-sync.sh` writes the labels
-and context from `roles.tsv`. Tool calls ask first
-(`agent.tool_permissions.default: "confirm"`). Threads compact at 170,000
-tokens, under the 256K window; a longer prompt is refused, and `/compact`
-compacts by hand.
+`coding-brain` in every default model slot. `scripts/zed-sync.sh` writes
+labels with context × slots from `roles.tsv`. Tool calls ask first
+(`agent.tool_permissions.default: "confirm"`). Threads on `coding-brain`
+compact near 80,000 tokens; a `main-brain` thread can use 170,000.
 
 **Zed loops, and Hearth cannot stop it there.** Zed has no tool hooks and
 no per-turn request cap, so the loop guard does not cover it. Two shapes
@@ -611,7 +633,7 @@ port the sandbox, scripts and editors use. The tunnel moves aside:
 |---|---|---|
 | oMLX | `127.0.0.1:1234` | `127.0.0.1:1235` |
 | SearXNG | `:8888` on this machine | its own `:8888`. The tunnel does not forward it |
-| Shell | `ask`, `main-brain`, `ask-deep`, `deep-brain` | `ask-remote`, `main-brain-remote`, `ask-deep-remote`, `deep-brain-remote` |
+| Shell | `ask`, `coding-brain`, `ask-main`, `ask-deep` | `ask-remote`, `coding-brain-remote`, `ask-deep-remote` |
 | Editor provider | `hearth` | `hearth-remote` |
 
 Both are your own hardware, so both are brains (rule 3). To convert a laptop:
@@ -629,7 +651,7 @@ Both are your own hardware, so both are brains (rule 3). To convert a laptop:
 
 Model names change every few months. Writing one into shell commands,
 editor settings and laptop configs makes every upgrade a hunt. Hearth uses
-**roles** instead: `main-brain`, `deep-brain` and `edit-brain` run on your
+**roles** instead: `coding-brain`, `main-brain`, `deep-brain` and `edit-brain` run on your
 own hardware, and `cloud-cheap` is the laptop-only cloud role. Concrete
 models appear in exactly two files, [`config/roles.tsv`](config/roles.tsv)
 and [`docs/MODELS.md`](docs/MODELS.md). oMLX advertises each model under its
@@ -641,7 +663,7 @@ flowchart LR
         editors["Editors<br/>VS Code, Cline, JetBrains, Zed"]
         aider["aider: ask, ask-deep"]
         sbx["sandboxed agents<br/>can reach 127.0.0.1:1234 only"]
-        srv["oMLX 127.0.0.1:1234<br/>main-brain, 3 slots<br/>deep-brain on demand<br/>token required"]
+        srv["oMLX 127.0.0.1:1234<br/>coding-brain resident<br/>main-brain / deep-brain on demand<br/>token required"]
     end
     subgraph laptop["Laptop"]
         lapps["Editors and aider"]
@@ -672,7 +694,7 @@ flowchart LR
    Sandboxed agents can reach `127.0.0.1:1234` and nothing else
    (`scripts/sandbox-probe.sh`).
 2. **No silent route changes.** There is no router, so there is no fallback
-   to leak through. If `main-brain` is down, requests fail.
+   to leak through. If the resident role is down, requests fail.
 3. **Nothing is claimed without being measured.** Role and serving changes
    get an ADR and a bench (`bench/results/`, committed).
 
@@ -691,7 +713,7 @@ Skills) and Cline all load them from there. Ask in plain words, for example
 |---|---|
 | `hearth-host-setup` | first-time host setup or repair: oMLX, weights, token, autostart, preflight, registering a laptop or editor key |
 | `hearth-laptop-setup` | a laptop's tunnel, client script and token, then proving `ai-ping` and that the key is tunnel-only |
-| `hearth-editor-setup` | VS Code, Cline, JetBrains or Zed on `main-brain`, plus the three checks (no fallback, tool loop, loop guard) |
+| `hearth-editor-setup` | VS Code, Cline, JetBrains or Zed on `coding-brain`, plus the three checks (no fallback, tool loop, loop guard) |
 
 Each one first checks which machine it is on, and stops on the wrong one.
 None of them reads a key or token file. The docs stay the source of truth;
@@ -713,7 +735,7 @@ The assistant does the plumbing (SSH key, `~/.ssh/config`, client script,
 shell rc) and the checks; you type the secrets and do the two host-side steps.
 Cursor can help with setup but **cannot use hearth as a model provider** — its
 servers make the model calls, so they would need the host exposed publicly.
-Use VS Code, Cline, a JetBrains IDE, Zed or aider for `main-brain` on the
+Use VS Code, Cline, a JetBrains IDE, Zed or aider for `coding-brain` on the
 laptop (*Editors* above).
 
 ### Changing this repo

@@ -1,0 +1,9 @@
+1. **Fallback chain for `cloud-frontier`**: There is no fallback chain for `cloud-frontier`. It is listed as *dormant* in `docs/MODELS.md`, with no key configured. The file states: "Four roles, no keys: `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`, `cloud-frontier-fast`... A remote model on `:1234` would break the boundary", and it is not served by oMLX at all. ADR 0016 removed the gateway where fallbacks could occur.
+
+2. **Dormant roles and blockers**:
+   - `cloud-code`: Blocked on an Anthropic API key. Deliberately unset. Only worth opening if aider, Zed or a laptop should reach Claude through the gateway.
+   - `cloud-frontier`: Blocked on an OpenRouter key. Primary route for Kimi K3 and day-zero access to new models.
+   - `cloud-frontier-direct`: Blocked on a Moonshot key. Same price as OpenRouter, best K3 caching.
+   - `cloud-frontier-fast`: Blocked on a Fireworks key. Most expensive option, bought for throughput and LoRA.
+
+3. **Postgres port and reason**: Port `5433`. The file explains: "Postgres via Podman on :5433" and "Postgres in Podman, not Docker Desktop". The specific port avoids conflict with the system Postgres (default 5432) and the LiteLLM gateway (port 4000). It was used during the gateway era (superseded by ADR 0016), where LiteLLM required Postgres for virtual keys, and was run in Podman to avoid Docker Desktop. The port number itself is arbitrary but chosen to avoid collisions with standard services and the other ports in use (4000, 11434, 1234).

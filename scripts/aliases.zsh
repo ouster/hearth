@@ -19,8 +19,9 @@ else
 fi
 export HEARTH_ROOT
 
-# oMLX on localhost (ADR 0026). Every local alias is main-brain (D1); there
-# is no router, so a role name is the model id and nothing can fall back.
+# oMLX on localhost (ADR 0026, 0047). Default local chat is the resident
+# role (coding-brain on 64 GB). There is no router, so a role name is the
+# model id and nothing can fall back.
 HEARTH_LOCAL="${HEARTH_LOCAL:-http://127.0.0.1:1234/v1}"
 . "${HEARTH_ROOT}/scripts/lib.sh"
 
@@ -42,28 +43,67 @@ _hearth_var() {
   return 1
 }
 
+# Resident chat role for this host (coding-brain on 64 GB, main-brain on 48).
+_hearth_resident() {
+  hearth_resident_roles | awk -F'\t' '$1 !~ /edit/ {print $1; exit}'
+}
+
 _aider_local() {
-  local tok; tok="$(_hearth_var OMLX_HOST_TOKEN)" || return 1
+  local tok role
+  tok="$(_hearth_var OMLX_HOST_TOKEN)" || return 1
+  role="$(_hearth_resident)"
+  [ -n "$role" ] || { echo "no resident role in roles.tsv for this host" >&2; return 1; }
   OPENAI_API_BASE="$HEARTH_LOCAL" \
   OPENAI_API_KEY="$tok" \
-  aider --model openai/main-brain "$@"
+  aider --model "openai/${role}" "$@"
 }
 
 # --- local: stays on this machine, safe for client / sensitive work ---
 alias ask='_aider_local'
-# Role-named commands (ADR 0039), alongside ask / ask-deep.
-main-brain() { _aider_local "$@"; }
+# Role-named commands (ADR 0039 / 0047).
+coding-brain() { _aider_local "$@"; }
+
+# OptiQ 3-slot agent: demand-load first, then aider. Restores coding-brain on exit
+# when this call brought main-brain in (ADR 0047).
+_hearth_ask_main_restore() {
+  [ "${_hearth_ask_main_state:-}" = loaded ] || return 0
+  _hearth_ask_main_state=restored
+  "${HEARTH_ROOT}/scripts/demand-load.sh" main-brain down
+}
+
+ask-main() {
+  setopt localoptions localtraps 2>/dev/null || true
+  local tok rc
+  tok="$(_hearth_var OMLX_HOST_TOKEN)" || return 1
+  _hearth_ask_main_state=$("${HEARTH_ROOT}/scripts/demand-load.sh" main-brain up) || return 1
+  if [ "$_hearth_ask_main_state" != loaded ]; then
+    echo "main-brain is already loaded; this session will not unload it." >&2
+    echo "When you are finished: scripts/demand-load.sh main-brain down" >&2
+  else
+    trap _hearth_ask_main_restore EXIT INT TERM
+  fi
+  OPENAI_API_BASE="$HEARTH_LOCAL" OPENAI_API_KEY="$tok" \
+    aider --model openai/main-brain --weak-model openai/main-brain "$@"
+  rc=$?
+  return $rc
+}
+main-brain() { ask-main "$@"; }
 deep-brain() { ask-deep "$@"; }
 
 # Architect mode with the same model on both sides: the design step stays
 # visible, and nothing is evicted because there is only one model.
-ask-arch() { _aider_local --architect --editor-model openai/main-brain "$@"; }
+ask-arch() {
+  local tok role
+  tok="$(_hearth_var OMLX_HOST_TOKEN)" || return 1
+  role="$(_hearth_resident)"
+  [ -n "$role" ] || { echo "no resident role" >&2; return 1; }
+  OPENAI_API_BASE="$HEARTH_LOCAL" OPENAI_API_KEY="$tok" \
+    aider --architect --model "openai/${role}" --editor-model "openai/${role}" "$@"
+}
 
 # Slow, careful local model for hard one-off questions (ADR 0020, 0028, 0031).
-# Still local: safe for sensitive work. It evicts main-brain on every tier
-# (ADR 0033), so Zed, aider and laptops get errors until the session ends. The session unloads it on the way out,
-# including Ctrl-C, and main-brain is loaded again. Idempotent: INT and EXIT
-# can both fire.
+# Still local: safe for sensitive work. Evicts the current agent (coding-brain
+# or main-brain) and restores it on the way out, including Ctrl-C (ADR 0047).
 _hearth_ask_deep_restore() {
   [ "${_hearth_ask_deep_state:-}" = loaded ] || return 0
   _hearth_ask_deep_state=restored
@@ -71,13 +111,13 @@ _hearth_ask_deep_restore() {
 }
 
 ask-deep() {
-  setopt localoptions localtraps
+  setopt localoptions localtraps 2>/dev/null || true
   local tok rc
   tok="$(_hearth_var OMLX_HOST_TOKEN)" || return 1
   _hearth_ask_deep_state=$("${HEARTH_ROOT}/scripts/demand-load.sh" deep-brain up) || return 1
   # already: a manual `up`, or a session this shell did not start. Leave it
   # loaded. loaded: this call brought it in, so the trap unloads it on the
-  # way out, including Ctrl-C, and restores main-brain if it was evicted.
+  # way out, including Ctrl-C, and restores the prior agent.
   if [ "$_hearth_ask_deep_state" != loaded ]; then
     echo "deep-brain is already loaded; this session will not unload it." >&2
     echo "When you are finished: scripts/demand-load.sh deep-brain down" >&2

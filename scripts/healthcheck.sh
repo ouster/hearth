@@ -88,22 +88,24 @@ if [ "$SERVER_OK" -eq 1 ]; then
         c=$(post /chat/completions "{\"model\":\"${role}\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the word ok.\"}]}" 120)
         if [ "$c" = "200" ] && /usr/bin/python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); m=d["choices"][0]["message"]; assert (m.get("content") or m.get("reasoning_content"))' "$TMPD/out" 2>/dev/null; then
           ok "${role}: chat completion returned"
-          # Thinking is set by scripts/omlx.sh, not by the request, so a miss
-          # repo (docs/MODELS.md). A reset turns it off silently, so prove it.
-          c=$(post /chat/completions "{\"model\":\"${role}\",\"max_tokens\":3000,\"messages\":[{\"role\":\"user\",\"content\":\"Pens are 3 for \$2.10 and notebooks \$1.35 each. 7 pens and 4 notebooks, paid with \$20. Change? Amount only.\"}]}" 300)
-          why=$(/usr/bin/python3 -I -c '
+          # Thinking gate is OptiQ/main-brain only (ADR 0047). coding-brain
+          # is chat-only; demand roles are not called here.
+          if [ "$role" = "main-brain" ]; then
+            c=$(post /chat/completions "{\"model\":\"${role}\",\"max_tokens\":3000,\"messages\":[{\"role\":\"user\",\"content\":\"Pens are 3 for \$2.10 and notebooks \$1.35 each. 7 pens and 4 notebooks, paid with \$20. Change? Amount only.\"}]}" 300)
+            why=$(/usr/bin/python3 -I -c '
 import json, sys
 m = json.load(open(sys.argv[1]))["choices"][0]["message"]
 c = m.get("content") or ""
 if not (m.get("reasoning_content") or "").strip(): print("no reasoning_content")
 elif any(t in c for t in ("<think>", "</think>", "<|channel>", "<channel|>")): print("thinking markers in the answer")
 ' "$TMPD/out" 2>/dev/null || echo "unreadable reply")
-          if [ "$c" != "200" ]; then
-            bad "${role}: thinking probe → ${c}"
-          elif [ -n "$why" ]; then
-            bad "${role}: thinking off or unparsed (${why}) — oMLX model settings, scripts/omlx.sh"
-          else
-            ok "${role}: thinks, and reasoning is parsed out of the answer"
+            if [ "$c" != "200" ]; then
+              bad "${role}: thinking probe → ${c}"
+            elif [ -n "$why" ]; then
+              bad "${role}: thinking off or unparsed (${why}) — oMLX model settings, scripts/omlx.sh"
+            else
+              ok "${role}: thinks, and reasoning is parsed out of the answer"
+            fi
           fi
         else
           bad "${role}: chat → ${c} $(head -c 160 "$TMPD/out" 2>/dev/null)"
@@ -116,9 +118,9 @@ EOF
   if hearth_edit_roles | grep -q .; then
     echo "        edit-brain: laptop oMLX only — not called on the host (client/edit-model.sh bench)"
   fi
-  # Calling an unloaded demand role would be answered by main-brain (JIT off).
+  # Calling an unloaded demand role would be answered by the resident (JIT off).
   for r in $(hearth_demand_roles); do
-    echo "        ${r}: loaded on demand by ask-deep — not called here"
+    echo "        ${r}: loaded on demand (ask-main / ask-deep) — not called here"
   done
 else
   er "skipped: server not answering"

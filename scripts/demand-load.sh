@@ -1,19 +1,15 @@
 #!/bin/bash
-# Load or unload a role marked load=beside or load=swap in config/roles.tsv (ADR 0020, 0032).
+# Load or unload a role marked load=beside or load=swap in config/roles.tsv
+# (ADR 0020, 0031, 0032, 0047).
 #
-#   scripts/demand-load.sh <role> up            # load beside the resident role
-#   scripts/demand-load.sh <role> up --evict    # unload the resident role first
-#   scripts/demand-load.sh <role> down          # unload it; the resident stays, or comes back
+#   scripts/demand-load.sh <role> up            # load (swap roles always evict)
+#   scripts/demand-load.sh <role> up --evict    # unload the resident first
+#   scripts/demand-load.sh <role> down          # unload; restore prior agent
 #
-# `up` prints "loaded" or "already". An unloaded name can be answered by
-# whatever is loaded, so `up` confirms this role is really loaded before it
-# returns 0.
-#
-# load=beside (ADR 0028): `up` loads next to the resident, and `--evict`
-# still unloads it, for a run that needs the machine to itself. load=swap
-# (ADR 0031): `up` always evicts. The load comes from this host's tier in
-# config/roles.tsv (ADR 0032).
-# `down` unloads this role. If the resident was evicted, `down` loads it again.
+# On 64 GB: coding-brain is resident; main-brain and deep-brain are swap.
+# coding-brain never shares RAM with main-brain or deep-brain (ADR 0047).
+# ask-deep records the prior agent under ~/.omlx/hearth-prior-agent and
+# restores it on down (slot count follows that agent).
 #
 # Exit 0 ok, 1 refused or failed, 2 could not run.
 
@@ -23,14 +19,12 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 ROLE="${1:-}"; ACTION="${2:-}"; EVICT=0
 [ "${3:-}" = "--evict" ] && EVICT=1
-[ -n "$ROLE" ] && { [ "$ACTION" = up ] || [ "$ACTION" = down ]; } || { sed -n '2,6p' "$0"; exit 2; }
+[ -n "$ROLE" ] && { [ "$ACTION" = up ] || [ "$ACTION" = down ]; } || { sed -n '2,8p' "$0"; exit 2; }
 hearth_demand_roles | grep -qxF "$ROLE" || { echo "could not run: ${ROLE} is not a beside or swap role for this host in roles.tsv" >&2; exit 2; }
-# A swap row (this host's tier, ADR 0031, 0032) always evicts the resident;
-# `down` brings it back.
 LOAD="$(hearth_role_load "$ROLE")"
 if [ "$ACTION" = up ] && [ "$EVICT" = 0 ] && [ "$LOAD" = swap ]; then
   EVICT=1
-  echo "${ROLE} is load=swap on this $(hearth_ram_gb || echo ?) GB host: unloading the resident first." >&2
+  echo "${ROLE} is load=swap on this $(hearth_ram_gb || echo ?) GB host: unloading the other agent first." >&2
 fi
 holder="$(lsof -nP -iTCP:"${HEARTH_PORT}" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1}')"
 case "$holder" in
@@ -40,6 +34,7 @@ case "$holder" in
     export OMLX_HOST_TOKEN
     HEARTH_ROLE="$ROLE" HEARTH_ACTION="$ACTION" HEARTH_EVICT="$EVICT" \
       HEARTH_PORT="$HEARTH_PORT" HEARTH_ROLES_TSV="$(hearth_resolved_roles)" \
+      HEARTH_OMLX_HOME="${HOME}/.omlx" \
       /usr/bin/python3 -I - <<'PY'
 import json, os, sys, time, urllib.error, urllib.request, http.cookiejar
 base = "http://127.0.0.1:%s" % os.environ["HEARTH_PORT"]
@@ -47,6 +42,8 @@ key = os.environ["OMLX_HOST_TOKEN"]
 role = os.environ["HEARTH_ROLE"]
 action = os.environ["HEARTH_ACTION"]
 evict = os.environ["HEARTH_EVICT"] == "1"
+omlx_home = os.environ["HEARTH_OMLX_HOME"]
+prior_path = os.path.join(omlx_home, "hearth-prior-agent")
 jar = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
 
@@ -54,6 +51,7 @@ def call(method, path, body=None, timeout=30):
     data = None if body is None else json.dumps(body).encode()
     req = urllib.request.Request(base + path, data=data, method=method)
     req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", "Bearer " + key)
     try:
         with opener.open(req, timeout=timeout) as resp:
             raw = resp.read().decode()
@@ -70,18 +68,34 @@ code, _ = call("POST", "/admin/api/login", {"api_key": key})
 if code != 200:
     raise SystemExit("admin login failed (%s)" % code)
 
-# Admin APIs use the discovery leaf (org/leaf basename). Clients use the
-# role via model_alias (ADR 0034).
 role_to_leaf = {}
+role_slots = {}
+role_load = {}
 residents = []
+agents = []  # coding-brain / main-brain style chat agents (not deep, not edit)
 for line in os.environ["HEARTH_ROLES_TSV"].splitlines():
     f = line.split("\t")
     if len(f) < 8 or f[1] != "omlx" or f[5] in ("", "-"):
         continue
     leaf = f[5].rstrip("/").split("/")[-1]
     role_to_leaf[f[0]] = leaf
+    try:
+        role_slots[f[0]] = int(f[4])
+    except ValueError:
+        role_slots[f[0]] = 1
+    role_load[f[0]] = f[7]
     if f[7] == "resident":
-        residents.append(leaf)
+        residents.append(f[0])
+    if f[0] in ("main-brain", "coding-brain") or (
+        f[7] in ("resident", "swap", "beside") and f[0] != "deep-brain" and "edit" not in f[0]
+    ):
+        if f[0] not in agents and f[0] != "deep-brain":
+            agents.append(f[0])
+
+# Prefer explicit agent names when present.
+agents = [r for r in ("coding-brain", "main-brain") if r in role_to_leaf]
+if not agents:
+    agents = [r for r in residents if r in role_to_leaf]
 
 leaf = role_to_leaf.get(role)
 if not leaf:
@@ -124,26 +138,125 @@ def load(mid):
     if not wait_until(mid, True, 300):
         raise SystemExit("%s did not report loaded" % mid)
 
+def set_slots(n):
+    code, body = call("POST", "/admin/api/global-settings", {
+        "max_concurrent_requests": int(n),
+    }, timeout=60)
+    if code != 200:
+        sys.stderr.write("warn: could not set max_concurrent_requests to %s (%s)\n" % (n, code))
+
+def write_prior(name):
+    try:
+        os.makedirs(omlx_home, mode=0o700, exist_ok=True)
+        with open(prior_path, "w") as fh:
+            fh.write(name + "\n")
+        os.chmod(prior_path, 0o600)
+    except OSError as e:
+        raise SystemExit("could not write prior agent file: %s" % e)
+
+def read_prior():
+    try:
+        with open(prior_path) as fh:
+            name = fh.read().strip()
+        return name or None
+    except OSError:
+        return None
+
+def clear_prior():
+    try:
+        os.remove(prior_path)
+    except OSError:
+        pass
+
+def current_agent():
+    """Which agent leaf is loaded, if any."""
+    models = listing()
+    for name in agents:
+        mid = role_to_leaf.get(name)
+        if mid and models.get(mid, {}).get("loaded"):
+            return name
+    return None
+
+def unload_all_agents_and_deep():
+    for name in agents:
+        mid = role_to_leaf.get(name)
+        if mid:
+            unload(mid)
+    deep_leaf = role_to_leaf.get("deep-brain")
+    if deep_leaf:
+        unload(deep_leaf)
+
 if leaf not in listing():
     raise SystemExit(
         "could not run: %s (leaf %s) is not discovered. Copy its weights under "
         "~/.hearth/models and run scripts/omlx.sh up after a restart." % (role, leaf)
     )
 
+default_resident = residents[0] if residents else None
+
 if action == "down":
     unload(leaf)
-    for mid in residents:
-        load(mid)
+    if role == "deep-brain":
+        prior = read_prior()
+        clear_prior()
+        restore = prior if prior in role_to_leaf else default_resident
+        if not restore:
+            raise SystemExit("no agent to restore after deep-brain down")
+        # Unload other agents, load restore
+        for name in agents:
+            if name != restore:
+                mid = role_to_leaf.get(name)
+                if mid:
+                    unload(mid)
+        load(role_to_leaf[restore])
+        set_slots(role_slots.get(restore, 1))
+        print("restored %s" % restore)
+    else:
+        # Swap agent down → default resident
+        restore = default_resident
+        if restore and restore != role:
+            for name in agents:
+                if name != restore:
+                    mid = role_to_leaf.get(name)
+                    if mid:
+                        unload(mid)
+            deep_leaf = role_to_leaf.get("deep-brain")
+            if deep_leaf:
+                unload(deep_leaf)
+            load(role_to_leaf[restore])
+            set_slots(role_slots.get(restore, 1))
+            print("restored %s" % restore)
     raise SystemExit(0)
 
 if loaded(leaf):
     print("already")
     raise SystemExit(0)
+
+if role == "deep-brain":
+    prior = current_agent()
+    if prior:
+        write_prior(prior)
+    elif default_resident:
+        write_prior(default_resident)
+    # Unload all agents before deep
+    for name in agents:
+        mid = role_to_leaf.get(name)
+        if mid:
+            unload(mid)
+    load(leaf)
+    set_slots(role_slots.get(role, 1))
+    print("loaded")
+    raise SystemExit(0)
+
+# main-brain (or other swap agent) up
 if evict:
-    sys.stderr.write("unloading resident roles for this session (Zed, aider and laptops have no main-brain until down)…\n")
-    for mid in residents:
-        unload(mid)
+    sys.stderr.write(
+        "unloading other agent roles for this session "
+        "(default resident returns on demand-load %s down)…\n" % role
+    )
+    unload_all_agents_and_deep()
 load(leaf)
+set_slots(role_slots.get(role, 1))
 print("loaded")
 PY
     exit $?

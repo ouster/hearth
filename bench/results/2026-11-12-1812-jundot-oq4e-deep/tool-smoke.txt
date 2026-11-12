@@ -1,0 +1,9 @@
+==== tool-smoke ====
+=== tool-smoke openai model=Qwen3.8-27B-oQ4e-mtp ===
+turn1: tool_calls=2 content_len=0
+  read_file
+  read_file
+turn2: tool_calls=1 content_len=0
+  write_file
+  has_lt=True head='# hearth tool smoke\n#!/usr/bin/env bash\n\nhealthcheck() {\nif [[ $x < 1 ]]; then e'
+PASS — write/edit tool in turn 2

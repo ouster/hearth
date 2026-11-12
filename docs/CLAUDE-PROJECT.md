@@ -42,7 +42,8 @@ is the only path that calls a cloud API, and it calls Gemini directly.
 
 Models are addressed by ROLE, never by vendor model name:
 
-  main-brain               the resident local model
+  coding-brain            resident local agent on 64 GB (98K × 1)
+  main-brain              OptiQ 256K × 3; swap on 64 GB, resident on 48 GB
   deep-brain              slow, careful local model; loaded per ask-deep session
   local-code              alias of main-brain
   local-chat              alias of main-brain
@@ -121,8 +122,9 @@ config/roles.tsv and docs/MODELS.md. Nowhere else. Generated copies
 # Hardware envelope
 
 64 GB unified, but macOS caps GPU-accessible memory at ~48 GB (75%).
-main-brain is one model at 262144 × 3 slots (ADR 0046); deep-brain is 65536 and swapped in for it on demand (ADR 0020).
-A second heavy model does not fit beside it. Say when a suggestion won't fit.
+On 64 GB, coding-brain is resident (98304 × 1); main-brain is swap at 262144 × 3
+(ADR 0046, 0047). deep-brain is 65536 and swaps the current agent out (ADR 0020).
+coding-brain never shares RAM with main-brain or deep-brain. Say when a suggestion won't fit.
 ```
 
 ---

@@ -150,9 +150,9 @@ fi
 
 echo
 if [ "$MODE" = dual ]; then
-  echo "hearth: this machine's brain on 127.0.0.1:1234 (ask / main-brain / ask-deep)."
+  echo "hearth: this machine's brain on 127.0.0.1:1234 (ask / coding-brain / ask-deep)."
   echo "hearth-remote: optional, the other host on 127.0.0.1:1235"
-  echo "(ask-remote / main-brain-remote / ask-deep-remote)."
+  echo "(ask-remote / coding-brain-remote / ask-deep-remote)."
 else
   echo "Client only: the tunnel is 127.0.0.1:1234. No local hearth, and no hearth-remote, until this machine runs its own brain (client/install-client.sh --dual)."
 fi

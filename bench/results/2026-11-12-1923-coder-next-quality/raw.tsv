@@ -1,0 +1,5 @@
+model	task	tokens	seconds	verdict
+Qwen3-Coder-Next-4bit	01-bash-launchd	118	16.4	syntax-ok
+Qwen3-Coder-Next-4bit	02-python-mcp-tool	260	3.6	syntax-ok
+Qwen3-Coder-Next-4bit	03-refactor-judgment	3952	53.9	needs-reading
+Qwen3-Coder-Next-4bit	04-long-context	409	80.9	needs-reading

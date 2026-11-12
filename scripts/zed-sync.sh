@@ -83,12 +83,27 @@ for old, neu in retired.items():
         new = pat_old.sub(neu, new)
         if check:
             rc = max(rc, 1)
-for role, _backend, key, ctx, _slots, *rest in rows:
+for role, _backend, key, ctx, slots, *rest in rows:
     if "embed" in key or role in edit:
         continue  # Zed's model picker lists chat models only
     weights = rest[0] if rest else ""
     leaf = weights.rstrip("/").split("/")[-1] if weights and weights != "-" else ""
-    label = "%s — %s" % (role, leaf) if leaf else role
+    # Context × slots in the label (ADR 0047); slot count stays out of the role id.
+    try:
+        ctx_n = int(ctx)
+        slot_n = int(slots) if str(slots).isdigit() else 0
+    except ValueError:
+        ctx_n, slot_n = 0, 0
+    if ctx_n >= 1024:
+        ctx_label = "%sK" % (ctx_n // 1024)
+    else:
+        ctx_label = str(ctx)
+    if leaf and slot_n:
+        label = "%s — %s — %s × %s" % (role, leaf, ctx_label, slot_n)
+    elif leaf:
+        label = "%s — %s" % (role, leaf)
+    else:
+        label = role
     if role in demand:
         label += " — load first: scripts/demand-load.sh " + role + " up"
     # The entry: "name": "<role>", then its fields up to the closing brace.

@@ -1,0 +1,42 @@
+```python
+import sqlite3
+from typing import Optional
+
+def search_cases(query: str, limit: int = 10) -> list[dict]:
+    conn: Optional[sqlite3.Connection] = None
+    try:
+        conn = sqlite3.connect('cases.db')
+        conn.row_factory = None  # Ensure we get tuples, not sqlite3.Row
+        cursor = conn.cursor()
+        
+        # Use parameterized query with case-insensitive LIKE
+        search_pattern = f"%{query}%"
+        sql = """
+            SELECT id, citation, court, year, summary
+            FROM cases
+            WHERE citation LIKE ? COLLATE NOCASE
+               OR summary LIKE ? COLLATE NOCASE
+            ORDER BY year DESC
+            LIMIT ?
+        """
+        cursor.execute(sql, (search_pattern, search_pattern, limit))
+        rows = cursor.fetchall()
+        
+        # Convert to list of dicts
+        result = [
+            {
+                "id": row[0],
+                "citation": row[1],
+                "court": row[2],
+                "year": row[3],
+                "summary": row[4]
+            }
+            for row in rows
+        ]
+        
+        return result
+        
+    finally:
+        if conn is not None:
+            conn.close()
+```

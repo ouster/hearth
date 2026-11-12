@@ -70,7 +70,7 @@ else
     $2 == "omlx" && $9 !~ /^[0-9]+$/ { print $1 ": min_ram must be an integer GB on an omlx row (ADR 0032)" }
     $2 != "omlx" && $9 != "-" { print $1 ": min_ram must be - on a cloud row" }
     $2 == "omlx" && $8 == "resident" { res++ }
-    END { if (n > 0 && res == 0) print "no resident omlx role — nothing would serve main-brain" }
+    END { if (n > 0 && res == 0) print "no resident omlx role — nothing would serve at boot" }
     seen[$1 "@" $9]++ { print "duplicate role " $1 " at min_ram " $9 }
     $2 != "omlx" && $2 != "gemini" { print $1 ": backend \"" $2 "\" is not omlx or an explicit cloud backend (gemini)" }
     $2 == "omlx" && ($4 !~ /^[0-9]+$/ || $5 !~ /^[0-9]+$/) { print $1 ": ctx/slots must be integers" }
@@ -92,10 +92,10 @@ EOF
   fi
 
   host_ram=$(hearth_ram_gb || echo ?)
-  if hearth_resident_roles | awk -F'\t' '$1 == "main-brain"' | grep -q .; then
+  if hearth_resident_roles | awk -F'\t' '$1 !~ /edit/' | grep -q .; then
     ok "this host (${host_ram} GB) resolves: $(hearth_resolved_roles | awk -F'\t' '$2 == "omlx" {printf "%s=%s ", $1, $8}')"
   else
-    bad "no main-brain row fits this host (${host_ram} GB) — omlx.sh up will refuse (ADR 0032)"
+    bad "no resident chat role fits this host (${host_ram} GB) — omlx.sh up will refuse (ADR 0032)"
   fi
 
   while IFS="$(printf '\t')" read -r role _ _ _ _ w; do
@@ -169,8 +169,8 @@ if want_gb=$(hearth_gpu_ceiling_gb); then
     wrn "iogpu.wired_limit_mb ${wired:-?}, want ${want_mb} — scripts/iogpu-wired.sh (0 is the macOS default, ~75% of RAM)"
   fi
   case "$(hearth_role_load deep-brain)" in
-    beside) ok "deep-brain loads beside main-brain (ceiling ${want_gb} GB)" ;;
-    swap)   ok "deep-brain evicts main-brain for its session (ceiling ${want_gb} GB)" ;;
+    beside) ok "deep-brain loads beside the resident agent (ceiling ${want_gb} GB)" ;;
+    swap)   ok "deep-brain evicts the current agent for its session (ceiling ${want_gb} GB)" ;;
     *)      ok "no deep-brain row for this tier" ;;
   esac
 else

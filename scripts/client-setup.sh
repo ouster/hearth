@@ -300,8 +300,8 @@ if [ "$WINDOWS" -eq 0 ]; then cat <<EOF
      ai-tunnel            # one ssh -N -L (1234, or 1235 when dual)
      ai-tunnel-install    # macOS: launchd keeps those forwards up, and at login
      ai-ping              # up / BAD TOKEN / NO ANSWER / DOWN
-     ai-models            # main-brain
-     ask                  # aider on main-brain (ask-remote when dual)
+     ai-models            # coding-brain (+ swap roles when loaded)
+     ask                  # aider on coding-brain (ask-remote when dual)
      ask-cloud            # Gemini with the laptop's own key
    Linux: skip ai-tunnel-install. ai-tunnel-stop unloads the LaunchAgent too.
 EOF

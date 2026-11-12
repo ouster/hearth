@@ -1,6 +1,6 @@
 ---
 name: hearth-editor-setup
-description: Connect an editor or agent to Hearth's main-brain, then prove it with three checks. Covers VS Code (Custom Endpoint), Cline (Desktop, VS Code, JetBrains, CLI), OpenCode, JetBrains AI Assistant and Zed, plus the loop guard. Works on the host and on laptops. Use when the person says "set up VS Code / Cline / OpenCode / PyCharm / Zed for hearth", "add the local model to my editor", "test the loop guard" or "the agent keeps looping".
+description: Connect an editor or agent to Hearth's coding-brain (default resident on 64 GB), then prove it with three checks. Covers VS Code (Custom Endpoint), Cline (Desktop, VS Code, JetBrains, CLI), OpenCode, JetBrains AI Assistant and Zed, plus the loop guard. Works on the host and on laptops. Use when the person says "set up VS Code / Cline / OpenCode / PyCharm / Zed for hearth", "add the local model to my editor", "test the loop guard" or "the agent keeps looping".
 ---
 
 # Hearth editor setup
@@ -11,9 +11,11 @@ before acting.
 
 ## Ground rules
 
-- Every editor calls the **role** `main-brain` at `http://127.0.0.1:1234/v1`.
-  Never write a model name (rule 1). Never offer `deep-brain` unless the host
-  has it loaded.
+- Every editor defaults to the **role** `coding-brain` at
+  `http://127.0.0.1:1234/v1` (resident on 64 GB, ADR 0047). Never write a
+  model name (rule 1). List `main-brain` and `deep-brain` only as optional
+  picks; tell the person to run `scripts/demand-load.sh <role> up` on the
+  host before selecting either, or the resident may answer silently.
 - **No cloud provider on the host** in any editor (rule 3). On a laptop,
   never pick a vendor's own cloud provider for sensitive repos.
 - **Keys:** the person types or pastes them into the editor's own key
@@ -21,8 +23,9 @@ before acting.
 - **Dual machine** (its own brain and a tunnel, ADR 0040): add two
   providers. `hearth` points at `http://127.0.0.1:1234/v1` (this machine) and
   `hearth-remote` at `http://127.0.0.1:1235/v1` (the bigger host). Both call
-  `main-brain`; the provider name says which machine answers. Sensitive work
-  may use either, since both are the person's own hardware (rule 3).
+  `coding-brain` by default; the provider name says which machine answers.
+  Sensitive work may use either, since both are the person's own hardware
+  (rule 3).
 - On a laptop, the tunnel must be up first. `ai-ping` should say `up`; if it
   does not, use `hearth-laptop-setup`.
 - Ask which key to use: the laptop key, or a per-editor sub-key
@@ -39,19 +42,22 @@ Files are in `~/Library/Application Support/Code/User/`.
    `settings.json.bak` first. Get the person's OK before writing.
 3. `chatLanguageModels.json`: write the `hearth` provider in the README's
    format **without `apiKey`**. Do not set a provider-level `url`: it would
-   list `deep-brain`. Then the person sets the key in **Chat: Manage
+   list every role. Default model id `coding-brain` (max input ~90000 for
+   the 98K window). Optionally add `main-brain` (245760) for after
+   demand-load. Then the person sets the key in **Chat: Manage
    Language Models** → `hearth`. VS Code stores it in its secret store and
    writes a `${input:…}` reference itself. A placeholder you type by hand
    fails with "API key required".
-4. In Chat, pick `main-brain` and the **Local** session target. Agent mode
+4. In Chat, pick `coding-brain` and the **Local** session target. Agent mode
    must be on (`chat.agent.enabled`).
 5. `scripts/vscode-check.sh` must exit 0. Show any FAIL lines.
 
 ## Cline (Desktop, VS Code, PyCharm, CLI)
 
 1. Provider → BYOK → Add Provider (OpenAI Compatible). ID `hearth`. Base URL
-   as above. **Model Source URL empty.** Model `main-brain`. Capabilities:
-   streaming, tools, reasoning. Prompt cache off. Context 262144.
+   as above. **Model Source URL empty.** Model `coding-brain`. Capabilities:
+   streaming, tools, reasoning. Prompt cache off. Context 98304 (or 262144
+   only when using demand-loaded `main-brain`).
 2. **Never** select Cline Usage-Billing or ClinePass. Telemetry off
    (General).
 3. **Composio connectors off.** If the agent offers a Slack or Composio auth
@@ -66,9 +72,10 @@ Files are in `~/Library/Application Support/Code/User/`.
 2. Ask them to run `scripts/omlx.sh sub-key add opencode-<machine>` on the
    host (they type the token). On a laptop, `ai-tunnel` first.
 3. Help them write `~/.config/opencode/opencode.json` from the README
-   *OpenCode* block: provider `hearth`, model `hearth/main-brain`, only
-   that role listed, base URL as above. They paste the sub-key; you never
-   read or write the key value. `chmod 600` the file if it holds the key.
+   *OpenCode* block: provider `hearth`, model `hearth/coding-brain`, list
+   `coding-brain` (and optionally swap roles), base URL as above. They paste
+   the sub-key; you never read or write the key value. `chmod 600` the file
+   if it holds the key.
 4. No cloud / OpenRouter provider on the host for sensitive work.
 5. `scripts/install-loop-guard.sh` once, then restart OpenCode. Check 3
    (triple read) should throw via the plugin; log line format is
@@ -77,16 +84,16 @@ Files are in `~/Library/Application Support/Code/User/`.
 ## JetBrains AI Assistant
 
 Settings → Tools → AI Assistant → Providers & API keys → OpenAI Compatible.
-Assign `main-brain` by hand to every feature, and turn offline mode on for
+Assign `coding-brain` by hand to every feature, and turn offline mode on for
 sensitive repos. It has no hooks, so for guarded agent work, use the Cline
-plugin.
+plugin. Demand-load before assigning `main-brain` or `deep-brain`.
 
 ## Zed
 
 README → *Zed*. Keep `agent.tool_permissions.default: "confirm"`. On the
-host, `scripts/zed-sync.sh` writes the labels. Zed has no hooks, so the loop
-guard does not cover it. Tell the person this, and point to the mitigations
-listed there.
+host, `scripts/zed-sync.sh` writes the labels (including `× slots`). Zed has
+no hooks, so the loop guard does not cover it. Tell the person this, and
+point to the mitigations listed there. Default model is `coding-brain`.
 
 ## Prove it: three checks per client, with the hearth folder open
 

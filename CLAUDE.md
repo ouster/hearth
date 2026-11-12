@@ -29,7 +29,11 @@ the port empty. Cloud (Gemini) is reached by each tool with its own key.
 
 Read `docs/ROUTING.md` before suggesting any routing change.
 
-**Serving:** login boot starts oMLX (ADR 0026, 0028) with `main-brain`. `ask-deep` evicts `main-brain`, loads `deep-brain`, and on the way out unloads it and loads `main-brain` again (ADR 0031, 0033). `edit-brain` is laptop oMLX only (ADR 0033 amend).
+**Serving:** login boot starts oMLX (ADR 0026, 0028) with the resident role —
+`coding-brain` on 64 GB, `main-brain` on 48 GB (ADR 0047). `ask-main` /
+`demand-load.sh main-brain up` swaps in OptiQ; `ask-deep` evicts the current
+agent, loads `deep-brain`, and restores the prior agent on the way out
+(ADR 0031, 0033, 0047). `edit-brain` is laptop oMLX only (ADR 0033 amend).
 
 Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgres is the removed gateway — never suggest commands against it. `docs/MIGRATION-LMSTUDIO.md` is the record of the earlier cut onto LM Studio, which oMLX replaced.
 
@@ -45,18 +49,24 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
    Same discipline for MCP servers: client config docs (`docs/IDES.md`) and
    `docs/MCP.md`.
 
-   Live: `main-brain` (oMLX identifier, resident), `deep-brain` (loaded for an
-   `ask-deep` session; `load` is `beside` or `swap` per RAM tier, ADR 0020, 0028, 0031, 0032 — never call it
-   unless loaded), `edit-brain` (editor edit prediction on a laptop's own
-   oMLX, `/v1/completions` only, ADR 0033; host does not load it), `cloud-cheap`
-   (Gemini, client-only: a laptop's `ask-cloud` with that laptop's own key;
-   the host holds no cloud key, ADR 0038). Role names were `local-*` until ADR 0039; `local-code`,
-   `local-chat` and `local-big` are older retired names (D1, ADR 0021). Dormant: `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`, `cloud-frontier-fast` — no keys.
+   Live: `coding-brain` (oMLX identifier, **resident on 64 GB**, 98K × 1,
+   ADR 0047), `main-brain` (**swap on 64 GB** / resident on 48 GB, 256K × 3,
+   ADR 0046), `deep-brain` (loaded for an `ask-deep` session; `load` is
+   `beside` or `swap` per RAM tier, ADR 0020, 0028, 0031, 0032, 0047 — never
+   call it unless loaded; never beside `coding-brain`), `edit-brain` (editor
+   edit prediction on a laptop's own oMLX, `/v1/completions` only, ADR 0033;
+   host does not load it), `cloud-cheap` (Gemini, client-only: a laptop's
+   `ask-cloud` with that laptop's own key; the host holds no cloud key,
+   ADR 0038). Role names were `local-*` until ADR 0039; `local-code`,
+   `local-chat` and `local-big` are older retired names (D1, ADR 0021).
+   Dormant: `cloud-code`, `cloud-frontier`, `cloud-frontier-direct`,
+   `cloud-frontier-fast` — no keys.
 
 2. **oMLX never holds a cloud model.** There is no router, so there are no
-   fallbacks; if `main-brain` is down, fail loudly. No script adds a remote backend
-   to `config/roles.tsv` except as an explicit cloud row (`gemini` or another named
-   cloud backend). A change that would let `:1234` reach a remote model is a bug.
+   fallbacks; if the resident role is down, fail loudly. No script adds a
+   remote backend to `config/roles.tsv` except as an explicit cloud row
+   (`gemini` or another named cloud backend). A change that would let `:1234`
+   reach a remote model is a bug.
 
 3. **Privacy is structural.** Sensitive private data, PII, credentials, and any repo or
    path the operator has flagged as sensitive goes to `*-brain` only. A brain
@@ -86,9 +96,16 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
    applies until `scripts/iogpu-wired.sh` runs. Roles are tiered by RAM
    (`min_ram` in `roles.tsv`, ADR 0032); only benched tiers have rows, and
    candidates for other sizes are in `docs/MODELS.md`.
-   `main-brain` is 262144 × 3 (ADR 0046). Three ~30K-token prompts match the old 128K-cap c3. One 200k prompt peaked at 40.0 GB (2026-11-10). The 34.0 GB figure is three ~30K prompts on the previous quant (2026-11-06). `deep-brain` stays at 65536 and swaps `main-brain` out on every tier (ADR 0033). `edit-brain` (~1.4 GB) is laptop-only after the host paired gate failed (edit p95 5747 ms beside c3). Say when a suggestion will not fit, or
-   will evict something that needs to stay loaded — on this machine the resident
-   set matters more than any one model's quality.
+   On 64 GB the boot resident is `coding-brain` (98304 × 1, ~52 GB peak,
+   ADR 0047); `main-brain` is demand-load swap at 262144 × 3 (ADR 0046).
+   Three ~30K-token prompts match the old 128K-cap c3. One 200k prompt peaked
+   at 40.0 GB (2026-11-10). `deep-brain` stays at 65536 and swaps the current
+   agent out (ADR 0033, 0047). `coding-brain` never shares RAM with
+   `main-brain` or `deep-brain`. `edit-brain` (~1.4 GB) is laptop-only after
+   the host paired gate failed (edit p95 5747 ms beside c3). Say when a
+   suggestion will not fit, or will evict something that needs to stay
+   loaded — on this machine the resident set matters more than any one
+   model's quality.
 
 8. **Routing and model changes get an ADR** in `docs/decisions/` — context, decision,
    consequences, date. Short.
