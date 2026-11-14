@@ -28,8 +28,8 @@ Route to `*-brain` roles (oMLX, `:1234`), always:
 
 | Role | Use for | Reached by | State |
 |---|---|---|---|
-| `coding-brain` | default local agent / code on 64 GB (98K × 1) | oMLX `:1234` (resident) | live (ADR 0047) |
-| `main-brain` | concurrent / long-context local work (256K × 3) | oMLX `:1234` after `demand-load.sh main-brain up` on 64 GB; resident on 48 GB | live |
+| `main-brain` | default local agent: code, concurrent and long-context work (256K × 3) | oMLX `:1234` (resident on every tier) | live (ADR 0048) |
+| `coding-brain` | single-slot coding agent on 64 GB (98K × 1) | oMLX `:1234` after `demand-load.sh coding-brain up`; no 48 GB row | live, on demand (ADR 0047, 0048) |
 | `deep-brain` | hard one-off local questions | oMLX `:1234` after `ask-deep` / demand-load | live, on demand |
 | `cloud-cheap` | bulk non-sensitive work, big context | a laptop's `ask-cloud` → Gemini directly, with that laptop's own key | live, client-only (ADR 0038) |
 | `local-embed` | — | — | removed 2026-11-01, nothing called it (ADR 0018) |

@@ -15,7 +15,7 @@ flowchart TB
         scripts["scripts / benches"]
         searx["SearXNG :8888<br/>(Podman)"]
         sbx["sandboxed.sh agents"]
-        srv["oMLX 127.0.0.1:1234<br/>coding-brain: 98K x 1 (resident 64 GB)<br/>main-brain: 256K x 3 (swap)<br/>deep-brain: 64K, swaps current agent<br/>token required"]
+        srv["oMLX 127.0.0.1:1234<br/>main-brain: 256K x 3 (resident)<br/>coding-brain: 98K x 1 (swap, 64 GB only)<br/>deep-brain: 64K, swaps current agent<br/>token required"]
     end
 
     laptop["Laptop<br/>SSH tunnel, own token<br/>optional edit-brain on own oMLX"]
@@ -45,29 +45,30 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 
 | Role | Backend | What |
 |---|---|---|
-| `coding-brain` | oMLX | **resident on 64 GB** (ADR 0047). 98K × 1. Default for editors and `ask`. Never shares RAM with `main-brain` or `deep-brain` |
-| `main-brain` | oMLX | OptiQ 256K × 3 (ADR 0046). **swap on 64 GB** (`ask-main` / `demand-load.sh main-brain up`); **resident on 48 GB** (no coding-brain row) |
-| `deep-brain` | oMLX | slower, more careful model for hard one-offs. Evicts the current agent for its session (ADR 0031, 0033, 0047). `ask-deep` restores the prior agent on the way out. Zed and laptops can use it only while the host has it in (`scripts/demand-load.sh deep-brain up`) |
+| `main-brain` | oMLX | **resident on every tier** (ADR 0048). 256K × 3 (ADR 0046). Default for editors and `ask` |
+| `coding-brain` | oMLX | **swap, 64 GB only** (ADR 0047, 0048). 98K × 1. `coding-brain` / `demand-load.sh coding-brain up` unloads `main-brain`; `down` restores it. Never shares RAM with `main-brain` or `deep-brain`. No 48 GB row |
+| `deep-brain` | oMLX | slower, more careful model for hard one-offs. Evicts the current agent for its session (ADR 0031, 0033, 0047). `ask-deep` restores the prior agent on the way out. Editors and laptops can use it only while the host has it in (`scripts/demand-load.sh deep-brain up`, or `hearth-load deep-brain up` from a laptop) |
 | `edit-brain` | laptop oMLX | editor edit prediction: `/v1/completions` only, 8K × 2, on the laptop's own oMLX. Never a chat or agent model; host does not load it (ADR 0033) |
 | `cloud-cheap` | Gemini | client-only: a laptop's `ask-cloud` with that laptop's own key. Never on the host, never in oMLX (ADR 0038) |
 
 ```mermaid
 stateDiagram-v2
-  [*] --> CodingBrain: omlx.sh up
-  CodingBrain --> MainBrain: demand-load main-brain up
-  MainBrain --> CodingBrain: demand-load main-brain down
-  CodingBrain --> Deep: ask-deep
+  [*] --> MainBrain: omlx.sh up
+  MainBrain --> CodingBrain: demand-load coding-brain up (64 GB)
+  CodingBrain --> MainBrain: demand-load coding-brain down
   MainBrain --> Deep: ask-deep
-  Deep --> CodingBrain: deep down if prior was coding
+  CodingBrain --> Deep: ask-deep
   Deep --> MainBrain: deep down if prior was main
+  Deep --> CodingBrain: deep down if prior was coding
 ```
 
 `local-code` and `local-chat` were collapsed into `main-brain` (D1). The old
 alias names still mean `main-brain` when that role is loaded.
 
 `scripts/omlx.sh up` loads the resident role from `~/.hearth/models`. A
-demand role stays unloaded until `scripts/demand-load.sh`, `ask-main`, or
-`ask-deep`.
+demand role stays unloaded until `scripts/demand-load.sh`, `coding-brain`, or
+`ask-deep`. While one is in, a call to `main-brain` on that host has no
+model of its own, a laptop on the tunnel included (ADR 0048).
 
 ## The privacy boundary
 
@@ -101,11 +102,11 @@ console is the cap.
 
 ## Process supervision
 
-oMLX serves the resident role (`coding-brain` on 64 GB) on `127.0.0.1:1234`
-from `~/.hearth/models` (ADR 0026, 0047). Weights are linked as org/leaf under
+oMLX serves the resident role (`main-brain`) on `127.0.0.1:1234`
+from `~/.hearth/models` (ADR 0026, 0048). Weights are linked as org/leaf under
 `~/.omlx/models`; each role is an oMLX `model_alias` so clients and the
-community board disagree usefully (ADR 0034). All three chat roles are
-advertised; RAM use switches via `demand-load.sh`. `ask-deep` loads
+community board disagree usefully (ADR 0034). Every chat role this tier has is
+advertised, loaded or not; RAM use switches via `demand-load.sh`. `ask-deep` loads
 `deep-brain` in place of the current agent (ADR 0031, 0033, 0047).
 Login runs `scripts/boot.sh`, which runs `scripts/omlx.sh up`, then starts
 Podman and SearXNG. Open WebUI was removed (ADR 0044). `scripts/omlx.sh down` stops oMLX and

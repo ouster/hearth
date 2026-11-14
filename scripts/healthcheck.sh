@@ -88,8 +88,8 @@ if [ "$SERVER_OK" -eq 1 ]; then
         c=$(post /chat/completions "{\"model\":\"${role}\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the word ok.\"}]}" 120)
         if [ "$c" = "200" ] && /usr/bin/python3 -I -c 'import json,sys; d=json.load(open(sys.argv[1])); m=d["choices"][0]["message"]; assert (m.get("content") or m.get("reasoning_content"))' "$TMPD/out" 2>/dev/null; then
           ok "${role}: chat completion returned"
-          # Thinking gate is OptiQ/main-brain only (ADR 0047). coding-brain
-          # is chat-only; demand roles are not called here.
+          # Thinking gate is main-brain only (ADR 0048). Demand roles
+          # (coding-brain, deep-brain) are not called here.
           if [ "$role" = "main-brain" ]; then
             c=$(post /chat/completions "{\"model\":\"${role}\",\"max_tokens\":3000,\"messages\":[{\"role\":\"user\",\"content\":\"Pens are 3 for \$2.10 and notebooks \$1.35 each. 7 pens and 4 notebooks, paid with \$20. Change? Amount only.\"}]}" 300)
             why=$(/usr/bin/python3 -I -c '
@@ -120,7 +120,7 @@ EOF
   fi
   # Calling an unloaded demand role would be answered by the resident (JIT off).
   for r in $(hearth_demand_roles); do
-    echo "        ${r}: loaded on demand (ask-main / ask-deep) — not called here"
+    echo "        ${r}: loaded on demand (scripts/demand-load.sh ${r} up) — not called here"
   done
 else
   er "skipped: server not answering"

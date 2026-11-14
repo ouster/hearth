@@ -19,8 +19,8 @@ else
 fi
 export HEARTH_ROOT
 
-# oMLX on localhost (ADR 0026, 0047). Default local chat is the resident
-# role (coding-brain on 64 GB). There is no router, so a role name is the
+# oMLX on localhost (ADR 0026, 0048). Default local chat is the resident
+# role (main-brain on every tier). There is no router, so a role name is the
 # model id and nothing can fall back.
 HEARTH_LOCAL="${HEARTH_LOCAL:-http://127.0.0.1:1234/v1}"
 . "${HEARTH_ROOT}/scripts/lib.sh"
@@ -43,9 +43,10 @@ _hearth_var() {
   return 1
 }
 
-# Resident chat role for this host (coding-brain on 64 GB, main-brain on 48).
+# Resident chat role for this host (main-brain, ADR 0048).
+# lib.sh reads roles.tsv under ROOT, which scripts set and a shell does not.
 _hearth_resident() {
-  hearth_resident_roles | awk -F'\t' '$1 !~ /edit/ {print $1; exit}'
+  ( ROOT="$HEARTH_ROOT"; hearth_resident_roles ) | awk -F'\t' '$1 !~ /edit/ {print $1; exit}'
 }
 
 _aider_local() {
@@ -60,35 +61,10 @@ _aider_local() {
 
 # --- local: stays on this machine, safe for client / sensitive work ---
 alias ask='_aider_local'
-# Role-named commands (ADR 0039 / 0047).
-coding-brain() { _aider_local "$@"; }
-
-# OptiQ 3-slot agent: demand-load first, then aider. Restores coding-brain on exit
-# when this call brought main-brain in (ADR 0047).
-_hearth_ask_main_restore() {
-  [ "${_hearth_ask_main_state:-}" = loaded ] || return 0
-  _hearth_ask_main_state=restored
-  "${HEARTH_ROOT}/scripts/demand-load.sh" main-brain down
-}
-
-ask-main() {
-  setopt localoptions localtraps 2>/dev/null || true
-  local tok rc
-  tok="$(_hearth_var OMLX_HOST_TOKEN)" || return 1
-  _hearth_ask_main_state=$("${HEARTH_ROOT}/scripts/demand-load.sh" main-brain up) || return 1
-  if [ "$_hearth_ask_main_state" != loaded ]; then
-    echo "main-brain is already loaded; this session will not unload it." >&2
-    echo "When you are finished: scripts/demand-load.sh main-brain down" >&2
-  else
-    trap _hearth_ask_main_restore EXIT INT TERM
-  fi
-  OPENAI_API_BASE="$HEARTH_LOCAL" OPENAI_API_KEY="$tok" \
-    aider --model openai/main-brain --weak-model openai/main-brain "$@"
-  rc=$?
-  return $rc
-}
-main-brain() { ask-main "$@"; }
-deep-brain() { ask-deep "$@"; }
+# Role-named commands (ADR 0039, 0048). main-brain is the resident, so
+# ask-main is ask under an older name and loads nothing.
+main-brain() { _aider_local "$@"; }
+ask-main() { _aider_local "$@"; }
 
 # Architect mode with the same model on both sides: the design step stays
 # visible, and nothing is evicted because there is only one model.
@@ -101,34 +77,47 @@ ask-arch() {
     aider --architect --model "openai/${role}" --editor-model "openai/${role}" "$@"
 }
 
-# Slow, careful local model for hard one-off questions (ADR 0020, 0028, 0031).
-# Still local: safe for sensitive work. Evicts the current agent (coding-brain
-# or main-brain) and restores it on the way out, including Ctrl-C (ADR 0047).
-_hearth_ask_deep_restore() {
-  [ "${_hearth_ask_deep_state:-}" = loaded ] || return 0
-  _hearth_ask_deep_state=restored
-  "${HEARTH_ROOT}/scripts/demand-load.sh" deep-brain down
+# Swap roles (load=swap in roles.tsv): demand-load, aider, then put back
+# what was there. Still local: safe for sensitive work. demand-load.sh
+# refuses a role this host's tier has no row for (coding-brain on 48 GB).
+#   coding-brain  64 GB only. Evicts main-brain; 1 slot (ADR 0047, 0048).
+#   deep-brain    slow, careful, for hard one-off questions (ADR 0020, 0031).
+# While a swap role is in, calls to main-brain on this host have no model
+# of their own, a laptop on the tunnel included.
+_hearth_swap_restore() {
+  [ "${_hearth_swap_state:-}" = loaded ] || return 0
+  _hearth_swap_state=restored
+  "${HEARTH_ROOT}/scripts/demand-load.sh" "$_hearth_swap_role" down
 }
 
-ask-deep() {
+_hearth_swap_session() {
   setopt localoptions localtraps 2>/dev/null || true
-  local tok rc
+  local tok rc role="$1"
+  shift
   tok="$(_hearth_var OMLX_HOST_TOKEN)" || return 1
-  _hearth_ask_deep_state=$("${HEARTH_ROOT}/scripts/demand-load.sh" deep-brain up) || return 1
+  _hearth_swap_role="$role"
+  _hearth_swap_state=$("${HEARTH_ROOT}/scripts/demand-load.sh" "$role" up) || return 1
   # already: a manual `up`, or a session this shell did not start. Leave it
   # loaded. loaded: this call brought it in, so the trap unloads it on the
   # way out, including Ctrl-C, and restores the prior agent.
-  if [ "$_hearth_ask_deep_state" != loaded ]; then
-    echo "deep-brain is already loaded; this session will not unload it." >&2
-    echo "When you are finished: scripts/demand-load.sh deep-brain down" >&2
+  if [ "$_hearth_swap_state" != loaded ]; then
+    echo "${role} is already loaded; this session will not unload it." >&2
+    echo "When you are finished: scripts/demand-load.sh ${role} down" >&2
   else
-    trap _hearth_ask_deep_restore EXIT INT TERM
+    trap _hearth_swap_restore EXIT INT TERM
   fi
+  # weak-model is the same role: a commit step should use the model the
+  # session just asked, and the resident is not loaded to answer it.
   OPENAI_API_BASE="$HEARTH_LOCAL" OPENAI_API_KEY="$tok" \
-    aider --model openai/deep-brain --weak-model openai/deep-brain "$@"
+    aider --model "openai/${role}" --weak-model "openai/${role}" "$@"
   rc=$?
   return $rc
 }
+
+coding-brain() { _hearth_swap_session coding-brain "$@"; }
+ask-coding()   { _hearth_swap_session coding-brain "$@"; }
+deep-brain()   { _hearth_swap_session deep-brain "$@"; }
+ask-deep()     { _hearth_swap_session deep-brain "$@"; }
 
 # No cloud alias: the host holds no cloud key (ADR 0038). ask-cloud exists
 # only in client/hearth-client.sh, with the laptop's own key.

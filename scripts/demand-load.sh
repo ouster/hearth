@@ -1,13 +1,14 @@
 #!/bin/bash
 # Load or unload a role marked load=beside or load=swap in config/roles.tsv
-# (ADR 0020, 0031, 0032, 0047).
+# (ADR 0020, 0031, 0032, 0047, 0048).
 #
 #   scripts/demand-load.sh <role> up            # load (swap roles always evict)
 #   scripts/demand-load.sh <role> up --evict    # unload the resident first
 #   scripts/demand-load.sh <role> down          # unload; restore prior agent
 #
-# On 64 GB: coding-brain is resident; main-brain and deep-brain are swap.
-# coding-brain never shares RAM with main-brain or deep-brain (ADR 0047).
+# main-brain is resident on every tier (ADR 0048). On 64 GB, coding-brain and
+# deep-brain are swap. coding-brain never shares RAM with main-brain or
+# deep-brain (ADR 0047). A swap agent's down restores the resident.
 # ask-deep records the prior agent under ~/.omlx/hearth-prior-agent and
 # restores it on down (slot count follows that agent).
 #

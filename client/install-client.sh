@@ -150,9 +150,11 @@ fi
 
 echo
 if [ "$MODE" = dual ]; then
-  echo "hearth: this machine's brain on 127.0.0.1:1234 (ask / coding-brain / ask-deep)."
+  echo "hearth: this machine's brain on 127.0.0.1:1234 (ask / ask-deep)."
   echo "hearth-remote: optional, the other host on 127.0.0.1:1235"
   echo "(ask-remote / coding-brain-remote / ask-deep-remote)."
+  echo "To load the other host's swap roles from here, add above the hearth block in your shell rc:"
+  echo "  export HEARTH_SSH_ADMIN=you@that-host.local   # ordinary SSH login, not the tunnel key"
 else
   echo "Client only: the tunnel is 127.0.0.1:1234. No local hearth, and no hearth-remote, until this machine runs its own brain (client/install-client.sh --dual)."
 fi

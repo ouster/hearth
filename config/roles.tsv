@@ -11,20 +11,21 @@
 # draft is "-" . The column remains so the columns keep their positions.
 # load: resident → scripts/omlx.sh up keeps it loaded. beside → loaded only by
 # ask-deep or scripts/demand-load.sh, next to the resident (ADR 0020, 0028).
-# swap → the same, but it unloads the resident first and restores it after
-# (ADR 0031). On 64 GB, main-brain is swap and coding-brain is resident (ADR 0047);
-# coding-brain never shares RAM with main-brain or deep-brain. Demand roles are
-# skipped by healthcheck and bench.
+# swap → the same, but it unloads the current agent first and restores the
+# resident after (ADR 0031). main-brain is the boot resident on every tier
+# (ADR 0048). On 64 GB, coding-brain and deep-brain are swap; coding-brain
+# never shares RAM with main-brain or deep-brain. Demand roles are skipped
+# by healthcheck and bench.
 # edit → kept loaded like resident, but serves only /v1/completions for
 # editor edit prediction (ADR 0033). Never a chat or agent model.
 # min_ram: tiers (ADR 0032). A host uses, per role, the row with the largest
 # min_ram (GB of RAM) at or below its own. "-" on cloud rows. A tier gets a
 # row only after it is benched on that hardware; candidates live in MODELS.md.
 # No main-brain row fits under 48 GB, so a smaller host fails loudly.
-# 64 GB: coder is the boot resident; main-brain is demand-load swap (ADR 0047).
-coding-brain	omlx	qwen3-coder-next-4bit	98304	1	mlx-community/Qwen3-Coder-Next-4bit	-	resident	64
-main-brain	omlx	qwen3.6-35b-a3b-mlx	262144	3	mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit	-	swap	64
-# 48 GB: no coder row (40 GB ceiling); OptiQ stays resident.
+# 64 GB: main-brain resident; coding-brain is demand-load swap (ADR 0048).
+coding-brain	omlx	qwen3-coder-next-4bit	98304	1	mlx-community/Qwen3-Coder-Next-4bit	-	swap	64
+main-brain	omlx	qwen3.6-35b-a3b-mlx	262144	3	mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit	-	resident	64
+# 48 GB: main-brain resident; no coding-brain row (it does not fit the 40 GB ceiling).
 main-brain	omlx	qwen3.6-35b-a3b-mlx	262144	3	mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit	-	resident	48
 deep-brain	omlx	qwen3.8-27b-mlx	65536	1	lmstudio-community/Qwen3.8-27B-MLX-4bit	-	swap	48
 edit-brain	omlx	sweep-next-edit-1.5b-mlx-8bit	8192	2	hearth/sweep-next-edit-1.5B-MLX-8bit	-	edit	48

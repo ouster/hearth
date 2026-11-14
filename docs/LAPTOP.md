@@ -226,11 +226,11 @@ key works, the second that it can do nothing else.
 | `ai-tunnel` | `tunnel: up` (the first run asks the person to confirm the host fingerprint) |
 | `ai-tunnel-install` | macOS: `tunnel: installed com.hearth.tunnel`. Linux: skip this |
 | `ai-ping` | `up` |
-| `ai-models` | `coding-brain` (plus `main-brain` / `deep-brain` while the host has them loaded) |
-| `ai-ask "say ok"` | a short reply from coding-brain |
+| `ai-models` | `main-brain`, and the host's swap roles (`deep-brain`; `coding-brain` on a 64 GB host). The list does not say which is loaded |
+| `ai-ask "say ok"` | a short reply from `main-brain` |
 | `ssh hearth true; echo $?` | **non-zero**, no shell: the key is tunnel-only |
 | `ask-cloud` (optional) | aider on Gemini with the laptop's own key |
-| `ask-deep` (optional) | refuses with "not loaded on the host" unless the host ran `scripts/demand-load.sh deep-brain up`; the laptop cannot load it (tunnel-only key) |
+| `ask-deep`, `coding-brain` (optional) | with `HEARTH_SSH_ADMIN` set: loads the role on the host, runs aider, then restores `main-brain`. Without it: asks whether the host ran `scripts/demand-load.sh <role> up`. See *Swap roles from the laptop* |
 
 If `ai-ping` says `BAD TOKEN`, the person re-runs the `read -rs` step with
 the right token; `NO ANSWER` means the host is asleep or oMLX is down
@@ -245,13 +245,15 @@ with the laptop's token entered through Zed's UI by the person.
 the model call, not the laptop, so a `localhost` base URL never reaches the
 tunnel; the only workaround is a public endpoint, which the *Never* list
 forbids, and prompts would still pass through Cursor's servers (checked
-2026-10-31). Use Zed, aider or `ask` for `coding-brain` on the laptop; Cursor
+2026-10-31). Use Zed, aider or `ask` for `main-brain` on the laptop; Cursor
 with its own models only, and not on sensitive repos.
 
 ## Zed on the laptop
 
-Same provider as the host, through the tunnel. Default is `coding-brain`
-(ADR 0047). List swap roles too; demand-load them on the host before picking.
+Same provider as the host, through the tunnel. Default is `main-brain`
+(ADR 0048). List the host's swap roles too, and load one before you pick it
+(*Swap roles from the laptop*). `coding-brain` exists on a 64 GB host only.
+`scripts/zed-sync.sh` writes the labels.
 
 ```json
 {
@@ -260,14 +262,14 @@ Same provider as the host, through the tunnel. Default is `coding-brain`
       "hearth": {
         "api_url": "http://127.0.0.1:1234/v1",
         "available_models": [
-          { "name": "coding-brain", "display_name": "coding-brain — 98K × 1", "max_tokens": 98304 },
-          { "name": "main-brain", "display_name": "main-brain — 256K × 3 — load first", "max_tokens": 262144 },
+          { "name": "main-brain", "display_name": "main-brain — 256K × 3", "max_tokens": 262144 },
+          { "name": "coding-brain", "display_name": "coding-brain — 98K × 1 — load first", "max_tokens": 98304 },
           { "name": "deep-brain", "display_name": "deep-brain — 64K × 1 — load first", "max_tokens": 65536 }
         ]
       }
     }
   },
-  "agent": { "default_model": { "provider": "hearth", "model": "coding-brain" } }
+  "agent": { "default_model": { "provider": "hearth", "model": "main-brain" } }
 }
 ```
 
@@ -277,7 +279,31 @@ tunnel at login. Run `ai-tunnel` before Zed when that agent is not installed,
 or Zed's models show as unavailable.
 
 A Gemini provider **is allowed on the laptop** (D3), with the laptop's own
-key. The host has none. Keep sensitive repos on `hearth/coding-brain`.
+key. The host has none. Keep sensitive repos on a `hearth` brain.
+
+### Swap roles from the laptop
+
+The host's `coding-brain` (64 GB) and `deep-brain` load in place of
+`main-brain` (ADR 0048). The tunnel key cannot run a command, so the laptop
+uses your ordinary SSH login on the host for this one step. Put this above
+the hearth block in your shell rc. The person types it; it holds no secret.
+
+```bash
+export HEARTH_SSH_ADMIN=you@your-host.local   # not the tunnel key
+export HEARTH_REMOTE_ROOT=dev/hearth          # the repo on the host; this is the default
+```
+
+| Command | Does |
+|---|---|
+| `hearth-load coding-brain up` | loads it on the host. Prints `loaded` or `already` |
+| `hearth-load coding-brain down` | unloads it and restores `main-brain` |
+| `coding-brain`, `ask-deep` (`-remote` when dual) | `up`, aider on that role, then `down` if this call did the loading |
+
+For an editor: `hearth-load <role> up`, pick the role in the editor, and
+when you finish switch the editor back to `main-brain` and run `down`.
+While a swap role is loaded, `main-brain` on that host has no model of its
+own. Without `HEARTH_SSH_ADMIN`, run `scripts/demand-load.sh <role> up` on
+the host.
 
 If using the legal-research worked example from `docs/MCP.md`, install and
 review its source on the laptop too; its stdio process runs beside Zed, not on

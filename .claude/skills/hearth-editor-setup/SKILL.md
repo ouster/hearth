@@ -1,6 +1,6 @@
 ---
 name: hearth-editor-setup
-description: Connect an editor or agent to Hearth's coding-brain (default resident on 64 GB), then prove it with three checks. Covers VS Code (Custom Endpoint), Cline (Desktop, VS Code, JetBrains, CLI), OpenCode, JetBrains AI Assistant and Zed, plus the loop guard. Works on the host and on laptops. Use when the person says "set up VS Code / Cline / OpenCode / PyCharm / Zed for hearth", "add the local model to my editor", "test the loop guard" or "the agent keeps looping".
+description: Connect an editor or agent to Hearth's main-brain (the resident on every host), then prove it with three checks. Covers VS Code (Custom Endpoint), Cline (Desktop, VS Code, JetBrains, CLI), OpenCode, JetBrains AI Assistant and Zed, plus the loop guard. Works on the host and on laptops. Use when the person says "set up VS Code / Cline / OpenCode / PyCharm / Zed for hearth", "add the local model to my editor", "test the loop guard" or "the agent keeps looping".
 ---
 
 # Hearth editor setup
@@ -11,11 +11,13 @@ before acting.
 
 ## Ground rules
 
-- Every editor defaults to the **role** `coding-brain` at
-  `http://127.0.0.1:1234/v1` (resident on 64 GB, ADR 0047). Never write a
-  model name (rule 1). List `main-brain` and `deep-brain` only as optional
-  picks; tell the person to run `scripts/demand-load.sh <role> up` on the
-  host before selecting either, or the resident may answer silently.
+- Every editor defaults to the **role** `main-brain` at
+  `http://127.0.0.1:1234/v1` (resident on every host, ADR 0048). Never write
+  a model name (rule 1). List `deep-brain`, and `coding-brain` when the host
+  has 64 GB, only as optional picks; tell the person to run
+  `scripts/demand-load.sh <role> up` on the host (`hearth-load <role> up`
+  from a laptop) before selecting either, or the resident may answer
+  silently, and to switch back to `main-brain` after `down`.
 - **No cloud provider on the host** in any editor (rule 3). On a laptop,
   never pick a vendor's own cloud provider for sensitive repos.
 - **Keys:** the person types or pastes them into the editor's own key
@@ -23,7 +25,7 @@ before acting.
 - **Dual machine** (its own brain and a tunnel, ADR 0040): add two
   providers. `hearth` points at `http://127.0.0.1:1234/v1` (this machine) and
   `hearth-remote` at `http://127.0.0.1:1235/v1` (the bigger host). Both call
-  `coding-brain` by default; the provider name says which machine answers.
+  `main-brain` by default; the provider name says which machine answers.
   Sensitive work may use either, since both are the person's own hardware
   (rule 3).
 - On a laptop, the tunnel must be up first. `ai-ping` should say `up`; if it
@@ -42,13 +44,13 @@ Files are in `~/Library/Application Support/Code/User/`.
    `settings.json.bak` first. Get the person's OK before writing.
 3. `chatLanguageModels.json`: write the `hearth` provider in the README's
    format **without `apiKey`**. Do not set a provider-level `url`: it would
-   list every role. Default model id `coding-brain` (max input ~90000 for
-   the 98K window). Optionally add `main-brain` (245760) for after
-   demand-load. Then the person sets the key in **Chat: Manage
+   list every role. Default model id `main-brain` (max input 245760 for
+   the 256K window). On a 64 GB host, optionally add `coding-brain`
+   (~90000) for after demand-load. Then the person sets the key in **Chat: Manage
    Language Models** → `hearth`. VS Code stores it in its secret store and
    writes a `${input:…}` reference itself. A placeholder you type by hand
    fails with "API key required".
-4. In Chat, pick `coding-brain` and the **Local** session target. Agent mode
+4. In Chat, pick `main-brain` and the **Local** session target. Agent mode
    must be on (`chat.agent.enabled`).
 5. `scripts/vscode-check.sh` must exit 0. Show any FAIL lines.
 
@@ -59,9 +61,9 @@ Follow README → *Cline* (past Sign in + field + models tables). Short form:
 1. **Past Sign in:** Get started → **Use your own API key** (skip Sign in /
    Sign up) → OpenAI Compatible. Later: Settings → Provider → BYOK → Add
    Provider.
-2. Provider `hearth`, Base URL as above, Model Source URL empty. Add all
-   three models: `coding-brain` (98304, default), `main-brain` (262144),
-   `deep-brain` (65536). Capabilities: streaming, tools, reasoning;
+2. Provider `hearth`, Base URL as above, Model Source URL empty. Add the
+   models: `main-brain` (262144, default), `deep-brain` (65536), and on a
+   64 GB host `coding-brain` (98304). Capabilities: streaming, tools, reasoning;
    prompt cache off. Person pastes the key. Cline does **not** load
    weights — host runs `demand-load.sh` before a swap role.
 3. **Never** Sign in / Usage-Billing / Cline Pass. Telemetry off (General).
@@ -77,8 +79,8 @@ Follow README → *Cline* (past Sign in + field + models tables). Short form:
 2. Ask them to run `scripts/omlx.sh sub-key add opencode-<machine>` on the
    host (they type the token). On a laptop, `ai-tunnel` first.
 3. Help them write `~/.config/opencode/opencode.json` from the README
-   *OpenCode* block: provider `hearth`, model `hearth/coding-brain`, list
-   `coding-brain` (and optionally swap roles), base URL as above. They paste
+   *OpenCode* block: provider `hearth`, model `hearth/main-brain`, list
+   `main-brain` (and optionally swap roles), base URL as above. They paste
    the sub-key; you never read or write the key value. `chmod 600` the file
    if it holds the key.
 4. No cloud / OpenRouter provider on the host for sensitive work.
@@ -89,16 +91,16 @@ Follow README → *Cline* (past Sign in + field + models tables). Short form:
 ## JetBrains AI Assistant
 
 Settings → Tools → AI Assistant → Providers & API keys → OpenAI Compatible.
-Assign `coding-brain` by hand to every feature, and turn offline mode on for
+Assign `main-brain` by hand to every feature, and turn offline mode on for
 sensitive repos. It has no hooks, so for guarded agent work, use the Cline
-plugin. Demand-load before assigning `main-brain` or `deep-brain`.
+plugin. Demand-load before assigning `coding-brain` or `deep-brain`.
 
 ## Zed
 
 README → *Zed*. Keep `agent.tool_permissions.default: "confirm"`. On the
 host, `scripts/zed-sync.sh` writes the labels (including `× slots`). Zed has
 no hooks, so the loop guard does not cover it. Tell the person this, and
-point to the mitigations listed there. Default model is `coding-brain`.
+point to the mitigations listed there. Default model is `main-brain`.
 
 ## Prove it: three checks per client, with the hearth folder open
 

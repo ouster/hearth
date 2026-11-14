@@ -9,8 +9,9 @@ the second file was `litellm/config.yaml`.)
 **Hardware envelope:** the ceiling is installed RAM minus 8 GB (ADR 0031):
 **56 GB** on the 64 GB host, **40 GB** on a 48 GB host. `iogpu.wired_limit_mb`
 and the oMLX guard both follow it. macOS's default GPU cap (~75% of RAM)
-applies until `scripts/iogpu-wired.sh` runs. On 64 GB the boot resident is
-`coding-brain`; `main-brain` and `deep-brain` are swap-in (ADR 0047).
+applies until `scripts/iogpu-wired.sh` runs. The boot resident is
+`main-brain` on every tier; `deep-brain` and, on 64 GB, `coding-brain` are
+swap-in (ADR 0048).
 `deep-brain` evicts the current agent for its session (ADR 0033). `edit-brain`
 runs on a laptop's own oMLX, not on the host. The resident set matters more
 than any single model's size — see the measurement below.
@@ -22,21 +23,21 @@ oMLX serves these from `~/.hearth/models`. Machine-read copy:
 
 | Role | Model key | Source | Size | Load | Set | Why |
 |---|---|---|---|---|---|---|
-| `coding-brain` | `qwen3-coder-next-4bit` | `mlx-community/Qwen3-Coder-Next-4bit` | ~42 GB | 98K × 1 (98,304), **resident on 64 GB** (ADR 0047). No draft. Thinking on in oMLX settings | 2026-11-12 | 80B-A3B coding MoE. c1 tool gate 10/10, TTFT p50 27.2 s, peak 52.0 GB (`2026-11-12-1903-coder-next-4bit`). `bench/tasks` 03/04 ok (`2026-11-12-1923-coder-next-quality`). oMLX intel 100-sample: HumanEval 92%, MBPP 82%, LiveCodeBench 73%, GSM8K 94% (`2026-11-12-2103-coder-next-omlx`). Perf 64k PP 788 / TG 59 (`9dz1w6ja`). Never beside `main-brain` or `deep-brain`. Not on 48 GB |
-| `main-brain` | `qwen3.6-35b-a3b-mlx` | `mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit` @ `08567bc` | 22 GB | 256K × 3 (262,144), **swap on 64 GB** / **resident on 48 GB**, no draft, **thinking on (set by `scripts/omlx.sh`)** | 2026-11-12 | MoE, ~3B active, OptiQ. Won the 2026-11-07 quant A/B. ADR 0035, 0046. On 64 GB: `demand-load.sh main-brain up` for concurrent / long threads (ADR 0047). c3 TTFT p50 59.8 s at 256K |
+| `coding-brain` | `qwen3-coder-next-4bit` | `mlx-community/Qwen3-Coder-Next-4bit` | ~42 GB | 98K × 1 (98,304), **swap, 64 GB only** (ADR 0047, 0048). No draft. Thinking on in oMLX settings | 2026-11-12 | 80B-A3B coding MoE. c1 tool gate 10/10, TTFT p50 27.2 s, peak 52.0 GB (`2026-11-12-1903-coder-next-4bit`). `bench/tasks` 03/04 ok (`2026-11-12-1923-coder-next-quality`). oMLX intel 100-sample: HumanEval 92%, MBPP 82%, LiveCodeBench 73%, GSM8K 94% (`2026-11-12-2103-coder-next-omlx`). Perf 64k PP 788 / TG 59 (`9dz1w6ja`). Never beside `main-brain` or `deep-brain`. Not on 48 GB |
+| `main-brain` | `qwen3.6-35b-a3b-mlx` | `mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit` @ `08567bc` | 22 GB | 256K × 3 (262,144), **resident on every tier** (ADR 0048), no draft, **thinking on (set by `scripts/omlx.sh`)** | 2026-11-12 | MoE, ~3B active, OptiQ. Won the 2026-11-07 quant A/B. ADR 0035, 0046. Default for editors and `ask` (ADR 0048). c3 TTFT p50 59.8 s at 256K |
 | `deep-brain` | `qwen3.8-27b-mlx` | `lmstudio-community/Qwen3.8-27B-MLX-4bit` @ `6067b15` | 16.1 GB | 64K × 1, **on demand**: `ask-deep` loads it, evicting the current agent (`coding-brain` or `main-brain`) for the session (swap, ADR 0033, 0047), and restores that agent on the way out | 2026-11-01 | Dense 27B. Hard one-off questions, never agent loops. Never beside `coding-brain` |
 | `edit-brain` | `sweep-next-edit-1.5b-mlx-8bit` | `sweepai/sweep-next-edit-1.5B` @ `4090165` (`sweep-next-edit-1.5b.q8_0.v2.gguf`, sha256 `1321ea5e…`), tokenizer rebuilt from the GGUF's pruned 43,839-token vocabulary (template `Qwen/Qwen2.5-Coder-1.5B` @ `df3ce67`), converted to MLX 8-bit at `~/.hearth/models/hearth/sweep-next-edit-1.5B-MLX-8bit` | 1.4 GB | 8K × 2, **edit**: laptop oMLX only, `/v1/completions`, greedy, 512 max tokens | 2026-11-07 | Editor edit prediction (Zed `open_ai_compatible_api`, prompt format `sweep`). Apache 2.0, Qwen2.5-Coder base. Laptop bench 2026-11-07: p50 350 / p95 398 ms, 24/30 (misses `02-add-field`). Host alone p95 281 ms; beside c3 p95 5747 ms and `main-brain` TTFT p95 89.7 s — **host does not load it** (ADR 0033 amend). Paid Zed Zeta is a separate cloud opt-in (`docs/IDES.md`) |
 | `cloud-cheap` | `gemini-3.6-flash` | Google, laptop `ask-cloud` only (client-only, ADR 0038) | — | — | 2026-10-22 | 1M ctx, 65K output. ADR 0014 |
 
-**Resident set (64 GB):** `coding-brain` at boot (ADR 0047). OptiQ c3 when
-swapped in: 30/30 at 256K, TTFT p50 59.8 s
+**Resident set (64 GB):** `main-brain` at boot (ADR 0048). OptiQ c3:
+30/30 at 256K, TTFT p50 59.8 s
 (`bench/results/2026-11-10-262144-concurrency-c3-main`). One 200k OptiQ
-prompt peaked at 40.0 GB. Coder-Next c1: 10/10, TTFT p50 27.2 s, peak 52.0 GB.
+prompt peaked at 40.0 GB. Coder-Next c1, when swapped in: 10/10, TTFT p50 27.2 s, peak 52.0 GB.
 
 **Thinking is set by `scripts/omlx.sh` for `main-brain` only.** Sampling for
 OptiQ: temperature 1.0, top-k 20, top-p 0.95, repetition penalty 1.0.
 `healthcheck.sh` requires reasoning on `main-brain` when that role is
-exercised; `coding-brain` is chat-only.
+exercised; `coding-brain` is not probed.
 
 `local-code` and `local-chat` were collapsed into `local-big` (now `main-brain`, ADR 0021) on 2026-10-31
 (D1). The Ollama weights were deleted the same day with the rest of the old
@@ -57,7 +58,7 @@ detected size. Ceiling is RAM minus 8 (ADR 0031).
 |---|---|---|---|---|---|
 | < 48 GB | — | none: `omlx.sh up` refuses | — | — | no tier benched |
 | 48 GB | 40 | OptiQ `main-brain` 256K × 3 | resident | swap 64K | No `coding-brain` (Coder-Next ~52 GB peak). c3 on 48 GB hardware still outstanding |
-| 64 GB | 56 | `coding-brain` 98K × 1 | **swap** 256K × 3 | swap 64K | ADR 0047. Coder never beside main or deep. `edit-brain` laptop-only |
+| 64 GB | 56 | OptiQ `main-brain` 256K × 3 | resident | swap 64K | ADR 0048. `coding-brain` 98K × 1 is a second swap role; never beside main or deep. `edit-brain` laptop-only |
 
 ### Candidates by RAM (unbenched)
 

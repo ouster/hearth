@@ -30,10 +30,11 @@ the port empty. Cloud (Gemini) is reached by each tool with its own key.
 Read `docs/ROUTING.md` before suggesting any routing change.
 
 **Serving:** login boot starts oMLX (ADR 0026, 0028) with the resident role —
-`coding-brain` on 64 GB, `main-brain` on 48 GB (ADR 0047). `ask-main` /
-`demand-load.sh main-brain up` swaps in OptiQ; `ask-deep` evicts the current
-agent, loads `deep-brain`, and restores the prior agent on the way out
-(ADR 0031, 0033, 0047). `edit-brain` is laptop oMLX only (ADR 0033 amend).
+`main-brain` on every tier (ADR 0048). On 64 GB, `coding-brain` /
+`demand-load.sh coding-brain up` swaps `main-brain` out and `down` restores
+it; `ask-deep` evicts the current agent, loads `deep-brain`, and restores the
+prior agent on the way out (ADR 0031, 0033, 0047). A laptop loads the host's
+swap roles with `hearth-load` over an ordinary SSH login (ADR 0048). `edit-brain` is laptop oMLX only (ADR 0033 amend).
 
 Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgres is the removed gateway — never suggest commands against it. `docs/MIGRATION-LMSTUDIO.md` is the record of the earlier cut onto LM Studio, which oMLX replaced.
 
@@ -49,9 +50,9 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
    Same discipline for MCP servers: client config docs (`docs/IDES.md`) and
    `docs/MCP.md`.
 
-   Live: `coding-brain` (oMLX identifier, **resident on 64 GB**, 98K × 1,
-   ADR 0047), `main-brain` (**swap on 64 GB** / resident on 48 GB, 256K × 3,
-   ADR 0046), `deep-brain` (loaded for an `ask-deep` session; `load` is
+   Live: `main-brain` (oMLX identifier, **resident on every tier**, 256K × 3,
+   ADR 0046, 0048), `coding-brain` (**swap, 64 GB only**, 98K × 1, ADR 0047,
+   0048 — never call it unless loaded), `deep-brain` (loaded for an `ask-deep` session; `load` is
    `beside` or `swap` per RAM tier, ADR 0020, 0028, 0031, 0032, 0047 — never
    call it unless loaded; never beside `coding-brain`), `edit-brain` (editor
    edit prediction on a laptop's own oMLX, `/v1/completions` only, ADR 0033;
@@ -96,8 +97,9 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
    applies until `scripts/iogpu-wired.sh` runs. Roles are tiered by RAM
    (`min_ram` in `roles.tsv`, ADR 0032); only benched tiers have rows, and
    candidates for other sizes are in `docs/MODELS.md`.
-   On 64 GB the boot resident is `coding-brain` (98304 × 1, ~52 GB peak,
-   ADR 0047); `main-brain` is demand-load swap at 262144 × 3 (ADR 0046).
+   The boot resident is `main-brain` at 262144 × 3 on every tier (ADR 0046,
+   0048); on 64 GB, `coding-brain` is demand-load swap (98304 × 1, ~52 GB
+   peak, ADR 0047). The 48 GB row is not yet benched on 48 GB hardware.
    Three ~30K-token prompts match the old 128K-cap c3. One 200k prompt peaked
    at 40.0 GB (2026-11-10). `deep-brain` stays at 65536 and swaps the current
    agent out (ADR 0033, 0047). `coding-brain` never shares RAM with

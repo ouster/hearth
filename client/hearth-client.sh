@@ -16,6 +16,13 @@
 #   HEARTH_DUAL         1 on a machine that also runs its own brain (ADR 0040):
 #                       the tunnel port defaults to 1235, commands get -remote
 #   HEARTH_LOCAL_PORT   local end of the tunnel (default 1234; 1235 when dual)
+#   HEARTH_SSH_ADMIN    user@host for an ordinary SSH login on the host (your
+#                       own key or password, NOT the tunnel key). With it,
+#                       hearth-load and the swap commands can load a swap
+#                       role on the host (ADR 0048). Without it, someone
+#                       runs scripts/demand-load.sh on the host.
+#   HEARTH_REMOTE_ROOT  the hearth repo on the host, relative to that
+#                       login's home (default dev/hearth)
 #                       SearXNG is local on this machine (ADR 0045). An old
 #                       HEARTH_SEARXNG_PORT or HEARTH_WEBUI_PORT is ignored.
 #
@@ -24,8 +31,9 @@
 #   ~/.hearth-gemini-key  this machine's own Google API key, for ask-cloud only
 #
 # Commands: ai-tunnel, ai-tunnel-install, ai-tunnel-stop, ai-ping, ai-models,
-#           ai-ask, ask and main-brain (main-brain), ask-arch, ask-deep and deep-brain (deep-brain, only while
-#           the host has it loaded), ask-cloud
+#           ai-ask, ask and main-brain (the host's resident), ask-arch,
+#           coding-brain and deep-brain / ask-deep (swap roles: loaded on
+#           the host for the session), hearth-load, ask-cloud
 #
 # macOS: ai-tunnel-install once. launchd (com.hearth.tunnel) restarts the
 # forwards when the session drops, and again at login. ai-tunnel then
@@ -348,7 +356,7 @@ ai-ask() {
   # umask inside the substitution so the file is created mode 600. A later
   # redirect truncates it and keeps that mode.
   _body=$(umask 077 && mktemp "${TMPDIR:-/tmp}/hearth-ask.XXXXXX") || { unset _k; return 1; }
-  python3 -c 'import json, sys; print(json.dumps({"model": "coding-brain", "messages": [{"role": "user", "content": " ".join(sys.argv[1:])}]}))' "$@" \
+  python3 -c 'import json, sys; print(json.dumps({"model": "main-brain", "messages": [{"role": "user", "content": " ".join(sys.argv[1:])}]}))' "$@" \
     > "$_body"
   printf 'header = "Authorization: Bearer %s"\n' "$_k" \
     | curl -s -m 300 -K - -H 'Content-Type: application/json' \
@@ -366,38 +374,74 @@ print((d["choices"][0]["message"].get("content") or "").strip())'
 }
 
 # ---------------------------------------------------------------- aider
-# The token is injected per invocation, never exported. Default tunnel role
-# is coding-brain (host resident on 64 GB, ADR 0047). Clients call roles,
+# The token is injected per invocation, never exported. The default role is
+# main-brain, the resident on every host (ADR 0048). Clients call roles,
 # never models.
 _hearth_aider() {
   _hearth_connect || return 1
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
   OPENAI_API_BASE="$HEARTH_TUNNEL_URL" OPENAI_API_KEY="$_k" \
-    aider --model openai/coding-brain --weak-model openai/coding-brain "$@"
+    aider --model openai/main-brain --weak-model openai/main-brain "$@"
   _rc=$?; unset _k; return $_rc
 }
-_hearth_ask_arch() { _hearth_aider --architect --editor-model openai/coding-brain "$@"; }
+_hearth_ask_arch() { _hearth_aider --architect --editor-model openai/main-brain "$@"; }
 
-# deep-brain: slower, more careful model (ADR 0020). This laptop cannot load
-# it; it must already be loaded on the host. An unloaded role would be
-# answered by the resident without saying so, so refuse unless it is listed.
-_hearth_ask_deep() {
-  _hearth_connect || return 1
-  _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
-  if ! printf 'header = "Authorization: Bearer %s"\n' "$_k" \
-       | curl -s -m 8 -K - "${HEARTH_TUNNEL_URL}/models" \
-       | python3 -c 'import sys, json
-sys.exit(0 if any(m.get("id") == "deep-brain" for m in json.load(sys.stdin).get("data", [])) else 1)' 2>/dev/null; then
-    echo "deep-brain is not loaded on the host. On the host: scripts/demand-load.sh deep-brain up" >&2
-    echo "(the resident agent is swapped out until scripts/demand-load.sh deep-brain down)" >&2
-    unset _k; return 1
+# Load or unload a swap role on the host (ADR 0048):
+#   hearth-load coding-brain up      hearth-load deep-brain down
+# Runs scripts/demand-load.sh there over HEARTH_SSH_ADMIN, an ordinary SSH
+# login. The tunnel key cannot run commands and this does not use it; the
+# laptop's token is not sent. Prints loaded, already, or restored <role>.
+# While a swap role is in, main-brain on that host has no model of its own.
+hearth-load() {
+  case "${1:-}" in coding-brain|deep-brain) : ;; *)
+    echo "usage: hearth-load coding-brain|deep-brain up|down" >&2; return 2 ;; esac
+  case "${2:-}" in up|down) : ;; *)
+    echo "usage: hearth-load coding-brain|deep-brain up|down" >&2; return 2 ;; esac
+  if [ -z "${HEARTH_SSH_ADMIN:-}" ]; then
+    echo "hearth: HEARTH_SSH_ADMIN is not set. On the host: scripts/demand-load.sh $1 $2" >&2
+    return 1
   fi
-  # weak-model is deep-brain too: a commit step should use the same model
-  # the session just asked.
-  OPENAI_API_BASE="$HEARTH_TUNNEL_URL" OPENAI_API_KEY="$_k" \
-    aider --model openai/deep-brain --weak-model openai/deep-brain "$@"
-  _rc=$?; unset _k; return $_rc
+  case "${HEARTH_REMOTE_ROOT:-dev/hearth}" in *[!A-Za-z0-9_./-]*)
+    echo "hearth: HEARTH_REMOTE_ROOT has characters other than letters, digits, . _ / -" >&2; return 1 ;; esac
+  /usr/bin/ssh "$HEARTH_SSH_ADMIN" "cd ${HEARTH_REMOTE_ROOT:-dev/hearth} && scripts/demand-load.sh $1 $2"
 }
+
+# A swap role for one aider session (coding-brain, deep-brain). This laptop
+# cannot load a model itself. With HEARTH_SSH_ADMIN it asks the host to,
+# and puts the resident back afterwards if this call did the loading.
+# Without it, the role must already be loaded on the host: /v1/models lists
+# every role whether loaded or not, and an unloaded one can be answered by
+# the resident without saying so, so that case asks before it goes on.
+_hearth_swap_remote() {
+  _role="$1"; shift
+  _hearth_connect || return 1
+  _state=""
+  if [ -n "${HEARTH_SSH_ADMIN:-}" ]; then
+    _state=$(hearth-load "$_role" up) || { unset _role _state; return 1; }
+    case "$_state" in
+      loaded)  echo "${_role}: loaded on the host. If this session is killed: hearth-load ${_role} down" >&2 ;;
+      already) echo "${_role}: already loaded on the host; this session will not unload it." >&2 ;;
+      *)       echo "${_role}: unexpected answer from the host: ${_state}" >&2; unset _role _state; return 1 ;;
+    esac
+  else
+    echo "${_role} must already be loaded on the host: scripts/demand-load.sh ${_role} up" >&2
+    echo "(set HEARTH_SSH_ADMIN to load it from here). This laptop cannot check." >&2
+    printf 'Is it loaded? [y/N] ' >&2
+    read -r _yn
+    case "$_yn" in y|Y) : ;; *) unset _role _state _yn; return 1 ;; esac
+    unset _yn
+  fi
+  _k=$(_hearth_secret "$HOME/.hearth-key") || { unset _role _state; return 1; }
+  # weak-model is the same role: the resident is not loaded to answer it.
+  OPENAI_API_BASE="$HEARTH_TUNNEL_URL" OPENAI_API_KEY="$_k" \
+    aider --model "openai/${_role}" --weak-model "openai/${_role}" "$@"
+  _rc=$?; unset _k
+  [ "$_state" = loaded ] && hearth-load "$_role" down >&2
+  unset _role _state
+  return $_rc
+}
+_hearth_ask_coding() { _hearth_swap_remote coding-brain "$@"; }
+_hearth_ask_deep()   { _hearth_swap_remote deep-brain "$@"; }
 
 # Public names. Plain on a laptop; -remote on a machine that is also a host
 # (ADR 0039 names, ADR 0040 dual mode). Dual mode leaves `ask` alone: there
@@ -410,14 +454,14 @@ sys.exit(0 if any(m.get("id") == "deep-brain" for m in json.load(sys.stdin).get(
 [ "$HEARTH_DUAL" = 1 ] || unalias ask 2>/dev/null || true
 if [ "$HEARTH_DUAL" = 1 ]; then
   function ask-remote          { _hearth_aider "$@"; }
-  function coding-brain-remote { _hearth_aider "$@"; }
+  function coding-brain-remote { _hearth_ask_coding "$@"; }
   function main-brain-remote   { _hearth_aider "$@"; }
   function ask-arch-remote     { _hearth_ask_arch "$@"; }
   function ask-deep-remote     { _hearth_ask_deep "$@"; }
   function deep-brain-remote   { _hearth_ask_deep "$@"; }
 else
   function ask          { _hearth_aider "$@"; }
-  function coding-brain { _hearth_aider "$@"; }
+  function coding-brain { _hearth_ask_coding "$@"; }
   function main-brain   { _hearth_aider "$@"; }
   function ask-arch     { _hearth_ask_arch "$@"; }
   function ask-deep     { _hearth_ask_deep "$@"; }

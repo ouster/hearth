@@ -38,5 +38,5 @@ comprehensive and robust for agent workloads.
 
 # Good
 oMLX serves the resident role on `127.0.0.1:1234`.
-Agents call `coding-brain` by default.
+Agents call `main-brain` by default.
 ```

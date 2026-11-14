@@ -9,7 +9,7 @@
 #   scripts/omlx.sh sub-key revoke <name>
 #
 # Weights, context, and slots come from this host's resident oMLX chat role
-# (coding-brain on 64 GB, main-brain on 48 GB; ADR 0047). The API key is the
+# (main-brain on every tier; ADR 0048). The API key is the
 # existing host token, written to ~/.omlx/settings.json (mode 600) and never
 # printed. Clients that already send that token keep working. A laptop token
 # is a different key. `sub-key add` registers one the operator pastes; it can
@@ -661,7 +661,7 @@ cmd_up() {
   WEIGHTS="$(printf '%s' "$row" | cut -f4)"
   case "$CTX" in ''|*[!0-9]*) fail "context is not an integer" ;; esac
   case "$SLOTS" in ''|*[!0-9]*) fail "slots is not an integer" ;; esac
-  # Host slots follow the resident role (1 under coding-brain, 3 under
+  # Host slots follow the loaded agent (1 under coding-brain, 3 under
   # main-brain). edit-brain runs on a laptop's own oMLX (ADR 0033 amend).
   echo "omlx: resident role ${RESIDENT} (${SLOTS} slot(s), ctx ${CTX})"
 
