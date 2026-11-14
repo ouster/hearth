@@ -199,17 +199,54 @@ Filter **Performance** to your chip and your RAM. A row is prefill tok/s, genera
 
 Run your own. The [DMG](https://github.com/jundot/omlx/releases) is the handy way to experiment: menu bar, model list, chat, and a bench you can share to those boards from the dashboard (oMLX 0.2.6 and later). The bench uses the app's prompts, not your files. A candidate that fits there is worth Hearth's bench. One that blows the ceiling is not.
 
+### App server vs Hearth server
+
+Hearth starts `omlx-server` with `scripts/omlx.sh up` (or login boot). The
+Mac app starts its own server with **Start Server**. Both use
+`127.0.0.1:1234` and share `~/.omlx/settings.json`. They are not the same
+process. The app tracks the server *it* started. It does not treat a
+Hearth-started process as Running (seen on oMLX 0.7.3, 2026-11-14).
+
+While Hearth owns `:1234`:
+
+- The app Server page often shows **Stopped** and Models stays empty.
+- Security login can return **401** (wrong session key).
+- Pasting into first-time setup returns **400**: `API key is already configured`.
+- Do **not** press Start. That starts a second server on the same port.
+
+Editors, the tunnel, and `hearth-load` use the Hearth server. That path is
+fine while the app looks empty.
+
 ### When the app should start the server
 
-Start it from the app only while Hearth is not serving. `scripts/omlx.sh status` should say nothing is listening on `127.0.0.1:1234`. A fresh app serves port 8000 until Hearth's settings are merged. Use that window to download a model, chat with it, and run a bench. Stop the server from the app when you are done.
+Use the app server for Downloads, the Models list, chat in the app, and
+Throughput / Intelligence benches you will upload to omlx.ai.
+
+```bash
+scripts/omlx.sh down          # nothing on 127.0.0.1:1234
+# oMLX.app → Start Server → Models / benches
+# oMLX.app → Stop
+scripts/omlx.sh up            # Hearth takes :1234 again
+```
+
+`scripts/omlx.sh status` must show nothing on `:1234` before Start. A fresh
+app can bind port 8000 until Hearth merges settings. Stop the app server
+before `up`.
 
 ### When it should not
 
-Once `scripts/omlx.sh up` or login boot (`com.hearth.boot`) is serving `127.0.0.1:1234`, leave the app as a panel on that server. `up` sets `auto_start_on_launch: false` so opening the app does not bind the port again. Pressing Start starts a second server and the two fight.
+Once `scripts/omlx.sh up` or login boot (`com.hearth.boot`) is serving
+`127.0.0.1:1234`, leave the app closed or open only as a viewer. Do not
+Start. `up` sets `auto_start_on_launch: false` so opening the app does not
+bind the port again.
 
-`scripts/omlx.sh down` stops a Hearth-started server. It does not stop one you started from the app. Stop that one in the app, then run `up`. If the app is already serving `:1234`, `up` attaches and does not replace the process.
+`scripts/omlx.sh down` stops a Hearth-started server. It does not stop one
+you started from the app. Stop that one in the app, then run `up`. If the
+app is already serving `:1234`, `up` attaches and does not replace the
+process.
 
-Keep the bind on loopback. Do not turn on Serve on Local Network. A client-only laptop has no local `hearth` and does not start a server.
+Keep the bind on loopback. Do not turn on Serve on Local Network. A
+client-only laptop has no local `hearth` and does not start a server.
 
 ## Install oMLX
 
@@ -232,7 +269,9 @@ DMG: [Releases](https://github.com/jundot/omlx/releases).
 3. `scripts/omlx.sh up` — attaches if the app is already serving `:1234`,
    otherwise starts the CLI under Hearth’s launchd agent. Sets
    `auto_start_on_launch: false` so the app does not fight for the port later.
-4. Keep the Mac app as a settings / status panel. Ops: [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
+4. For day-to-day serving, use Hearth on `:1234`. For app Models / benches,
+   hand the port to the app (see *App server vs Hearth server* above).
+   Ops: [`docs/RUNBOOK.md`](docs/RUNBOOK.md).
 
 ### B — Hearth first, then the oMLX app
 
