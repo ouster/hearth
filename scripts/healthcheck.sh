@@ -227,6 +227,25 @@ c=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "http://127.0.0.1:3000/health" 2
 wan=$(hearth_wan_binds 3000)
 [ -z "$wan" ] || bad "port 3000 is not loopback-only:${wan}"
 
+# ---------------------------------------------------------------- 9. swapd
+hdr "9. hearth-swapd on :${HEARTH_SWAP_PORT} (ADR 0049; down is a warning)"
+SWAP_BASE="http://127.0.0.1:${HEARTH_SWAP_PORT}"
+c=$(hearth_http /v1/hearth/agent "$TOK" "$SWAP_BASE")
+if [ "$c" = "200" ]; then
+  # Positive control first: a 401 from a dead port would prove nothing.
+  ok "host token → 200"
+  c=$(hearth_http /v1/hearth/agent "" "$SWAP_BASE")
+  [ "$c" = "401" ] && ok "no token → 401" || bad "swapd: no token → ${c}"
+  c=$(hearth_http /v1/hearth/agent "hearth-healthcheck-not-a-token" "$SWAP_BASE")
+  [ "$c" = "401" ] && ok "wrong token → 401" || bad "swapd: wrong token → ${c}"
+elif [ "$c" = "000" ]; then
+  wrn "hearth-swapd not answering — laptops cannot swap roles over the tunnel: scripts/hearth-swapd.sh up"
+else
+  wrn "hearth-swapd answered ${c} to the host token — see ~/Library/Logs/hearth-swapd.log"
+fi
+wan=$(hearth_wan_binds "$HEARTH_SWAP_PORT")
+[ -z "$wan" ] || bad "hearth-swapd is not loopback-only:${wan}"
+
 # ---------------------------------------------------------------- verdict
 printf '\n\033[1m%d passed, %d warnings, %d failed, %d errors\033[0m\n' "$pass" "$warn" "$fail" "$err"
 [ "$err" -gt 0 ] && { echo "ERRORS mean a check could not run — this report is incomplete."; exit 2; }

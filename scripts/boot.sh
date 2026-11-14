@@ -50,8 +50,8 @@ if "${ROOT}/scripts/hearth-swapd.sh" up; then
     rc=1
   fi
 else
-  log "FAILED: scripts/hearth-swapd.sh up"
-  rc=1
+  # A convenience for laptops, not part of serving: oMLX is up without it.
+  log "WARN: scripts/hearth-swapd.sh up failed — laptops cannot swap roles over the tunnel"
 fi
 
 # ---------------------------------------------------------------- podman

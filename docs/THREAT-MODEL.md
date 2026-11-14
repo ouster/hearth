@@ -208,7 +208,14 @@ Recorded so nobody mistakes silence for safety.
    agents (Claude Code, Codex, Gemini CLI) bypass profiles, `confirm` and the
    sandbox entirely, calling their own cloud. None on the host
    (`docs/IDES.md`).
-5. **No confirmation gates** beyond git commits. This costs nothing today
+5. **Any valid key can swap the host's agent** (ADR 0049). `hearth-swapd` on
+   `127.0.0.1:1236` accepts every key oMLX accepts: a laptop key and an
+   editor sub-key alike. A stolen key, or an unsandboxed agent on the host
+   that finds one, can unload `main-brain`. It cannot read a prompt, reach
+   oMLX `/admin`, or name any role other than `coding-brain` and
+   `deep-brain`. The effect is an outage, and `scripts/demand-load.sh
+   <role> down` ends it. A `sandboxed.sh` agent cannot reach `:1236`.
+6. **No confirmation gates** beyond git commits. This costs nothing today
    because nothing in the stack can send mail or move money. It becomes urgent
    the day something can.
 

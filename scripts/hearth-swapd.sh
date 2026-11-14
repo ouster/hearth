@@ -28,9 +28,12 @@ listening() {
 }
 
 run_env() {
+  # Check the token is there, then drop it: the daemon reads the env file
+  # when it needs the token, so it is never in a process environment.
   ai_load_env
   [ -n "${OMLX_HOST_TOKEN:-}" ] || { echo "could not run: OMLX_HOST_TOKEN missing" >&2; return 2; }
-  export OMLX_HOST_TOKEN
+  unset OMLX_HOST_TOKEN
+  export HEARTH_ENV
   export HEARTH_ROOT="$ROOT"
   export ROOT
   export HEARTH_PORT

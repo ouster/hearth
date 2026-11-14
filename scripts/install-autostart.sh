@@ -133,7 +133,10 @@ load_swap() {
   mkdir -p "$(dirname "$SWAP_PLIST")" "$(dirname "$SWAP_LOG")"
   write_swap_plist
   plutil -lint "$SWAP_PLIST" >/dev/null || { echo "FAIL: swap plist does not lint"; return 1; }
-  launchctl bootout "${DOMAIN}/${SWAP_LABEL}" >/dev/null 2>&1 || true
+  # Stops the launchd job and any copy boot.sh started by hand before this
+  # plist existed. A leftover would hold :1236 and make launchd restart the
+  # new job every 10 s.
+  "${ROOT}/scripts/hearth-swapd.sh" down >/dev/null 2>&1 || true
   launchctl bootstrap "$DOMAIN" "$SWAP_PLIST" || { echo "FAIL: launchctl bootstrap ${SWAP_LABEL}"; return 1; }
   echo "installed ${SWAP_LABEL} — sub-key swap on 127.0.0.1:1236 (ADR 0049)"
 }
@@ -222,12 +225,13 @@ case "$MODE" in
        && grep -q "${ROOT}/scripts/hearth-swapd.sh" "$SWAP_PLIST"; then
       echo "OK    plist ${SWAP_PLIST}"
     else
-      echo "FAIL  no valid swap plist (--apply)"; rc=1
+      # Optional (ADR 0049): serving does not depend on it, so no exit 1.
+      echo "WARN  no swap plist — laptops cannot swap roles over the tunnel (--apply)"
     fi
     if launchctl print "${DOMAIN}/${SWAP_LABEL}" >/dev/null 2>&1; then
       echo "OK    ${SWAP_LABEL} loaded"
     else
-      echo "FAIL  ${SWAP_LABEL} not loaded"; rc=1
+      echo "WARN  ${SWAP_LABEL} not loaded (--apply)"
     fi
     [ -f "$LOG" ] && { echo "--- last lines of ${LOG}"; tail -5 "$LOG"; }
     exit "$rc"

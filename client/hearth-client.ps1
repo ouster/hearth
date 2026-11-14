@@ -26,7 +26,8 @@ if (-not $env:HEARTH_SSH) {
 
 $script:HearthLocalPort = if ($env:HEARTH_LOCAL_PORT) { $env:HEARTH_LOCAL_PORT } else { "1234" }
 # SearXNG is local on this machine (ADR 0045). An old HEARTH_SEARXNG_PORT or
-# HEARTH_WEBUI_PORT is ignored. The tunnel forwards oMLX only.
+# HEARTH_WEBUI_PORT is ignored. This client forwards oMLX only: it has no
+# hearth-load, so it does not use the host's hearth-swapd forward (ADR 0049).
 $script:HearthUrl = "http://127.0.0.1:$($script:HearthLocalPort)/v1"
 
 function Get-HearthSecret([string]$Name) {

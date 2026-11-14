@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # Sub-key-scoped swap sidecar on 127.0.0.1:HEARTH_SWAP_PORT (ADR 0049).
-# Auth: Bearer must get 200 from oMLX GET /v1/models. Then runs demand-load.sh
-# with the host token. Bind loopback only.
-from __future__ import print_function
-
+# Auth: Bearer must get 200 from oMLX GET /v1/models. Then runs demand-load.sh,
+# which reads the host token itself. Bind loopback only.
+#
+# The host token is never in this process's environment: host_token() reads
+# ~/.config/hearth/env when GET /v1/hearth/agent needs the admin API, the
+# same parse as ai_load_env in scripts/lib.sh.
 import json
 import os
 import subprocess
@@ -11,17 +13,45 @@ import sys
 import threading
 import urllib.error
 import urllib.request
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST = "127.0.0.1"
 OMLX_PORT = os.environ.get("HEARTH_PORT", "1234")
 SWAP_PORT = int(os.environ.get("HEARTH_SWAP_PORT", "1236"))
 ROOT = os.environ.get("HEARTH_ROOT") or os.environ.get("ROOT") or ""
-HOST_TOKEN = os.environ.get("OMLX_HOST_TOKEN") or ""
+ENV_FILE = os.environ.get("HEARTH_ENV") or os.path.expanduser("~/.config/hearth/env")
 ROLES_TSV = os.environ.get("HEARTH_ROLES_TSV") or ""
 DEMAND = os.path.join(ROOT, "scripts", "demand-load.sh") if ROOT else ""
 
-_lock = threading.Lock()
+# One swap at a time. Status requests do not take it.
+_swap_lock = threading.Lock()
+MAX_BODY = 4096
+# Seconds a client may take to send its request. Without it one idle
+# connection would hold a thread for ever.
+SOCKET_TIMEOUT = 30
+
+
+def host_token():
+    try:
+        with open(ENV_FILE) as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return ""
+    val = ""
+    for line in lines:
+        t = line.strip()
+        if t.startswith("export "):
+            t = t[7:].lstrip()
+        if t.startswith("OMLX_HOST_TOKEN="):
+            val = t.split("=", 1)[1]
+    for q in ('"', "'"):
+        if val.endswith(q):
+            val = val[:-1]
+        if val.startswith(q):
+            val = val[1:]
+    if not val or val.endswith("...") or "CHANGEME" in val:
+        return ""
+    return val
 
 
 def _http_status(url, bearer, timeout=8):
@@ -58,6 +88,9 @@ def parse_roles():
 def admin_listing():
     import http.cookiejar
 
+    token = host_token()
+    if not token:
+        raise RuntimeError("host token missing")
     jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
     base = "http://127.0.0.1:%s" % OMLX_PORT
@@ -66,7 +99,7 @@ def admin_listing():
         data = None if body is None else json.dumps(body).encode()
         req = urllib.request.Request(base + path, data=data, method=method)
         req.add_header("Content-Type", "application/json")
-        req.add_header("Authorization", "Bearer " + HOST_TOKEN)
+        req.add_header("Authorization", "Bearer " + token)
         try:
             with opener.open(req, timeout=timeout) as resp:
                 raw = resp.read().decode()
@@ -79,7 +112,7 @@ def admin_listing():
                 parsed = {"detail": raw[:300]}
             return e.code, parsed
 
-    code, _ = call("POST", "/admin/api/login", {"api_key": HOST_TOKEN})
+    code, _ = call("POST", "/admin/api/login", {"api_key": token})
     if code != 200:
         raise RuntimeError("admin login failed (%s)" % code)
     code, body = call("GET", "/admin/api/models")
@@ -101,9 +134,9 @@ def current_agent():
 def run_demand(role, action):
     if not DEMAND or not os.path.isfile(DEMAND):
         return 2, "", "demand-load.sh missing"
+    # demand-load.sh loads the host token from the env file itself.
     env = os.environ.copy()
-    env["OMLX_HOST_TOKEN"] = HOST_TOKEN
-    # Host token must reach demand-load's children.
+    env.pop("OMLX_HOST_TOKEN", None)
     proc = subprocess.Popen(
         ["/bin/bash", DEMAND, role, action],
         stdout=subprocess.PIPE,
@@ -121,6 +154,7 @@ def run_demand(role, action):
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
+    timeout = SOCKET_TIMEOUT
 
     def log_message(self, fmt, *args):
         sys.stderr.write("hearth-swapd: %s\n" % (fmt % args))
@@ -156,16 +190,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not self._require_auth():
             return
-        if not HOST_TOKEN:
-            self._send(503, "host token missing\n")
-            return
         if not ROLES_TSV.strip():
             self._send(503, "roles not resolved on this host\n")
             return
         try:
-            with _lock:
-                agent = current_agent()
-            self._send_json(200, {"agent": agent})
+            self._send_json(200, {"agent": current_agent()})
         except Exception as e:
             self._send(502, "agent check failed: %s\n" % e)
 
@@ -176,14 +205,20 @@ class Handler(BaseHTTPRequestHandler):
             return
         if not self._require_auth():
             return
-        if not HOST_TOKEN:
-            self._send(503, "host token missing\n")
+        try:
+            length = int(self.headers.get("Content-Length") or "0")
+        except ValueError:
+            length = -1
+        if length < 0 or length > MAX_BODY:
+            self._send(400, "bad Content-Length\n")
             return
-        length = int(self.headers.get("Content-Length") or "0")
         raw = self.rfile.read(length) if length > 0 else b"{}"
         try:
             body = json.loads(raw.decode("utf-8") or "{}")
         except ValueError:
+            self._send(400, "bad json\n")
+            return
+        if not isinstance(body, dict):
             self._send(400, "bad json\n")
             return
         role = body.get("role") or ""
@@ -194,7 +229,7 @@ class Handler(BaseHTTPRequestHandler):
         if action not in ("up", "down"):
             self._send(400, "action must be up or down\n")
             return
-        with _lock:
+        with _swap_lock:
             code, out, err = run_demand(role, action)
         if code == 0:
             self._send(200, (out or "ok") + "\n")
@@ -209,13 +244,14 @@ def main():
     if not ROOT:
         sys.stderr.write("hearth-swapd: HEARTH_ROOT not set\n")
         return 2
-    if not HOST_TOKEN:
-        sys.stderr.write("hearth-swapd: OMLX_HOST_TOKEN not set\n")
+    if not host_token():
+        sys.stderr.write("hearth-swapd: OMLX_HOST_TOKEN not set in %s\n" % ENV_FILE)
         return 2
     if not os.path.isfile(DEMAND):
         sys.stderr.write("hearth-swapd: missing %s\n" % DEMAND)
         return 2
-    server = HTTPServer((HOST, SWAP_PORT), Handler)
+    ThreadingHTTPServer.daemon_threads = True
+    server = ThreadingHTTPServer((HOST, SWAP_PORT), Handler)
     sys.stderr.write(
         "hearth-swapd: listening on %s:%s (oMLX :%s)\n" % (HOST, SWAP_PORT, OMLX_PORT)
     )

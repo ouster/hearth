@@ -94,14 +94,25 @@ _hearth_our_ssh() {
   ps axww -o command= 2>/dev/null \
     | grep -F "ssh " \
     | grep -F -- "-L 127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" \
+    >/dev/null 2>&1
+}
+
+# The same ssh also carries the hearth-swapd forward (ADR 0049). Model calls
+# do not need it: a tunnel installed before ADR 0049 still serves oMLX. Only
+# hearth-load checks this, before it sends the token to the swap port.
+_hearth_swap_forward() {
+  ps axww -o command= 2>/dev/null \
+    | grep -F "ssh " \
+    | grep -F -- "-L 127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" \
     | grep -F -- "-L 127.0.0.1:${HEARTH_SWAP_PORT}:127.0.0.1:1236" \
     >/dev/null 2>&1
 }
 
-# The tunnel forwards oMLX and hearth-swapd (ADR 0045, 0049). An old ssh that
-# also forwards SearXNG is still "up" for the model; _hearth_tunnel_stale says so.
+# "Up" means the oMLX forward (ADR 0045). An old ssh that also forwards
+# SearXNG, or that lacks the swapd forward, is still up for the model;
+# _hearth_tunnel_stale says so.
 _hearth_forwards_open() {
-  _hearth_port_open "$HEARTH_LOCAL_PORT" && _hearth_port_open "$HEARTH_SWAP_PORT"
+  _hearth_port_open "$HEARTH_LOCAL_PORT"
 }
 
 # 0 when it is safe to send the token. Prints the reason on failure.
@@ -152,7 +163,8 @@ _hearth_tunnel_stale() {
     echo "tunnel: this agent still forwards SearXNG. Search stays on this machine (ADR 0045). Run: ai-tunnel-stop && ai-tunnel-install" >&2
   fi
   if [ -f "$_plist" ] && ! grep -F -- "127.0.0.1:1236" "$_plist" >/dev/null 2>&1; then
-    echo "tunnel: this agent has no hearth-swapd forward (:1236). Run: ai-tunnel-stop && ai-tunnel-install" >&2
+    echo "tunnel: this agent has no hearth-swapd forward, so hearth-load cannot use the tunnel (ADR 0049)." >&2
+    echo "        On the host first: scripts/client-setup.sh --update-keys. Then here: ai-tunnel-stop && ai-tunnel-install" >&2
   fi
   if ps axww -o command= 2>/dev/null \
       | grep -F -- "-L 127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" \
@@ -163,7 +175,11 @@ _hearth_tunnel_stale() {
 }
 
 _hearth_tunnel_up_msg() {
-  echo "tunnel: up (oMLX → 127.0.0.1:${HEARTH_LOCAL_PORT}, swapd → 127.0.0.1:${HEARTH_SWAP_PORT})"
+  if _hearth_swap_forward; then
+    echo "tunnel: up (oMLX → 127.0.0.1:${HEARTH_LOCAL_PORT}, swapd → 127.0.0.1:${HEARTH_SWAP_PORT})"
+  else
+    echo "tunnel: up (oMLX → 127.0.0.1:${HEARTH_LOCAL_PORT}; no swapd forward)"
+  fi
   _hearth_tunnel_stale
 }
 
@@ -176,8 +192,7 @@ _hearth_tunnel_plist() {
 _hearth_plist_ours() {
   _plist="$(_hearth_tunnel_plist)"
   [ -f "$_plist" ] || return 1
-  grep -F -- "127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" "$_plist" >/dev/null 2>&1 \
-    && grep -F -- "127.0.0.1:${HEARTH_SWAP_PORT}:127.0.0.1:1236" "$_plist" >/dev/null 2>&1
+  grep -F -- "127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" "$_plist" >/dev/null 2>&1
 }
 
 _hearth_tunnel_names_ok() {
@@ -292,7 +307,7 @@ ai-tunnel() {
   fi
   if _hearth_port_open "$HEARTH_LOCAL_PORT"; then
     if _hearth_forwards_open; then
-      echo "tunnel: already listening on 127.0.0.1:${HEARTH_LOCAL_PORT} and :${HEARTH_SWAP_PORT}"
+      echo "tunnel: already listening on 127.0.0.1:${HEARTH_LOCAL_PORT}"
       _hearth_tunnel_stale
       return 0
     fi
@@ -433,12 +448,20 @@ _hearth_load_http() {
       return 0
       ;;
     000)
+      # No answer: the caller may try another path.
       echo "hearth: swapd did not answer on 127.0.0.1:${HEARTH_SWAP_PORT}" >&2
+      unset _code _out
+      return 3
+      ;;
+    401)
+      echo "hearth: swapd refused ~/.hearth-key (401). ai-ping shows whether oMLX accepts it." >&2
       unset _code _out
       return 1
       ;;
     *)
-      echo "hearth: swapd HTTP ${_code}: ${_out}" >&2
+      # It answered and said no (wrong tier, a failed load). Another path
+      # would run the same demand-load.sh, so do not retry.
+      echo "hearth: the host refused (HTTP ${_code}): ${_out}" >&2
       unset _code _out
       return 1
       ;;
@@ -446,6 +469,7 @@ _hearth_load_http() {
 }
 
 _hearth_agent_http() {
+  _hearth_swap_forward || return 1
   _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
   _out=$(printf 'header = "Authorization: Bearer %s"\n' "$_k" \
     | curl -s -m 8 -K - "${HEARTH_SWAP_URL}/v1/hearth/agent") || {
@@ -467,17 +491,24 @@ hearth-load() {
   case "${2:-}" in up|down) : ;; *)
     echo "usage: hearth-load coding-brain|deep-brain up|down" >&2; return 2 ;; esac
   _hearth_connect || return 1
-  if _hearth_port_open "$HEARTH_SWAP_PORT"; then
-    _hearth_load_http "$1" "$2" && return 0
+  # The token goes to the swap port only when our own ssh holds that forward.
+  if _hearth_swap_forward && _hearth_port_open "$HEARTH_SWAP_PORT"; then
+    _hearth_load_http "$1" "$2"
+    _lrc=$?
+    # 0 done. 1 the host answered and refused. 3 no answer: try SSH below.
+    [ "$_lrc" = 3 ] || { _lr=$_lrc; unset _lrc; return $_lr; }
+    unset _lrc
+    echo "        On the host: scripts/hearth-swapd.sh up" >&2
+  else
+    echo "hearth: this tunnel has no hearth-swapd forward (ADR 0049)." >&2
+    echo "        On the host: scripts/client-setup.sh --update-keys. Then here: ai-tunnel-stop && ai-tunnel-install" >&2
   fi
   if [ -n "${HEARTH_SSH_ADMIN:-}" ]; then
-    echo "hearth: swapd unreachable; falling back to HEARTH_SSH_ADMIN" >&2
+    echo "hearth: using HEARTH_SSH_ADMIN instead" >&2
     _hearth_load_ssh "$1" "$2"
     return $?
   fi
-  echo "hearth: swapd down on 127.0.0.1:${HEARTH_SWAP_PORT}." >&2
-  echo "        On the host: scripts/hearth-swapd.sh up" >&2
-  echo "        Or set HEARTH_SSH_ADMIN and retry, or run scripts/demand-load.sh $1 $2 on the host." >&2
+  echo "        Or set HEARTH_SSH_ADMIN, or run scripts/demand-load.sh $1 $2 on the host." >&2
   return 1
 }
 
@@ -498,10 +529,15 @@ _hearth_swap_remote() {
       *)       echo "${_role}: unexpected answer from the host: ${_state}" >&2; unset _role _state; return 1 ;;
     esac
   else
-    _agent=$(_hearth_agent_http 2>/dev/null) || _agent=""
+    # hearth-load printed why. If swapd can say which agent is loaded, trust
+    # that; a wrong or absent answer stops here rather than asking.
+    _agent=$(_hearth_agent_http 2>/dev/null) || _agent="?"
     if [ "$_agent" = "$_role" ]; then
       _state=already
       echo "${_role}: already loaded on the host; this session will not unload it." >&2
+    elif [ "$_agent" != "?" ]; then
+      echo "${_role} is not loaded on the host (loaded: ${_agent:-none})." >&2
+      unset _role _state _agent; return 1
     else
       echo "${_role} must already be loaded on the host: scripts/demand-load.sh ${_role} up" >&2
       echo "(hearth-load needs swapd on :${HEARTH_SWAP_PORT}, or HEARTH_SSH_ADMIN)." >&2

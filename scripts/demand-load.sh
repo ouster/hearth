@@ -5,6 +5,8 @@
 #   scripts/demand-load.sh <role> up            # load (swap roles always evict)
 #   scripts/demand-load.sh <role> up --evict    # unload the resident first
 #   scripts/demand-load.sh <role> down          # unload; restore prior agent
+#                                               # (no-op "not-loaded" if another
+#                                               # role holds the host)
 #
 # main-brain is resident on every tier (ADR 0048). On 64 GB, coding-brain and
 # deep-brain are swap. coding-brain never shares RAM with main-brain or
@@ -20,7 +22,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 ROLE="${1:-}"; ACTION="${2:-}"; EVICT=0
 [ "${3:-}" = "--evict" ] && EVICT=1
-[ -n "$ROLE" ] && { [ "$ACTION" = up ] || [ "$ACTION" = down ]; } || { sed -n '2,8p' "$0"; exit 2; }
+[ -n "$ROLE" ] && { [ "$ACTION" = up ] || [ "$ACTION" = down ]; } || { sed -n '2,10p' "$0"; exit 2; }
 hearth_demand_roles | grep -qxF "$ROLE" || { echo "could not run: ${ROLE} is not a beside or swap role for this host in roles.tsv" >&2; exit 2; }
 LOAD="$(hearth_role_load "$ROLE")"
 if [ "$ACTION" = up ] && [ "$EVICT" = 0 ] && [ "$LOAD" = swap ]; then
@@ -196,6 +198,25 @@ if leaf not in listing():
 default_resident = residents[0] if residents else None
 
 if action == "down":
+    # Another session may hold the host (ADR 0049 makes two clients likely).
+    # A down for a role that is not loaded must not unload what is: it would
+    # end that other session. If deep-brain is in and would restore this role
+    # afterwards, point it at the resident instead, since this role's session
+    # has just ended.
+    if not loaded(leaf):
+        models = listing()
+        others = [
+            n for n in agents + ["deep-brain"]
+            if n != role and role_to_leaf.get(n)
+            and (models.get(role_to_leaf[n]) or {}).get("loaded")
+        ]
+        if others:
+            if role == "deep-brain":
+                clear_prior()
+            elif read_prior() == role and default_resident:
+                write_prior(default_resident)
+            print("not-loaded")
+            raise SystemExit(0)
     unload(leaf)
     if role == "deep-brain":
         prior = read_prior()

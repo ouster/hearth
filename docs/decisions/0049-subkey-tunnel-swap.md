@@ -33,7 +33,16 @@ laptop.
 ## Consequences
 
 - A stolen sub-key can swap the host agent (unload `main-brain`). It still
-  cannot use oMLX `/admin`.
+  cannot use oMLX `/admin`. Every key oMLX accepts can do this, an editor
+  sub-key included, not only a laptop key (`docs/THREAT-MODEL.md` §5).
+- A tunnel installed before this ADR still serves oMLX. Only `hearth-load`
+  needs the second forward, and says so when it is missing.
+- `scripts/demand-load.sh <role> down` does nothing when that role is not
+  loaded and another one is, so one session's exit cannot end another's.
+- The host token is not in the daemon's environment. It reads
+  `~/.config/hearth/env` when the agent check needs the admin API.
+- swapd is optional: a failed start is a warning in `boot.sh`,
+  `install-autostart.sh --check`, preflight and `healthcheck.sh`.
 - Old tunnel keys and LaunchAgents need `scripts/client-setup.sh
   --update-keys` and `ai-tunnel-stop && ai-tunnel-install`.
 - Boot and autostart keep swapd up with oMLX (`com.hearth.swap`).
