@@ -799,19 +799,22 @@ alone. Legacy `ai-stack` markers migrate to `hearth`. Check without writing:
 Assistant, aider and Xcode use the repo `AGENTS.md` / `CLAUDE.md` inside this
 checkout instead.
 
-Three setup skills live in `.claude/skills/`. Claude Code, VS Code (Agent
-Skills) and Cline all load them from there. Ask in plain words, for example
-"set up this laptop for hearth", and the matching one loads:
+Skills live in `.claude/skills/`. Claude Code, VS Code (Agent Skills) and
+Cline all load them from there. Ask in plain words, for example "set up this
+laptop for hearth", and the matching one loads:
 
 | Skill | For |
 |---|---|
 | `hearth-host-setup` | first-time host setup or repair: oMLX, weights, token, autostart, preflight, registering a laptop or editor key |
 | `hearth-laptop-setup` | a laptop's tunnel, client script and token, then proving `ai-ping` and that the key is tunnel-only |
 | `hearth-editor-setup` | VS Code, Cline, JetBrains or Zed on `main-brain`, plus the three checks (no fallback, tool loop, loop guard) |
+| `hearth-implement` | plan-approved changes (ADR when needed, minimal diff, named checks) |
+| `hearth-review` | critique only; second slot on `main-brain` when fan-out fits (ADR 0050) |
 
-Each one first checks which machine it is on, and stops on the wrong one.
+Setup skills first check which machine they are on, and stop on the wrong one.
 None of them reads a key or token file. The docs stay the source of truth;
-the skills only give the order, the stops and the checks.
+the skills only give the order, the stops and the checks. Always-on principles
+are in `rules/user-bootstrap.md` (Karpathy four; ADR 0050).
 
 ### Setting up a laptop
 

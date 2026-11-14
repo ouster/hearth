@@ -131,7 +131,9 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
 ## Workflow
 
 Plan → operator refines → operator approves → build. Do not start building because
-a plan looks obviously right.
+a plan looks obviously right. On-demand skills: `hearth-implement` (approved
+build), `hearth-review` (critique only). Fan-out only on resident `main-brain`
+(≤3 slots; ADR 0050). Principles: `rules/user-bootstrap.md`.
 
 Be concise. No preamble, no restating the question, no long summary of what you did.
 If the same tool error gets the same fix twice, stop, state the options, and ask.
