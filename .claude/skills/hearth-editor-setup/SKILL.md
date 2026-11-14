@@ -16,8 +16,8 @@ before acting.
   a model name (rule 1). List `deep-brain`, and `coding-brain` when the host
   has 64 GB, only as optional picks; tell the person to run
   `scripts/demand-load.sh <role> up` on the host (`hearth-load <role> up`
-  from a laptop) before selecting either, or the resident may answer
-  silently, and to switch back to `main-brain` after `down`.
+  from a laptop via hearth-swapd, ADR 0049) before selecting either, or the
+  resident may answer silently, and to switch back to `main-brain` after `down`.
 - **No cloud provider on the host** in any editor (rule 3). On a laptop,
   never pick a vendor's own cloud provider for sensitive repos.
 - **Keys:** the person types or pastes them into the editor's own key

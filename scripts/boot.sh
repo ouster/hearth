@@ -40,6 +40,20 @@ if [ -n "$wan" ]; then
   rc=1
 fi
 
+# ---------------------------------------------------------------- swapd (ADR 0049)
+log "starting hearth-swapd"
+if "${ROOT}/scripts/hearth-swapd.sh" up; then
+  log "hearth-swapd on 127.0.0.1:${HEARTH_SWAP_PORT}"
+  wan=$(hearth_wan_binds "$HEARTH_SWAP_PORT")
+  if [ -n "$wan" ]; then
+    log "FAILED: :${HEARTH_SWAP_PORT} is not loopback-only:${wan}"
+    rc=1
+  fi
+else
+  log "FAILED: scripts/hearth-swapd.sh up"
+  rc=1
+fi
+
 # ---------------------------------------------------------------- podman
 PODMAN="$(command -v podman 2>/dev/null || true)"
 if [ -z "$PODMAN" ]; then

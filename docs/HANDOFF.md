@@ -1,64 +1,53 @@
-# Handoff: ADR 0048, `main-brain` default everywhere
+# Handoff: ADR 0049, sub-key swap over the tunnel
 
-Written 2026-11-14 on the 48 GB laptop (a dual machine: its own oMLX on
-`:1234`, a tunnel to the 64 GB Mac on `:1235`). For the next person or AI
-agent in a clone of this repo. Read `CLAUDE.md` first, then
-`docs/decisions/0048-main-brain-default-everywhere.md`.
+Written 2026-11-14. Read `CLAUDE.md`, then
+`docs/decisions/0049-subkey-tunnel-swap.md` (and 0048 for the resident flip).
 
 ## State
 
-- **Decided:** `main-brain` is the resident on 64 GB and 48 GB.
-  `coding-brain` is a swap role on 64 GB only. `deep-brain` is unchanged.
-  A laptop loads the host's swap roles with `hearth-load` over an ordinary
-  SSH login (`HEARTH_SSH_ADMIN`), never the tunnel key.
-- **Changed, not committed** when this was written: 22 files plus ADR 0048
-  and this file. `git status` shows them.
-- **In `git stash` (top entry):** the operator's earlier edits to
-  `README.md`, `docs/IDES.md`, `docs/LAPTOP.md` and `docs/MCP.md`. They were
-  a broken find-and-replace. Drop the stash when the operator agrees.
+- **Decided:** `hearth-swapd` on host `127.0.0.1:1236` accepts a laptop
+  sub-key, runs `demand-load.sh` with the host token. Tunnel forwards
+  `:1236` as well as oMLX. `HEARTH_SSH_ADMIN` is fallback.
+- **Also in tree:** ADR 0048 (`main-brain` resident everywhere).
 
-## Checked on the laptop
+## Prove on the 64 GB host
 
-| Check | Result |
-|---|---|
-| `scripts/preflight.sh` | 38 pass, 4 fail, 1 warn. The `roles.tsv` failures are gone; the 4 are older (below) |
-| `HEARTH_RAM_GB=64 scripts/preflight.sh` | resolves `main-brain=resident coding-brain=swap deep-brain=swap` |
-| `bash -n` and `zsh -n` on every edited script | clean |
-| `scripts/demand-load.sh coding-brain up` on 48 GB | refuses, exit 2 |
-| `hearth-load` with a bad role, a bad action, no `HEARTH_SSH_ADMIN` | refuses each |
-| `ask` resident lookup in `scripts/aliases.zsh` | fixed. It printed "no resident role" before, because `ROOT` was unset in a shell |
+1. Pull. `scripts/install-autostart.sh --apply` (installs `com.hearth.swap`).
+2. `scripts/omlx.sh up` then `scripts/hearth-swapd.sh status` → `up 127.0.0.1:1236`.
+3. With a sub-key (or host token as Bearer):
 
-## Not checked
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"role":"coding-brain","action":"up"}' http://127.0.0.1:1236/v1/hearth/load
+# expect: loaded
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:1236/v1/hearth/agent
+# expect: {"agent": "coding-brain"}
+curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"role":"coding-brain","action":"down"}' http://127.0.0.1:1236/v1/hearth/load
+# expect: restored main-brain
+```
 
-No model was loaded or unloaded. These need the 64 GB Mac:
+4. Sub-key must still fail oMLX admin login (blast radius is swap only).
+5. `scripts/client-setup.sh --update-keys` so laptop keys get `permitopen` `:1236`.
 
-1. Pull, then `scripts/omlx.sh up`. Expect `resident role main-brain (3 slot(s), ctx 262144)`.
-2. `scripts/zed-sync.sh`, then `scripts/healthcheck.sh`. Expect the thinking probe on `main-brain`.
-3. `scripts/demand-load.sh coding-brain up`. Expect `loaded`, and 1 slot.
-4. `scripts/demand-load.sh coding-brain down`. Expect `restored main-brain`, and 3 slots.
-5. `scripts/demand-load.sh deep-brain up` while `coding-brain` is in, then `down`. Expect `restored coding-brain`.
+## Prove on the laptop
 
-Then on the laptop:
+1. Pull. Reinstall client (`client/install-client.sh` or `--dual`).
+2. `ai-tunnel-stop && ai-tunnel-install`. Expect oMLX and swapd forwards
+   (`:1235`+`:1237` when dual; `:1234`+`:1236` on a plain laptop).
+3. **Without** `HEARTH_SSH_ADMIN`: `hearth-load coding-brain up` → `loaded`,
+   then `down` → `restored main-brain`.
+4. `coding-brain-remote` (or `coding-brain`) for one aider turn, then confirm
+   agent is `main-brain` again via `curl …/v1/hearth/agent`.
 
-1. Above the hearth block in `~/.zshrc`: `export HEARTH_SSH_ADMIN=<user>@<64 GB Mac>`. Set `HEARTH_REMOTE_ROOT` if the repo there is not `~/dev/hearth`.
-2. `client/install-client.sh --dual`. The installed `~/.hearth-client.sh` is from 2026-11-10.
-3. In a new shell: `hearth-load coding-brain up`, then `down`. Then `coding-brain-remote` for one aider turn.
-4. `scripts/zed-sync.sh`. The laptop's Zed still has `main-brain` at 131072 and a `local-edit` label.
-
-A laptop is a cloud-assistant machine for secrets: never read `~/.hearth-key`,
-`~/.hearth-gemini-key` or `~/.ssh/hearth_tunnel` (`CLAUDE.md`).
-
-## Open problems, not part of ADR 0048
+## Open problems (outside 0049)
 
 | # | Problem | Where |
 |---|---|---|
-| 1 | The 48 GB row (`262144 × 3`) is not benched on 48 GB hardware. One 200k prompt peaked at 40.0 GB on the 64 GB host, which is the 48 GB ceiling. Bench it and set the row to what fits (rules 5, 7) | `config/roles.tsv`, `docs/MODELS.md` → *Tiers* |
-| 2 | Weight pins fail on the laptop. The fast check compares file count and mtime, which differ by download. `main-brain` is also about 490 MB smaller here than recorded: run `scripts/pin-digests.sh --check --deep`. `pins/digests.tsv` holds a stale second `main-brain` row | `scripts/pin-digests.sh`, `pins/digests.tsv` |
-| 3 | Docs reference `scripts/batch.sh`, `scripts/nodes.sh` and `scripts/tag-docs.sh`, which do not exist | preflight → *Repo integrity* |
-| 4 | `/v1/models` lists every role, loaded or not, and an unloaded name can be answered by the loaded role. Without `HEARTH_SSH_ADMIN` the laptop cannot tell. A loaded-state check for a sub-key would close this | `client/hearth-client.sh` → `_hearth_swap_remote` |
-| 5 | `client/hearth-client.ps1` has no `coding-brain` or `hearth-load` command | Windows client |
-| 6 | The benches measure cold 30K prompts at 3 slots. A one-person Cline session is one slot with a long cached prefix. A bench of that shape would inform the next role choice | `bench/`, `scripts/concurrency-bench.sh` |
-| 7 | Preflight does not check that the docs name the resident that `roles.tsv` resolves to. That check would have caught the broken edit | `scripts/preflight.sh` |
-| 8 | `README.md` repeats most of `docs/IDES.md`. `docs/PLAN.md`, `docs/MIGRATION-LMSTUDIO.md`, `docs/COMPARISON.md` and `docs/SUMMARY-EMAIL.md` describe the removed gateway | docs |
+| 1 | 48 GB `262144 × 3` unbenched on 48 GB hardware | `roles.tsv`, `MODELS.md` |
+| 2 | Weight pins fail across machines; stale second `main-brain` pin row | `pins/digests.tsv` |
+| 3 | Docs reference missing `batch.sh` / `nodes.sh` / `tag-docs.sh` | preflight |
+| 4 | `client/hearth-client.ps1` has no `hearth-load` / swapd path | Windows client |
+| 5 | Benches are cold 30K × 3 slots, not one long Cline prefix | `bench/` |
 
-Workflow stays as in `CLAUDE.md`: plan, the operator refines and approves, then build.
+Workflow: plan, operator refines and approves, then build.

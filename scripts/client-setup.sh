@@ -59,7 +59,8 @@ AK="$HOME/.ssh/authorized_keys"
 # 127.0.0.1). Port 0 is rejected as "invalid permission port" on OpenSSH 10.5,
 # so the dummy port is 1. permitopen limits -L only. Without permitlisten,
 # port-forwarding re-enables remote forwards.
-RESTRICT='command="/usr/bin/false",restrict,port-forwarding,permitopen="127.0.0.1:1234",permitlisten="none:1"'
+# oMLX :1234 and hearth-swapd :1236 (ADR 0049). Run --update-keys after a change.
+RESTRICT='command="/usr/bin/false",restrict,port-forwarding,permitopen="127.0.0.1:1234",permitopen="127.0.0.1:1236",permitlisten="none:1"'
 TUNNEL_PREFIX='command="/usr/bin/false",restrict,port-forwarding,'
 
 # Comma-separated options this script does not own, in their original order.
@@ -231,7 +232,7 @@ if [ -n "$AUTH" ]; then
   cp -p "$AK" "${AK}.bak-$(date +%Y%m%d%H%M%S)"
   printf '%s %s hearth-tunnel-%s\n' "$RESTRICT" "$keybody" "$NAME" >> "$AK"
   echo "authorized tunnel-only key for ${NAME} in ${AK} (backup kept)"
-  echo "  can forward to 127.0.0.1:1234 only; no shell, no commands, no other ports"
+  echo "  can forward to 127.0.0.1:1234 (oMLX) and :1236 (hearth-swapd); no shell, no other ports"
   exit 0
 fi
 

@@ -37,7 +37,7 @@ forward it (ADR 0045).
 | API key `laptop-m5-air` | laptop `~/.hearth-key` (mode 600) | the `sub-key add` argument. Revoke one machine without touching the others |
 | `edit-brain` on the laptop's own oMLX (optional) | `~/.hearth/models`, linked into `~/.omlx/models` by `client/edit-model.sh laptop-up` | local edit prediction; host does not serve it. Paid Zed Zeta is the cloud alternative (`docs/IDES.md`, ADR 0033) |
 | API keys `jetbrains-<name>`, `xcode-<name>` (optional) | typed into the IDE's own key field | revoke one editor without touching the laptop's key (`docs/IDES.md`) |
-| SSH key `hearth_tunnel` | laptop `~/.ssh/hearth_tunnel`; host `authorized_keys` with `command="/usr/bin/false",restrict,port-forwarding,permitopen=…,permitlisten="none:1"` | the key can `-L` to `127.0.0.1:1234` only — no shell, no commands, no `-R`, no SearXNG, no other ports (ADR 0045) |
+| SSH key `hearth_tunnel` | laptop `~/.ssh/hearth_tunnel`; host `authorized_keys` with `command="/usr/bin/false",restrict,port-forwarding,permitopen=…,permitlisten="none:1"` | the key can `-L` to `127.0.0.1:1234` (oMLX) and `:1236` (hearth-swapd) only — no shell, no commands, no `-R`, no SearXNG (ADR 0045, 0049) |
 | Google API key (optional) | laptop `~/.hearth-gemini-key` (mode 600) | `ask-cloud` with the laptop's own key; the host holds no Google key (ADR 0038) |
 | `client/hearth-client.sh` / `.ps1` | laptop `~/.hearth-client.sh` | `ai-tunnel`, `ai-tunnel-install` (macOS), `ai-ping`, `ai-models`, `ai-ask`, `ask*`, `ask-deep`, `ask-cloud` |
 
@@ -230,7 +230,7 @@ key works, the second that it can do nothing else.
 | `ai-ask "say ok"` | a short reply from `main-brain` |
 | `ssh hearth true; echo $?` | **non-zero**, no shell: the key is tunnel-only |
 | `ask-cloud` (optional) | aider on Gemini with the laptop's own key |
-| `ask-deep`, `coding-brain` (optional) | with `HEARTH_SSH_ADMIN` set: loads the role on the host, runs aider, then restores `main-brain`. Without it: asks whether the host ran `scripts/demand-load.sh <role> up`. See *Swap roles from the laptop* |
+| `ask-deep`, `coding-brain` (optional) | `hearth-load` via hearth-swapd on `:1236` (sub-key), then aider, then restore. `HEARTH_SSH_ADMIN` is fallback. See *Swap roles from the laptop* |
 
 If `ai-ping` says `BAD TOKEN`, the person re-runs the `read -rs` step with
 the right token; `NO ANSWER` means the host is asleep or oMLX is down
@@ -284,14 +284,16 @@ key. The host has none. Keep sensitive repos on a `hearth` brain.
 ### Swap roles from the laptop
 
 The host's `coding-brain` (64 GB) and `deep-brain` load in place of
-`main-brain` (ADR 0048). The tunnel key cannot run a command, so the laptop
-uses your ordinary SSH login on the host for this one step. Put this above
-the hearth block in your shell rc. The person types it; it holds no secret.
+`main-brain` (ADR 0048). Preferred path (ADR 0049): `hearth-load` posts to hearth-swapd through the
+tunnel (`127.0.0.1:1236` on a plain laptop; `:1237` when dual, so this
+machine can keep its own swapd on `:1236`). Auth is `~/.hearth-key`.
+The host token stays on the host. The tunnel key still cannot open a shell.
 
-```bash
-export HEARTH_SSH_ADMIN=you@your-host.local   # not the tunnel key
-export HEARTH_REMOTE_ROOT=dev/hearth          # the repo on the host; this is the default
-```
+After a pull that adds `:1236`, on the **host** run
+`scripts/client-setup.sh --update-keys`, then
+`scripts/install-autostart.sh --apply` (or `scripts/hearth-swapd.sh up`).
+On the **laptop**: `client/install-client.sh` (or copy the new client), then
+`ai-tunnel-stop && ai-tunnel-install`.
 
 | Command | Does |
 |---|---|
@@ -299,11 +301,18 @@ export HEARTH_REMOTE_ROOT=dev/hearth          # the repo on the host; this is th
 | `hearth-load coding-brain down` | unloads it and restores `main-brain` |
 | `coding-brain`, `ask-deep` (`-remote` when dual) | `up`, aider on that role, then `down` if this call did the loading |
 
+Fallback when swapd is down: ordinary SSH login (not the tunnel key).
+
+```bash
+export HEARTH_SSH_ADMIN=you@your-host.local
+export HEARTH_REMOTE_ROOT=dev/hearth          # default
+```
+
 For an editor: `hearth-load <role> up`, pick the role in the editor, and
 when you finish switch the editor back to `main-brain` and run `down`.
 While a swap role is loaded, `main-brain` on that host has no model of its
-own. Without `HEARTH_SSH_ADMIN`, run `scripts/demand-load.sh <role> up` on
-the host.
+own. Without swapd or `HEARTH_SSH_ADMIN`, run `scripts/demand-load.sh <role> up`
+on the host.
 
 If using the legal-research worked example from `docs/MCP.md`, install and
 review its source on the laptop too; its stdio process runs beside Zed, not on

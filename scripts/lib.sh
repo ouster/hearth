@@ -12,6 +12,8 @@ esac
 
 HEARTH_PORT="${HEARTH_PORT:-1234}"
 HEARTH_URL="${HEARTH_URL:-http://127.0.0.1:${HEARTH_PORT}/v1}"
+# Sub-key swap sidecar (ADR 0049). Tunnel may forward this port too.
+HEARTH_SWAP_PORT="${HEARTH_SWAP_PORT:-1236}"
 HEARTH_ENV="${HEARTH_ENV:-$HOME/.config/hearth/env}"
 
 # HEARTH_* is canonical; AI_STACK_* still accepted during the rename.

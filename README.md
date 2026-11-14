@@ -318,10 +318,9 @@ ask                # aider with main-brain (also: main-brain)
 ask-arch           # aider architect mode, resident on both sides
 coding-brain       # aider on the host's coding-brain (64 GB host only)
 ask-deep           # aider on the host's deep-brain (also: deep-brain)
-                   # Both load the role on the host first and restore main-brain after,
-                   # when HEARTH_SSH_ADMIN is set (docs/LAPTOP.md). Otherwise someone
-                   # runs scripts/demand-load.sh <role> up on the host
-hearth-load <role> up|down   # load or unload a host swap role, for an editor session
+                   # Both load via hearth-swapd on :1236 (ADR 0049), then restore.
+                   # HEARTH_SSH_ADMIN is fallback (docs/LAPTOP.md)
+hearth-load <role> up|down   # load or unload a host swap role (swapd, else SSH)
 ask-cloud          # Gemini via THIS machine's own key — the only cloud alias
 
 ```
@@ -499,12 +498,13 @@ selection: `main-brain`.
 
 Cline only **selects** a role. It does not load or unload weights. On the
 host, `demand-load.sh <role> up` / `down` (or `coding-brain` / `ask-deep`)
-swaps RAM; from a laptop, `hearth-load <role> up` / `down` does the same
-(`docs/LAPTOP.md`). `coding-brain` and `deep-brain` each evict `main-brain`
-for the session (ADR 0048). Pick a swap role in Cline only while it is
-loaded; after `down`, switch the model picker back to `main-brain`. There
-is no cloud fallback, but a call to a role that is not loaded can be
-answered by the role that is, without saying so.
+swaps RAM; from a laptop, `hearth-load <role> up` / `down` posts to
+hearth-swapd on `:1236` with the laptop sub-key (ADR 0049; `docs/LAPTOP.md`).
+`coding-brain` and `deep-brain` each evict `main-brain` for the session
+(ADR 0048). Pick a swap role in Cline only while it is loaded; after `down`,
+switch the model picker back to `main-brain`. There is no cloud fallback,
+but a call to a role that is not loaded can be answered by the role that
+is, without saying so.
 
 **2. Privacy** — Settings → General: turn off usage and error reporting.
 Connectors / Composio: off. If a Slack (or other) auth link appears, do

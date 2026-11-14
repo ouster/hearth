@@ -34,7 +34,8 @@ Read `docs/ROUTING.md` before suggesting any routing change.
 `demand-load.sh coding-brain up` swaps `main-brain` out and `down` restores
 it; `ask-deep` evicts the current agent, loads `deep-brain`, and restores the
 prior agent on the way out (ADR 0031, 0033, 0047). A laptop loads the host's
-swap roles with `hearth-load` over an ordinary SSH login (ADR 0048). `edit-brain` is laptop oMLX only (ADR 0033 amend).
+swap roles with `hearth-load` via hearth-swapd on `:1236` (sub-key over the
+tunnel, ADR 0049); `HEARTH_SSH_ADMIN` is fallback. `edit-brain` is laptop oMLX only (ADR 0033 amend).
 
 Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgres is the removed gateway — never suggest commands against it. `docs/MIGRATION-LMSTUDIO.md` is the record of the earlier cut onto LM Studio, which oMLX replaced.
 

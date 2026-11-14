@@ -16,6 +16,7 @@ flowchart TB
         searx["SearXNG :8888<br/>(Podman)"]
         sbx["sandboxed.sh agents"]
         srv["oMLX 127.0.0.1:1234<br/>main-brain: 256K x 3 (resident)<br/>coding-brain: 98K x 1 (swap, 64 GB only)<br/>deep-brain: 64K, swaps current agent<br/>token required"]
+        swapd["hearth-swapd :1236<br/>sub-key load/unload"]
     end
 
     laptop["Laptop<br/>SSH tunnel, own token<br/>optional edit-brain on own oMLX"]
@@ -27,16 +28,19 @@ flowchart TB
     zed -.->|"Web and Write + search"| searx
     sbx -->|"only allowed egress"| srv
     laptop -->|"ssh -L, tunnel-only key"| srv
+    laptop -->|"ssh -L :1236"| swapd
+    swapd -->|"demand-load + host token"| srv
     laptop -.-> cloud
 
     classDef localCls fill:#E1F5EE,stroke:#0F6E56,color:#085041
     classDef leaveCls fill:#FAEEDA,stroke:#854F0B,color:#633806
-    class srv localCls
+    class srv,swapd localCls
     class cloud,searx leaveCls
 ```
 
 SearXNG in that diagram is the host's. A laptop runs its own on
-`127.0.0.1:8888`. The tunnel forwards oMLX only (ADR 0045).
+`127.0.0.1:8888`. The tunnel forwards oMLX and hearth-swapd (ADR 0045, 0049).
+On a dual machine the local ends are `:1235` (oMLX) and `:1237` (swapd).
 
 Everything addresses **roles**, never model names. Concrete models appear in
 exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
@@ -47,7 +51,7 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 |---|---|---|
 | `main-brain` | oMLX | **resident on every tier** (ADR 0048). 256K × 3 (ADR 0046). Default for editors and `ask` |
 | `coding-brain` | oMLX | **swap, 64 GB only** (ADR 0047, 0048). 98K × 1. `coding-brain` / `demand-load.sh coding-brain up` unloads `main-brain`; `down` restores it. Never shares RAM with `main-brain` or `deep-brain`. No 48 GB row |
-| `deep-brain` | oMLX | slower, more careful model for hard one-offs. Evicts the current agent for its session (ADR 0031, 0033, 0047). `ask-deep` restores the prior agent on the way out. Editors and laptops can use it only while the host has it in (`scripts/demand-load.sh deep-brain up`, or `hearth-load deep-brain up` from a laptop) |
+| `deep-brain` | oMLX | slower, more careful model for hard one-offs. Evicts the current agent for its session (ADR 0031, 0033, 0047). `ask-deep` restores the prior agent on the way out. Editors and laptops use it only while the host has it in (`demand-load.sh`, or `hearth-load` via hearth-swapd, ADR 0049) |
 | `edit-brain` | laptop oMLX | editor edit prediction: `/v1/completions` only, 8K × 2, on the laptop's own oMLX. Never a chat or agent model; host does not load it (ADR 0033) |
 | `cloud-cheap` | Gemini | client-only: a laptop's `ask-cloud` with that laptop's own key. Never on the host, never in oMLX (ADR 0038) |
 

@@ -257,6 +257,32 @@ hdr "Autostart"
   && ok "launchd agent $(ai_boot_label) installed and loaded" \
   || wrn "autostart not installed or last run failed — scripts/install-autostart.sh --check"
 
+# ---------------------------------------------------------------- hearth-swapd (ADR 0049)
+hdr "hearth-swapd"
+if nc -z 127.0.0.1 "$HEARTH_PORT" >/dev/null 2>&1; then
+  if nc -z 127.0.0.1 "$HEARTH_SWAP_PORT" >/dev/null 2>&1; then
+    wan=$(hearth_wan_binds "$HEARTH_SWAP_PORT")
+    if [ -n "$wan" ]; then
+      bad "hearth-swapd :${HEARTH_SWAP_PORT} is not loopback-only:${wan}"
+    else
+      ok "hearth-swapd listening on 127.0.0.1:${HEARTH_SWAP_PORT}"
+    fi
+  else
+    wrn "oMLX up but hearth-swapd not on :${HEARTH_SWAP_PORT} — scripts/hearth-swapd.sh up"
+  fi
+else
+  ok "hearth-swapd skipped (oMLX not listening)"
+fi
+if [ -f "$HOME/.ssh/authorized_keys" ]; then
+  if grep -E 'hearth-tunnel-' "$HOME/.ssh/authorized_keys" >/dev/null 2>&1; then
+    if grep -E 'hearth-tunnel-' "$HOME/.ssh/authorized_keys" | grep -F 'permitopen="127.0.0.1:1236"' >/dev/null 2>&1; then
+      ok "tunnel keys permitopen includes 127.0.0.1:1236"
+    else
+      wrn "tunnel keys lack permitopen 1236 — scripts/client-setup.sh --update-keys"
+    fi
+  fi
+fi
+
 # ---------------------------------------------------------------- hygiene
 hdr "Hygiene"
 crlf=$(find "$ROOT/scripts" "$ROOT/config" -type f \( -name '*.sh' -o -name '*.zsh' -o -name '*.tsv' \) -exec file {} \; 2>/dev/null | grep -c CRLF || true)

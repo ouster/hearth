@@ -3,13 +3,13 @@
 # settings a server-like Mac wants.
 #
 #   scripts/install-autostart.sh --check    # default: report, change nothing
-#   scripts/install-autostart.sh --apply    # write + load both launchd agents
+#   scripts/install-autostart.sh --apply    # write + load launchd agents
 #   scripts/install-autostart.sh --watch    # load only the context-trim watcher
 #   scripts/install-autostart.sh --remove
 #
-# The agent runs scripts/boot.sh once at login (RunAtLoad, no KeepAlive):
-# start oMLX, load the resident role, start Podman + SearXNG. Log:
-# ~/Library/Logs/hearth-boot.log
+# The boot agent runs scripts/boot.sh once at login (RunAtLoad, no KeepAlive):
+# start oMLX, hearth-swapd, Podman + SearXNG. Log: ~/Library/Logs/hearth-boot.log
+# com.hearth.swap (KeepAlive) serves sub-key load/unload on :1236 (ADR 0049).
 #
 # Exit 0 ok, 1 not installed / broken (--check), 2 could not run.
 
@@ -23,6 +23,9 @@ LOG="$HOME/Library/Logs/hearth-boot.log"
 WATCH_LABEL="com.hearth.context-watch"
 WATCH_PLIST="$HOME/Library/LaunchAgents/${WATCH_LABEL}.plist"
 WATCH_LOG="$HOME/Library/Logs/hearth-context-watch.log"
+SWAP_LABEL="com.hearth.swap"
+SWAP_PLIST="$HOME/Library/LaunchAgents/${SWAP_LABEL}.plist"
+SWAP_LOG="$HOME/Library/Logs/hearth-swapd.log"
 DOMAIN="gui/$(id -u)"
 MODE="${1:---check}"
 
@@ -92,6 +95,49 @@ write_watch_plist() {
 EOF
 }
 
+write_swap_plist() {
+  cat > "$SWAP_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${SWAP_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>${ROOT}/scripts/hearth-swapd.sh</string>
+    <string>run</string>
+  </array>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>${SWAP_LOG}</string>
+  <key>StandardErrorPath</key>
+  <string>${SWAP_LOG}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+</dict>
+</plist>
+EOF
+}
+
+load_swap() {
+  mkdir -p "$(dirname "$SWAP_PLIST")" "$(dirname "$SWAP_LOG")"
+  write_swap_plist
+  plutil -lint "$SWAP_PLIST" >/dev/null || { echo "FAIL: swap plist does not lint"; return 1; }
+  launchctl bootout "${DOMAIN}/${SWAP_LABEL}" >/dev/null 2>&1 || true
+  launchctl bootstrap "$DOMAIN" "$SWAP_PLIST" || { echo "FAIL: launchctl bootstrap ${SWAP_LABEL}"; return 1; }
+  echo "installed ${SWAP_LABEL} — sub-key swap on 127.0.0.1:1236 (ADR 0049)"
+}
+
 load_watch() {
   mkdir -p "$(dirname "$WATCH_PLIST")" "$(dirname "$WATCH_LOG")"
   write_watch_plist
@@ -126,6 +172,7 @@ case "$MODE" in
       echo "FAIL: launchctl bootstrap"; exit 1
     fi
     load_watch || exit 1
+    load_swap || exit 1
     print_sleep_advice
     exec "$0" --check
     ;;
@@ -136,8 +183,9 @@ case "$MODE" in
   --remove)
     launchctl bootout "${DOMAIN}/${LABEL}" >/dev/null 2>&1 || true
     launchctl bootout "${DOMAIN}/${WATCH_LABEL}" >/dev/null 2>&1 || true
-    rm -f "$PLIST" "$WATCH_PLIST"
-    echo "removed ${LABEL} and ${WATCH_LABEL}"
+    launchctl bootout "${DOMAIN}/${SWAP_LABEL}" >/dev/null 2>&1 || true
+    rm -f "$PLIST" "$WATCH_PLIST" "$SWAP_PLIST"
+    echo "removed ${LABEL}, ${WATCH_LABEL}, and ${SWAP_LABEL}"
     ;;
   --check)
     rc=0
@@ -169,6 +217,17 @@ case "$MODE" in
       echo "OK    ${WATCH_LABEL} loaded"
     else
       echo "FAIL  ${WATCH_LABEL} not loaded"; rc=1
+    fi
+    if [ -f "$SWAP_PLIST" ] && plutil -lint "$SWAP_PLIST" >/dev/null 2>&1 \
+       && grep -q "${ROOT}/scripts/hearth-swapd.sh" "$SWAP_PLIST"; then
+      echo "OK    plist ${SWAP_PLIST}"
+    else
+      echo "FAIL  no valid swap plist (--apply)"; rc=1
+    fi
+    if launchctl print "${DOMAIN}/${SWAP_LABEL}" >/dev/null 2>&1; then
+      echo "OK    ${SWAP_LABEL} loaded"
+    else
+      echo "FAIL  ${SWAP_LABEL} not loaded"; rc=1
     fi
     [ -f "$LOG" ] && { echo "--- last lines of ${LOG}"; tail -5 "$LOG"; }
     exit "$rc"
