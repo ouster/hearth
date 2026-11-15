@@ -273,7 +273,19 @@ link_weights_path() {
   if [ -e "$dest" ] && [ ! -L "$dest" ]; then
     fail "${dest} exists and is not a symlink"
   fi
-  ln -sfn "$src" "$dest"
+  # Already right: leave it. ln -sfn unlinks before it links, so two runs at
+  # once collide ("File exists") and the live server loses the path briefly.
+  if [ -L "$dest" ] && [ "$(readlink "$dest")" = "$src" ]; then
+    return 0
+  fi
+  if link_err=$(ln -sfn "$src" "$dest" 2>&1); then
+    return 0
+  fi
+  # Another run made the same link between our check and our ln.
+  if [ -L "$dest" ] && [ "$(readlink "$dest")" = "$src" ]; then
+    return 0
+  fi
+  fail "cannot link ${dest}: ${link_err}"
 }
 
 # Flat role directories were the old discovery ids; remove so they are not
@@ -651,8 +663,33 @@ if code == 200:
 PY
 }
 
+# One `up` at a time. Two at once (the boot agent loaded twice, or a manual
+# `up` during login boot) interleave their admin reload and load calls: one
+# load is refused by the memory guard (507), and oMLX can be left holding
+# memory that no model owns until it is restarted. Seen 2026-11-15.
+# mkdir is atomic; a lock whose owner is gone is taken over.
+UP_LOCK="${HOME}/.omlx/hearth-up.lock"
+take_up_lock() {
+  local waited=0 owner
+  mkdir -p "${HOME}/.omlx"
+  while ! mkdir "$UP_LOCK" 2>/dev/null; do
+    owner="$(cat "${UP_LOCK}/pid" 2>/dev/null || true)"
+    if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
+      rm -rf "$UP_LOCK"
+      continue
+    fi
+    [ "$waited" -eq 0 ] && echo "omlx: another 'up' is running (pid ${owner:-?}); waiting for it"
+    waited=$((waited + 2))
+    [ "$waited" -ge 900 ] && fail "another 'up' still holds ${UP_LOCK} after 15 min"
+    sleep 2
+  done
+  echo "$$" > "${UP_LOCK}/pid"
+  trap 'rm -rf "$UP_LOCK"' EXIT
+}
+
 cmd_up() {
   OMLX="$(find_omlx)" || fail "omlx not installed"
+  take_up_lock
   row="$(role_fields)"
   [ -n "$row" ] || fail "no resident omlx chat role in config/roles.tsv fits $(hearth_ram_gb || echo ?) GB of RAM (tiers, ADR 0032)"
   RESIDENT="$(printf '%s' "$row" | cut -f1)"
