@@ -1,340 +1,280 @@
 #!/usr/bin/env python3
-"""Proxy for oMLX that enriches /v1/models with display_name from roles.tsv.
+"""Loopback proxy that adds display_name to oMLX's /v1/models (ADR 0051).
 
-Reads oMLX's /v1/models, annotates each entry with an IDE-friendly label
-(mirrors zed-sync.sh), and forwards it to the client.  All other paths
-(pass-through) are streamed chunk-by-chunk to preserve SSE chat streaming.
+    scripts/model-proxy.py [--port 1238] [--root REPO] [--timeout SECS]
 
-Usage:
-    # Local proxy (enriched models → local oMLX)
-    scripts/model-proxy.py --port 1238 --local
+Listens on 127.0.0.1:PORT and forwards everything to this machine's oMLX on
+127.0.0.1:HEARTH_PORT (1234). GET /v1/models gains a display_name per role,
+in the shape scripts/zed-sync.sh writes: "role — leaf — ctx × slots". Every
+other request passes through untouched and streams as it arrives.
 
-    # Remote proxy (enriched models → SSH tunnel)
-    scripts/model-proxy.py --port 1239 --remote --tunnel-port 1235
+It holds no key. The client's own Authorization header is forwarded as sent,
+so a request without a key gets oMLX's 401, exactly as on :1234. It never
+reads ~/.config/hearth/env.
 
-    # Manual
-    scripts/model-proxy.py --port PORT [--root REPO] [--local | --remote --tunnel-port PORT] [--timeout SECS]
+Local oMLX only. A dual machine's hearth-remote provider stays on the tunnel
+(:1235): the labels here come from this machine's roles.tsv and RAM tier.
 
-The proxy reads resolved roles from `hearth_resolved_roles` via lib.sh, so
-the displayed label always matches the model actually loaded on this host.
+Exit 0 stopped, 2 could not start (roles unresolved, port in use).
 """
 from __future__ import annotations
 
 import argparse
 import http.client
-import http.server
 import json
 import os
 import subprocess
 import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional
 
-# ── defaults ──────────────────────────────────────────────────────────────
+DEFAULT_PORT = 1238
+# A long prompt can prefill for minutes before the first byte.
+DEFAULT_TIMEOUT = 1800
+BACKEND_HOST = "127.0.0.1"
+BACKEND_PORT = int(os.environ.get("HEARTH_PORT") or "1234")
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
-DEFAULT_TIMEOUT = 300  # seconds — long turns (minutes, not seconds)
-SCRIPT_DIR = Path(__file__).resolve().parent
-REPO_ROOT = SCRIPT_DIR.parent
-
-
-# ── helpers ───────────────────────────────────────────────────────────────
-
-def read_api_key() -> Optional[str]:
-    """Read oMLX API key from ~/.config/hearth/env (OMLX_HOST_TOKEN)."""
-    env_path = Path.home() / ".config" / "hearth" / "env"
-    if not env_path.exists():
-        return None
-    for line in env_path.read_text().splitlines():
-        if line.startswith("OMLX_HOST_TOKEN="):
-            return line.split("=", 1)[1]
-    return None
+# Not forwarded in either direction. http.client sets Host and Content-Length
+# itself and decodes chunked bodies, so the originals would be wrong.
+HOP_HEADERS = frozenset((
+    "host", "connection", "keep-alive", "proxy-authenticate",
+    "proxy-authorization", "proxy-connection", "te", "trailer",
+    "transfer-encoding", "upgrade", "content-length",
+))
 
 
-def resolve_roles(root: Path) -> Dict[str, tuple]:
-    """Return {role: (model_key, leaf, ctx_label, slot_n, load)} via hearth_resolved_roles.
+def log(msg: str) -> None:
+    sys.stderr.write("[model-proxy] %s\n" % msg)
+    sys.stderr.flush()
 
-    Calls the bash helper so the label always matches the model loaded on
-    this host (tier resolved from installed RAM).
+
+# ── labels ────────────────────────────────────────────────────────────────
+
+def resolved_rows(root: Path) -> list:
+    """This host's rows from lib.sh's hearth_resolved_roles (RAM tier applied).
+
+    Eight tab-separated columns: role backend key ctx slots weights draft load.
+    Raises RuntimeError when the helper cannot run or prints nothing.
     """
-    raw = parse_raw_roles(root)
-    if not raw:
-        return raw
-
-    lib = root / "scripts" / "lib.sh"
+    script = 'ROOT="$1"; . "$ROOT/scripts/lib.sh" && hearth_resolved_roles'
     try:
         proc = subprocess.run(
-            ["bash", "-c", f'. "{lib}" && echo "$ROOT" && hearth_resolved_roles'],
+            ["/bin/bash", "-c", script, "model-proxy", str(root)],
             capture_output=True, text=True, timeout=30,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return _resolve_fallback(raw)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise RuntimeError("hearth_resolved_roles could not run: %s" % e)
+    if proc.returncode != 0:
+        raise RuntimeError("hearth_resolved_roles exit %d: %s"
+                           % (proc.returncode, proc.stderr.strip()))
+    rows = [l.split("\t") for l in proc.stdout.splitlines() if l.strip()]
+    rows = [r for r in rows if len(r) >= 8]
+    if not rows:
+        raise RuntimeError("hearth_resolved_roles printed no rows")
+    return rows
 
-    lines = proc.stdout.strip().splitlines()
-    if len(lines) < 2:
-        return _resolve_fallback(raw)
 
-    # First line is ROOT; remaining lines are resolved roles.
-    resolved: Dict[str, tuple] = {}
-    for line in lines[1:]:
-        parts = line.strip().split("\t")
-        if len(parts) < 9:
+def build_labels(rows: list) -> Dict[str, str]:
+    """{role: display_name}, same rules and wording as scripts/zed-sync.sh."""
+    labels: Dict[str, str] = {}
+    for role, backend, key, ctx, slots, weights, _draft, load in (r[:8] for r in rows):
+        # Chat model picker only: no cloud rows, embeddings or edit prediction.
+        if backend != "omlx" or "embed" in key or load == "edit":
             continue
-        role, _, model_key, ctx, slots, weights, _, load = parts[:8]
         leaf = weights.rstrip("/").split("/")[-1] if weights and weights != "-" else ""
-        ctx_int = _parse_ctx(ctx)
-        ctx_label = f"{ctx_int // 1024}K" if ctx_int >= 1024 else str(ctx_int)
-        slot_n = int(slots) if str(slots).isdigit() else 0
-        resolved[role] = (model_key, leaf, ctx_label, slot_n, load)
-    return resolved
+        try:
+            ctx_n = int(ctx)
+            slot_n = int(slots) if slots.isdigit() else 0
+        except ValueError:
+            ctx_n, slot_n = 0, 0
+        ctx_label = "%dK" % (ctx_n // 1024) if ctx_n >= 1024 else ctx
+        if leaf and slot_n:
+            label = "%s — %s — %s × %s" % (role, leaf, ctx_label, slot_n)
+        elif leaf:
+            label = "%s — %s" % (role, leaf)
+        else:
+            label = role
+        if load in ("beside", "swap"):
+            label += " — load first: scripts/demand-load.sh " + role + " up"
+        labels[role] = label
+    return labels
 
 
-def _parse_ctx(ctx: str) -> int:
-    """Parse context window from roles.tsv, handling '-' for cloud rows."""
-    if ctx == "-":
-        return 0
-    try:
-        return int(ctx)
-    except ValueError:
-        return 0
+class Labels:
+    """Labels, rebuilt when config/roles.tsv changes on disk."""
 
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.tsv = root / "config" / "roles.tsv"
+        self.mtime = self._mtime()
+        self.current = build_labels(resolved_rows(root))  # raises at startup
 
-def parse_raw_roles(root: Path) -> Dict[str, List[dict]]:
-    """Parse raw roles.tsv, returning {role: [rows]}."""
-    tsv = root / "config" / "roles.tsv"
-    if not tsv.exists():
-        return {}
-    buckets: Dict[str, List[dict]] = {}
-    with open(tsv) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = line.split("\t")
-            if len(parts) < 9:
-                continue
-            role, _, model_key, ctx, slots, weights, _, load, min_ram = parts[:9]
-            # Cloud rows (gemini etc.) have min_ram="-"; skip them.
-            if min_ram == "-":
-                continue
-            entry = {
-                "model_key": model_key,
-                "weights": weights,
-                "ctx": ctx,
-                "slots": slots,
-                "load": load,
-                "min_ram": min_ram,
-            }
-            buckets.setdefault(role, []).append(entry)
-    return buckets
+    def _mtime(self) -> float:
+        try:
+            return self.tsv.stat().st_mtime
+        except OSError:
+            return 0.0
 
-
-def _resolve_fallback(raw: Dict[str, List[dict]]) -> Dict[str, tuple]:
-    """Pick last row per role (fallback — not ideal, but works for single-tier."""
-    result: Dict[str, tuple] = {}
-    for role, rows in raw.items():
-        best = rows[-1]
-        leaf = best["weights"].rstrip("/").split("/")[-1] if best["weights"] and best["weights"] != "-" else ""
-        ctx_int = _parse_ctx(best["ctx"])
-        ctx_label = f"{ctx_int // 1024}K" if ctx_int >= 1024 else str(ctx_int)
-        slot_n = int(best["slots"]) if str(best["slots"]).isdigit() else 0
-        result[role] = (best["model_key"], leaf, ctx_label, slot_n, best["load"])
-    return result
-
-
-def build_display_name(role: str, model_key: str, leaf: str,
-                       ctx_label: str, load: str) -> str:
-    """Build label matching zed-sync.sh format: role — leaf — ctx_label."""
-    # zed-sync.sh uses: "role — leaf — ctx x slots"
-    # But we have leaf already extracted, so: "role — leaf — ctx_label"
-    label = f"{role} \u2014 {leaf} \u2014 {ctx_label}"
-    if load == "swap":
-        label += " \u2014 load first: scripts/demand-load.sh " + role + " up"
-    elif load == "edit":
-        label += " \u2014 editor edit prediction (laptop only)"
-    return label
+    def get(self) -> Dict[str, str]:
+        m = self._mtime()
+        if m != self.mtime:
+            self.mtime = m
+            try:
+                self.current = build_labels(resolved_rows(self.root))
+                log("roles.tsv changed; labels rebuilt: %s" % sorted(self.current))
+            except RuntimeError as e:
+                log("roles.tsv changed but labels not rebuilt, keeping old: %s" % e)
+        return self.current
 
 
 # ── proxy ─────────────────────────────────────────────────────────────────
 
-class ProxyHandler(http.server.BaseHTTPRequestHandler):
-    backend_url: str = "http://127.0.0.1:1234"
-    # Enrichment map: {role_id: (display_name,)}
-    display_names: Dict[str, str] = {}
+class ProxyHandler(BaseHTTPRequestHandler):
+    # HTTP/1.0 on the client side: no Content-Length means the body ends when
+    # the connection closes, which is valid framing for an SSE stream.
+    labels: Labels
     timeout_secs: int = DEFAULT_TIMEOUT
 
-    def log_message(self, format: str, *args) -> None:  # type: ignore[override]
-        sys.stderr.write(f"[model-proxy] {format % args}\n")
-        sys.stderr.flush()
+    def log_message(self, format: str, *args) -> None:  # noqa: A002
+        log(format % args)
 
-    # ── local / remote backend ────────────────────────────────────────────
+    def _forward_headers(self) -> Dict[str, str]:
+        return {k: v for k, v in self.headers.items() if k.lower() not in HOP_HEADERS}
 
-    def _is_local_backend(self) -> bool:
-        """True when forwarding to local oMLX (:1234)."""
-        parsed = self._backend_parsed()
-        return parsed.port == 1234
+    def _read_body(self) -> Optional[bytes]:
+        if "chunked" in (self.headers.get("Transfer-Encoding") or "").lower():
+            raise ValueError("chunked request bodies are not supported")
+        length = int(self.headers.get("Content-Length") or "0")
+        if length < 0:
+            raise ValueError("bad Content-Length")
+        return self.rfile.read(length) if length else None
 
-    def _backend_parsed(self) -> "urlparse":
-        from urllib.parse import urlparse
-        return urlparse(self.backend_url)
+    def _send_error_json(self, status: int, message: str) -> None:
+        data = json.dumps({"error": {"message": message, "type": "model_proxy"}}).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
 
-    def _inject_auth_if_local(self, headers: dict) -> None:
-        """Only inject API key for local backend. Remote clients must send
-        their own key through the tunnel."""
-        if not self._is_local_backend():
-            return
-        if "Authorization" in headers:
-            return
-        key = read_api_key()
-        if key:
-            headers["Authorization"] = f"Bearer {key}"
-
-    # ── streaming pass-through ────────────────────────────────────────────
-
-    def _proxy_request(self, path: str, body: Optional[bytes] = None) -> None:
-        """Forward request, streaming the response body chunk-by-chunk."""
-        parsed = self._backend_parsed()
-        headers = dict(self.headers)
-        headers.pop("host", None)
-        headers.pop("transfer-encoding", None)
-        headers.pop("content-length", None)
-
-        self._inject_auth_if_local(headers)
-
-        conn = http.client.HTTPConnection(
-            parsed.hostname, parsed.port, timeout=self.timeout_secs,
-        )
+    def _handle(self) -> None:
         try:
-            conn.request(self.command, path, body=body, headers=headers)
-            resp = conn.getresponse()
+            body = self._read_body()
+        except ValueError as e:
+            self._send_error_json(400, str(e))
+            return
+        headers = self._forward_headers()
+        is_models = self.command == "GET" and self.path.split("?")[0].rstrip("/") == "/v1/models"
+        if is_models:
+            # The body is parsed below, so ask for it uncompressed.
+            headers = {k: v for k, v in headers.items() if k.lower() != "accept-encoding"}
 
-            # Forward status + headers (skip transfer-encoding, connection, content-length
-            # to let Python's http.server handle chunked encoding)
+        conn = http.client.HTTPConnection(BACKEND_HOST, BACKEND_PORT, timeout=self.timeout_secs)
+        sent = False
+        try:
+            try:
+                conn.request(self.command, self.path, body=body, headers=headers)
+                resp = conn.getresponse()
+            except (OSError, http.client.HTTPException) as e:
+                self._send_error_json(
+                    502, "oMLX on %s:%d did not answer: %s" % (BACKEND_HOST, BACKEND_PORT, e))
+                return
+
+            if is_models:
+                sent = True
+                self._send_models(resp)
+                return
+
             self.send_response(resp.status)
-            for hdr in resp.getheaders():
-                key, val = hdr
-                if key.lower() in ("transfer-encoding", "connection", "content-length"):
+            for key, val in resp.getheaders():
+                # Content-Length survives only when the body is not re-framed.
+                low = key.lower()
+                if low in HOP_HEADERS and low != "content-length":
+                    continue
+                if low == "content-length" and resp.chunked:
                     continue
                 self.send_header(key, val)
             self.end_headers()
-
-            # Stream body chunk-by-chunk (preserves SSE for chat completions)
-            # Python's http.server handles chunked encoding automatically when no Content-Length
+            sent = True
+            if self.command == "HEAD":
+                return
+            # read1 returns what has arrived, so each SSE event goes out at
+            # once. read(n) would wait for n bytes or the end of the body.
             while True:
-                chunk = resp.read(8192)
+                chunk = resp.read1(65536)
                 if not chunk:
                     break
                 self.wfile.write(chunk)
-            self.wfile.flush()
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # the client went away; closing the backend cancels the turn
+        except (OSError, http.client.HTTPException) as e:
+            log("backend failed mid-response: %s" % e)
+            if not sent:
+                self._send_error_json(502, "oMLX failed mid-response: %s" % e)
         finally:
             conn.close()
 
-    # ── model enrichment ─────────────────────────────────────────────────
-
-    def _handle_models(self) -> None:
-        """Fetch model list from backend, enrich with display_name, send."""
-        parsed = self._backend_parsed()
-        headers: Dict[str, str] = {}
-        self._inject_auth_if_local(headers)
-
-        conn = http.client.HTTPConnection(
-            parsed.hostname, parsed.port, timeout=10,
-        )
-        try:
-            conn.request("GET", "/v1/models", headers=headers)
-            resp = conn.getresponse()
-            data = resp.read()
-            models_resp = json.loads(data)
-        finally:
-            conn.close()
-
-        # Enrich each model entry
-        if "data" in models_resp:
-            for model in models_resp["data"]:
-                role_id = model.get("id", "")
-                if role_id in self.display_names:
-                    model["display_name"] = self.display_names[role_id]
-
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
+    def _send_models(self, resp: http.client.HTTPResponse) -> None:
+        """Add display_name on a 200 JSON list. Anything else passes as is."""
+        data = resp.read()
+        ctype = resp.getheader("Content-Type") or "application/json"
+        if resp.status == 200:
+            try:
+                doc = json.loads(data)
+                labels = self.labels.get()
+                for model in doc.get("data") or []:
+                    label = labels.get(model.get("id", ""))
+                    if label:
+                        model["display_name"] = label
+                data = json.dumps(doc, ensure_ascii=False).encode("utf-8")
+                ctype = "application/json; charset=utf-8"
+            except (ValueError, AttributeError, TypeError):
+                pass  # not the shape we know: send oMLX's bytes unchanged
+        self.send_response(resp.status)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
         self.end_headers()
-        self.wfile.write(json.dumps(models_resp).encode())
+        self.wfile.write(data)
 
-    # ── routing ───────────────────────────────────────────────────────────
-
-    def do_GET(self) -> None:
-        if self.path.split("?")[0] == "/v1/models":
-            self._handle_models()
-        else:
-            self._proxy_request(self.path)
-
-    def do_POST(self) -> None:
-        if self.path.split("?")[0] == "/v1/models":
-            self._handle_models()
-        else:
-            content_length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(content_length) if content_length > 0 else None
-            self._proxy_request(self.path, body)
+    do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = do_OPTIONS = do_HEAD = _handle
 
 
-# ── main ──────────────────────────────────────────────────────────────────
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="oMLX model display proxy")
-    parser.add_argument("--port", type=int, default=1238)
-    parser.add_argument("--root", type=str, default=str(REPO_ROOT),
-                        help="Hearth repo root (default: script parent)")
-    parser.add_argument("--local", action="store_true",
-                        help="Forward to local oMLX on :1234")
-    parser.add_argument("--remote", action="store_true",
-                        help="Forward to SSH tunnel (requires --tunnel-port)")
-    parser.add_argument("--tunnel-port", type=int, default=1235,
-                        help="SSH tunnel port for remote oMLX (default: 1235)")
+def main() -> int:
+    parser = argparse.ArgumentParser(description="oMLX model display proxy (ADR 0051)")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--root", default=str(REPO_ROOT),
+                        help="Hearth repo root (default: this script's parent)")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT,
-                        help=f"Backend timeout in seconds (default: {DEFAULT_TIMEOUT})")
+                        help="seconds to wait on oMLX (default: %d)" % DEFAULT_TIMEOUT)
     args = parser.parse_args()
 
-    # Validate
-    if not args.local and not args.remote:
-        parser.error("must specify --local or --remote")
-    if args.remote and args.tunnel_port == 1235:
-        pass  # default
-    root = Path(args.root)
+    # No fallback: a guessed label is worse than none (wrong tier, wrong model).
+    try:
+        labels = Labels(Path(args.root).resolve())
+    except RuntimeError as e:
+        log("cannot resolve roles: %s" % e)
+        return 2
 
-    # Resolve roles
-    display_names: Dict[str, str] = {}
-    roles = resolve_roles(root)
-    for role, (model_key, leaf, ctx_label, slot_n, load) in roles.items():
-        # Skip embeddings and edit-only roles (chat model picker only)
-        if "embed" in model_key:
-            continue
-        display_names[role] = build_display_name(role, leaf, ctx_label, slot_n, load)
-
-    if not display_names:
-        print("[model-proxy] WARNING: no roles resolved, models unenriched", file=sys.stderr)
-
-    # Backend URL
-    if args.local:
-        backend = f"http://127.0.0.1:1234"
-    else:
-        backend = f"http://127.0.0.1:{args.tunnel_port}"
-
-    ProxyHandler.display_names = display_names
-    ProxyHandler.backend_url = backend
+    ProxyHandler.labels = labels
     ProxyHandler.timeout_secs = args.timeout
-
-    server = http.server.HTTPServer(("127.0.0.1", args.port), ProxyHandler)
-    mode = "local" if args.local else "remote"
-    print(f"[model-proxy] {mode} listen 127.0.0.1:{args.port} -> {backend}", file=sys.stderr)
-    print(f"[model-proxy] roles: {sorted(display_names.keys())}", file=sys.stderr)
-    print(f"[model-proxy] timeout: {args.timeout}s", file=sys.stderr)
-    sys.stderr.flush()
-
+    ThreadingHTTPServer.daemon_threads = True
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", args.port), ProxyHandler)
+    except OSError as e:
+        log("cannot listen on 127.0.0.1:%d: %s" % (args.port, e))
+        return 2
+    log("listen 127.0.0.1:%d -> %s:%d, timeout %ds" % (args.port, BACKEND_HOST, BACKEND_PORT, args.timeout))
+    log("roles: %s" % sorted(labels.current))
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     server.server_close()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

@@ -30,7 +30,7 @@ hdr()  { printf '\n\033[1m%s\033[0m\n' "$1"; }
 hdr "Repo integrity"
 missing=""
 for r in $(grep -rhoE 'scripts/[a-z-]+\.(sh|zsh)' "$ROOT/docs" "$ROOT/scripts" "$ROOT/CLAUDE.md" "$ROOT/README.md" \
-             --exclude-dir=decisions --exclude=HISTORY.md --exclude=MIGRATION-LMSTUDIO.md \
+             --exclude-dir=decisions --exclude-dir=__pycache__ --exclude=DISTRIBUTED.md --exclude=HISTORY.md --exclude=MIGRATION-LMSTUDIO.md \
              --exclude=PLAN.md --exclude=COMPARISON.md --exclude=SUMMARY-EMAIL.md --exclude=MLX-BENCH.md \
              --exclude=LAPTOP.md --exclude=CLAUDE-PROJECT.md 2>/dev/null | sort -u); do
   [ -f "${ROOT}/${r}" ] || missing="${missing} ${r}"
@@ -280,6 +280,32 @@ if [ -f "$HOME/.ssh/authorized_keys" ]; then
     else
       wrn "tunnel keys lack permitopen 1236 — scripts/client-setup.sh --update-keys"
     fi
+  fi
+fi
+
+# ---------------------------------------------------------------- model-proxy (ADR 0051)
+hdr "model-proxy"
+PROXY_PLIST="$HOME/Library/LaunchAgents/com.hearth.model-proxy.plist"
+if [ ! -f "$PROXY_PLIST" ]; then
+  ok "model-proxy not installed (optional; editors use :${HEARTH_PORT})"
+elif ! nc -z 127.0.0.1 "$HEARTH_PROXY_PORT" >/dev/null 2>&1; then
+  # An editor pointed at the proxy has no models at all while it is down.
+  bad "model-proxy plist exists but nothing listens on :${HEARTH_PROXY_PORT} — scripts/install-autostart.sh --apply, log ~/Library/Logs/hearth-model-proxy.log"
+else
+  wan=$(hearth_wan_binds "$HEARTH_PROXY_PORT")
+  if [ -n "$wan" ]; then
+    bad "model-proxy :${HEARTH_PROXY_PORT} is not loopback-only:${wan}"
+  else
+    ok "model-proxy listening on 127.0.0.1:${HEARTH_PROXY_PORT}"
+  fi
+  if nc -z 127.0.0.1 "$HEARTH_PORT" >/dev/null 2>&1; then
+    # It must hold no key: without one it answers what oMLX answers.
+    code=$(hearth_http /models "" "http://127.0.0.1:${HEARTH_PROXY_PORT}/v1")
+    case "$code" in
+      401|403) ok "model-proxy adds no key (keyless /v1/models → ${code})" ;;
+      200)     bad "model-proxy answered a keyless /v1/models with 200 — it is injecting a key" ;;
+      *)       er "model-proxy keyless probe got ${code:-nothing}" ;;
+    esac
   fi
 fi
 

@@ -1,70 +1,77 @@
-# ADR 0051: Model Display Proxy
+# ADR 0051 — model display proxy on `:1238`
 
-**Status:** Draft  
-**Date:** 2026-11-15  
-**Author:** hearth  
+**Date:** 2026-11-15
+**Status:** proposed. The operator approved the design points below on
+2026-11-15; acceptance waits on the Cline picker check (see *Open*).
+**Amends:** rule 1 (a third generated copy of model names). Uses ADR 0048
+resident slots. Serving and routing are unchanged.
 
 ## Context
 
-oMLX's `/v1/models` endpoint returns minimal metadata:
+oMLX's `/v1/models` lists roles with no hint of what is behind them. Zed gets
+labels from `scripts/zed-sync.sh`, which writes `display_name` into Zed's
+settings. Cline and other OpenAI-compatible clients read the list from the
+server and have nowhere to put a label.
 
-```json
-{"id": "main-brain", "object": "model", "owned_by": "omlx", "max_model_len": 262144}
-```
+A first proxy (commits `15f9e8e`, `ef7ce5a`, `5f315fb`) was reviewed on
+2026-11-15 and failed on these points, each reproduced:
 
-IDEs like Zed and Cline need more context to help users understand which underlying model is loaded. Zed works around this with `zed-sync.sh` which writes hand-crafted `display_name` fields to the editor settings. Cline has no such mechanism.
+- It injected the host token for any caller without a key. A keyless chat
+  completion through it returned 200; `:1234` returned 401.
+- It buffered streams (a whole SSE reply arrived in one read) and served one
+  request at a time, which turned `main-brain`'s three slots into one.
+- It never reached `hearth_resolved_roles` and fell back to the last
+  `roles.tsv` row per role, ignoring the RAM tier.
+- Its installer wrote a root LaunchDaemon that ran a script from a
+  user-writable checkout.
 
 ## Decision
 
-Add a reverse proxy on port 1238 that:
-
-1. **Enriches `/v1/models`** with `display_name` matching `zed-sync.sh` format:
-   - `role — leaf — ctx × slots` (e.g., `main-brain — qwen3.6-35b-a3b-mlx — 256K × 3`)
-   - Adds load instructions for swap/edit models
-
-2. **Forwards all other endpoints** transparently to oMLX on port 1234, preserving SSE streaming via chunked transfer encoding
-
-3. **Reads roles via `hearth_resolved_roles`** from `scripts/lib.sh` so labels always match the model actually loaded on this host
-
-4. **Supports two modes:**
-   - `--local`: Forward to local oMLX (`:1234`)
-   - `--remote`: Forward to SSH tunnel (`--tunnel-port`, default `:1235`)
-
-## Implementation
-
-- `scripts/model-proxy.py`: Python proxy (stdlib only)
-- `scripts/companion-proxy.sh`: Launchd plist for daemon mode
-- `docs/IDES.md`: Add Cline setup instructions pointing to `:1238`
+- `scripts/model-proxy.py` listens on `127.0.0.1:1238` and forwards to this
+  machine's oMLX on `127.0.0.1:1234`. Loopback only, standard library only.
+- `GET /v1/models` gains `display_name` per role, with the rules and wording
+  of `zed-sync.sh`: `role — leaf — ctx × slots`, plus the load hint on
+  demand roles. Edit and embedding roles get none. Any answer that is not a
+  200 JSON list passes through unchanged, status included.
+- Every other request passes through and streams as bytes arrive. The server
+  is threaded, so the resident's slots stay usable (ADR 0048, 0050).
+- **It holds no key.** The client's `Authorization` header is forwarded as
+  sent. It never reads `~/.config/hearth/env`. A keyless request gets oMLX's
+  401. Preflight fails if a keyless `/v1/models` through the proxy returns 200.
+- **Local oMLX only.** There is no remote mode. On a dual machine
+  `hearth-remote` stays on the tunnel (`:1235`): labels come from this
+  machine's `roles.tsv` and RAM tier and would be wrong for another host.
+- Rows come from `hearth_resolved_roles`. If that cannot run the proxy exits
+  2; there is no fallback. Labels are rebuilt when `roles.tsv` changes.
+- It runs as the user agent `com.hearth.model-proxy`, installed by
+  `scripts/install-autostart.sh --apply`. Never as root.
+- Rule 1 now lists three generated copies: Zed's labels, `pins/digests.tsv`,
+  and this proxy's runtime labels. All are built from `roles.tsv`.
 
 ## Consequences
 
-### Positive
+- Optional. An editor can always use `:1234` directly and lose only the
+  label. An editor pointed at `:1238` has no models while the proxy is down,
+  so preflight fails when the plist exists and nothing listens.
+- The label shows what `roles.tsv` says, not what is loaded (rule 6: drift is
+  detected, not enforced).
+- A sandboxed agent still reaches `:1234` only (ADR 0016); the proxy is not
+  in the sandbox profile.
+- The client side is HTTP/1.0: one request per connection, and a stream ends
+  when the connection closes.
 
-- IDE model pickers now show meaningful labels instead of opaque role names
-- Cline, aider, and other OpenAI-compatible clients benefit automatically
-- Zed's `display_name` labels match the proxy output (same source of truth)
+## Proof (2026-11-15, on spare port 1248, this machine's own tier)
 
-### Negative
+| Check | Result |
+|---|---|
+| Keyless `/v1/models` and chat through the proxy | 401, same as `:1234` |
+| Keyed `/v1/models` (positive control) | 200, `main-brain` labelled `… — 256K × 3` |
+| Streamed completion | 17 reads over 1.9 s |
+| `/v1/models` while a stream is open | 200 in 3 ms |
+| oMLX port unreachable | 502 with a JSON error |
+| Roles unresolvable | exit 2 |
 
-- Additional hop (`:1234` → `:1238`) adds ~1ms latency (negligible for one-time model fetch, streaming passes through unchanged)
-- Users must remember to point `hearth-remote` at the SSH tunnel port (`:1235`), not `:1238`
+## Open
 
-### Unresolved
-
-- **Auth injection risk**: Local mode reads `OMLX_HOST_TOKEN` from `~/.config/hearth/env` and may inject it if the client omits `Authorization`. Host daemon is acceptable; laptop clients should provide their own keys.
-
-## Alternatives Considered
-
-1. **Patch oMLX** to expose display metadata — requires oMLX change
-2. **Zed-only sync** — doesn't help Cline/aider
-3. **No enrichment** — users see opaque role names with no indication of underlying model
-
-## Migration Plan
-
-1. ✅ Fix crash (cloud rows with `ctx="-"`)  
-2. ✅ Fix label format (`ctx × slots`)  
-3. ✅ Fix streaming (chunked encoding)  
-4. ✅ Fix dual URL (`hearth-remote` → `:1235`, `hearth` → `:1238`)  
-5. ⏳ ADR + plist in repo  
-6. ⏳ Add Cline docs  
-7. ⏳ Auth policy decision
+- Whether Cline's model picker shows `display_name`, which is not part of the
+  OpenAI schema. If it does not, remove the proxy rather than keep it.

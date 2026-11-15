@@ -44,10 +44,12 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
 1. **Concrete model names appear in exactly two files:** `config/roles.tsv` and
    `docs/MODELS.md`. Everywhere else — aliases, scripts, IDE config, code — uses roles.
    If you are about to write a model tag into a shell alias, stop.
-   Two generated copies, both written from `roles.tsv` so they cannot drift:
+   Three generated copies, all built from `roles.tsv` so they cannot drift:
    the `display_name` labels in Zed's settings (`scripts/zed-sync.sh`, from
-   `roles.tsv`), and the model key plus weights path in
-   `pins/digests.tsv` (`scripts/pin-digests.sh`). Clients always *call* the role.
+   `roles.tsv`), the model key plus weights path in
+   `pins/digests.tsv` (`scripts/pin-digests.sh`), and the `display_name`
+   labels `scripts/model-proxy.py` adds to `/v1/models` at run time
+   (ADR 0051). Clients always *call* the role.
    Same discipline for MCP servers: client config docs (`docs/IDES.md`) and
    `docs/MCP.md`.
 

@@ -434,7 +434,13 @@ README → *Cline* has the field table. Extra detail here:
    Later: Settings → Provider → BYOK → Add Provider. ID `hearth`, Base URL
    `http://127.0.0.1:1234/v1`, Model Source URL empty. Add models
    `main-brain` (262144), `deep-brain` (65536), and on a 64 GB host
-   `coding-brain` (98304); default `main-brain`. Cline selects a role; it does not demand-load —
+   `coding-brain` (98304); default `main-brain`.
+   For labels in the model list, a host may use Base URL
+   `http://127.0.0.1:1238/v1` instead (model-proxy, ADR 0051; same key,
+   same roles). `hearth-remote` on a dual machine stays on the tunnel,
+   `http://127.0.0.1:1235/v1` — never point both at `:1238`. If `:1238`
+   is down, switch back to `:1234`.
+   Cline selects a role; it does not demand-load —
    run `scripts/demand-load.sh <role> up` on the host before picking a
    swap role, then `down` and switch Cline back. Capabilities: streaming,
    tools, reasoning; prompt cache off. Do **not** use Sign in, Cline Pass,

@@ -10,6 +10,8 @@
 # The boot agent runs scripts/boot.sh once at login (RunAtLoad, no KeepAlive):
 # start oMLX, hearth-swapd, Podman + SearXNG. Log: ~/Library/Logs/hearth-boot.log
 # com.hearth.swap (KeepAlive) serves sub-key load/unload on :1236 (ADR 0049).
+# com.hearth.model-proxy (KeepAlive) serves labelled /v1/models on :1238
+# (ADR 0051). It holds no key and runs as this user, never as root.
 #
 # Exit 0 ok, 1 not installed / broken (--check), 2 could not run.
 
@@ -26,6 +28,9 @@ WATCH_LOG="$HOME/Library/Logs/hearth-context-watch.log"
 SWAP_LABEL="com.hearth.swap"
 SWAP_PLIST="$HOME/Library/LaunchAgents/${SWAP_LABEL}.plist"
 SWAP_LOG="$HOME/Library/Logs/hearth-swapd.log"
+PROXY_LABEL="com.hearth.model-proxy"
+PROXY_PLIST="$HOME/Library/LaunchAgents/${PROXY_LABEL}.plist"
+PROXY_LOG="$HOME/Library/Logs/hearth-model-proxy.log"
 DOMAIN="gui/$(id -u)"
 MODE="${1:---check}"
 
@@ -129,6 +134,50 @@ write_swap_plist() {
 EOF
 }
 
+write_proxy_plist() {
+  cat > "$PROXY_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>${PROXY_LABEL}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>${ROOT}/scripts/model-proxy.py</string>
+    <string>--port</string>
+    <string>${HEARTH_PROXY_PORT}</string>
+  </array>
+  <key>KeepAlive</key>
+  <true/>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>${PROXY_LOG}</string>
+  <key>StandardErrorPath</key>
+  <string>${PROXY_LOG}</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+</dict>
+</plist>
+EOF
+}
+
+load_proxy() {
+  mkdir -p "$(dirname "$PROXY_PLIST")" "$(dirname "$PROXY_LOG")"
+  write_proxy_plist
+  plutil -lint "$PROXY_PLIST" >/dev/null || { echo "FAIL: model-proxy plist does not lint"; return 1; }
+  launchctl bootout "${DOMAIN}/${PROXY_LABEL}" >/dev/null 2>&1 || true
+  launchctl bootstrap "$DOMAIN" "$PROXY_PLIST" || { echo "FAIL: launchctl bootstrap ${PROXY_LABEL}"; return 1; }
+  echo "installed ${PROXY_LABEL} — labelled /v1/models on 127.0.0.1:${HEARTH_PROXY_PORT} (ADR 0051)"
+}
+
 load_swap() {
   mkdir -p "$(dirname "$SWAP_PLIST")" "$(dirname "$SWAP_LOG")"
   write_swap_plist
@@ -176,6 +225,7 @@ case "$MODE" in
     fi
     load_watch || exit 1
     load_swap || exit 1
+    load_proxy || exit 1
     print_sleep_advice
     exec "$0" --check
     ;;
@@ -187,8 +237,9 @@ case "$MODE" in
     launchctl bootout "${DOMAIN}/${LABEL}" >/dev/null 2>&1 || true
     launchctl bootout "${DOMAIN}/${WATCH_LABEL}" >/dev/null 2>&1 || true
     launchctl bootout "${DOMAIN}/${SWAP_LABEL}" >/dev/null 2>&1 || true
-    rm -f "$PLIST" "$WATCH_PLIST" "$SWAP_PLIST"
-    echo "removed ${LABEL}, ${WATCH_LABEL}, and ${SWAP_LABEL}"
+    launchctl bootout "${DOMAIN}/${PROXY_LABEL}" >/dev/null 2>&1 || true
+    rm -f "$PLIST" "$WATCH_PLIST" "$SWAP_PLIST" "$PROXY_PLIST"
+    echo "removed ${LABEL}, ${WATCH_LABEL}, ${SWAP_LABEL}, and ${PROXY_LABEL}"
     ;;
   --check)
     rc=0
@@ -232,6 +283,23 @@ case "$MODE" in
       echo "OK    ${SWAP_LABEL} loaded"
     else
       echo "WARN  ${SWAP_LABEL} not loaded (--apply)"
+    fi
+    # Optional (ADR 0051): editors can always use :1234 directly.
+    if [ -f "$PROXY_PLIST" ] && plutil -lint "$PROXY_PLIST" >/dev/null 2>&1 \
+       && grep -q "${ROOT}/scripts/model-proxy.py" "$PROXY_PLIST" \
+       && ! grep -q -e '--backend' -e '--local' "$PROXY_PLIST"; then
+      echo "OK    plist ${PROXY_PLIST}"
+    else
+      echo "WARN  no current model-proxy plist — no labelled /v1/models on :${HEARTH_PROXY_PORT} (--apply)"
+    fi
+    if launchctl print "${DOMAIN}/${PROXY_LABEL}" >/dev/null 2>&1; then
+      plast=$(launchctl print "${DOMAIN}/${PROXY_LABEL}" | awk -F'= ' '/last exit code/ {print $2; exit}')
+      case "${plast:-}" in
+        ''|0|"(never exited)") echo "OK    ${PROXY_LABEL} loaded" ;;
+        *) echo "WARN  ${PROXY_LABEL} loaded but exiting (last exit: ${plast}) — see ${PROXY_LOG}" ;;
+      esac
+    else
+      echo "WARN  ${PROXY_LABEL} not loaded (--apply)"
     fi
     [ -f "$LOG" ] && { echo "--- last lines of ${LOG}"; tail -5 "$LOG"; }
     exit "$rc"
