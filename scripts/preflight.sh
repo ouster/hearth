@@ -235,7 +235,7 @@ hdr "Zed labels"
 zs=$("${ROOT}/scripts/zed-sync.sh" --check 2>&1); zrc=$?
 case "$zrc" in
   0) ok "Zed model labels match roles.tsv (scripts/zed-sync.sh)" ;;
-  1) wrn "Zed labels out of date: $(printf '%s' "$zs" | grep -E 'DRIFT|MISSING|skip' | head -1) — run scripts/zed-sync.sh" ;;
+  1) wrn "Zed labels out of date: $(printf '%s' "$zs" | grep -E 'DRIFT|MISSING|skip' | head -1) — scripts/zed-sync.sh (remote entries: by hand)" ;;
   *) wrn "zed-sync could not run: $(printf '%s' "$zs" | tail -1)" ;;
 esac
 

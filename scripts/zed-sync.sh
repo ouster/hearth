@@ -10,11 +10,19 @@
 #
 # Renames retired ADR 0039 role ids (built at runtime; this file does not
 # spell them) wherever they appear, then edits only `display_name` and
-# `max_tokens` on entries whose `name` is a role. Comments and every other
-# field stay. Backup: settings.json.zed-sync.bak
+# `max_tokens` on entries whose `name` is a role, and only inside the local
+# `hearth` provider. Comments and every other field stay.
+# Backup: settings.json.zed-sync.bak
 #
-# Exit 0 in sync / updated, 1 drift (--check) or a role missing in Zed,
-# 2 could not run.
+# `hearth-remote` (a dual machine's tunnel to another host, ADR 0040) is read
+# and never written: this repo does not know that host's RAM tier, so its
+# labels are hand-written and role-only. An entry there that carries one of
+# this machine's labels is reported as drift.
+#
+# A demand role that is not listed under `hearth` is a note, not drift.
+#
+# Exit 0 in sync / updated, 1 drift (--check), a resident role missing, or a
+# local label on a `hearth-remote` entry, 2 could not run.
 
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -68,6 +76,67 @@ def strip_jsonc(src):
         i += 1
     return re.sub(r",(\s*[}\]])", r"\1", "".join(out))
 
+def find_block(src, key):
+    """(start, end) of the object that is the value of the first key `key`,
+    braces included. Strings and comments are skipped. None if there is none."""
+    i, n = 0, len(src)
+    want_colon = want_brace = False
+    while i < n:
+        c = src[i]
+        if c == '"':
+            j = i + 1
+            while j < n and src[j] != '"':
+                j += 2 if src[j] == "\\" else 1
+            is_key = src[i + 1:j] == key
+            i = j + 1
+            want_colon, want_brace = is_key, False
+            continue
+        if c == "/" and i + 1 < n and src[i + 1] == "/":
+            while i < n and src[i] != "\n":
+                i += 1
+            continue
+        if c == "/" and i + 1 < n and src[i + 1] == "*":
+            i = src.find("*/", i + 2)
+            i = n if i < 0 else i + 2
+            continue
+        if c.isspace():
+            i += 1
+            continue
+        if want_colon and c == ":":
+            want_colon, want_brace = False, True
+            i += 1
+            continue
+        if want_brace and c == "{":
+            start, depth, k = i, 0, i
+            while k < n:
+                d = src[k]
+                if d == '"':
+                    k += 1
+                    while k < n and src[k] != '"':
+                        k += 2 if src[k] == "\\" else 1
+                elif d == "/" and k + 1 < n and src[k + 1] == "/":
+                    while k < n and src[k] != "\n":
+                        k += 1
+                    continue
+                elif d == "/" and k + 1 < n and src[k + 1] == "*":
+                    e = src.find("*/", k + 2)
+                    k = n if e < 0 else e + 2
+                    continue
+                elif d == "{":
+                    depth += 1
+                elif d == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return start, k + 1
+                k += 1
+            return None
+        want_colon = want_brace = False
+        i += 1
+    return None
+
+LOCAL, REMOTE = "hearth", "hearth-remote"
+ENTRY = r'("name"\s*:\s*"%s"\s*,)(.*?)(\n\s*\})'
+
 rows = [l.split("\t") for l in roles_tsv.splitlines() if l.strip()]
 text = open(zed).read()
 new, rc = text, 0
@@ -84,11 +153,17 @@ for old, neu in retired.items():
         new = pat_old.sub(neu, new)
         if check:
             rc = max(rc, 1)
+if find_block(new, LOCAL) is None:
+    print('could not run: no "%s" provider block in %s' % (LOCAL, zed))
+    sys.exit(2)
+leaves = set()
 for role, _backend, key, ctx, slots, *rest in rows:
     if "embed" in key or role in edit:
         continue  # Zed's model picker lists chat models only
     weights = rest[0] if rest else ""
     leaf = weights.rstrip("/").split("/")[-1] if weights and weights != "-" else ""
+    if leaf:
+        leaves.add(leaf)
     # Context × slots in the label (ADR 0047); slot count stays out of the role id.
     try:
         ctx_n = int(ctx)
@@ -108,10 +183,16 @@ for role, _backend, key, ctx, slots, *rest in rows:
     if role in demand:
         label += " — load first: scripts/demand-load.sh " + role + " up"
     # The entry: "name": "<role>", then its fields up to the closing brace.
-    pat = re.compile(r'("name"\s*:\s*"' + re.escape(role) + r'"\s*,)(.*?)(\n\s*\})', re.S)
-    hit = pat.search(new)
+    # Only inside the local provider; the span moves as labels change length.
+    pat = re.compile(ENTRY % re.escape(role), re.S)
+    lo, hi = find_block(new, LOCAL)
+    hit = pat.search(new, lo, hi)
     if not hit:
-        print(f"MISSING {role}: no hearth entry with \"name\": \"{role}\" in Zed settings"); rc = max(rc, 1); continue
+        if role in demand:
+            print(f"note   {role}: not listed under \"{LOCAL}\" (demand role, optional)")
+        else:
+            print(f"MISSING {role}: no \"name\": \"{role}\" entry under \"{LOCAL}\" in Zed settings"); rc = max(rc, 1)
+        continue
     body = hit.group(2)
     body2 = re.sub(r'("display_name"\s*:\s*)"[^"]*"', lambda x: x.group(1) + json.dumps(label, ensure_ascii=False), body, count=1)
     body2 = re.sub(r'("max_tokens"\s*:\s*)\d+', lambda x: x.group(1) + ctx, body2, count=1)
@@ -122,6 +203,22 @@ for role, _backend, key, ctx, slots, *rest in rows:
     if check:
         rc = max(rc, 1)
     new = new[:hit.start(2)] + body2 + new[hit.end(2):]
+
+# hearth-remote: read, never written. A label of ours there names the wrong
+# machine's model, or a load command that only works on this host.
+span = find_block(new, REMOTE)
+if span:
+    block = new[span[0]:span[1]]
+    names = list(re.finditer(r'"name"\s*:\s*"([^"]+)"', block))
+    for n, m in enumerate(names):
+        # An entry runs to the next "name" (entries may share a line).
+        body = block[m.end():names[n + 1].start() if n + 1 < len(names) else len(block)]
+        d = re.search(r'"display_name"\s*:\s*"([^"]*)"', body)
+        label = d.group(1) if d else ""
+        if "scripts/demand-load.sh" in label or any(l in label for l in leaves):
+            print(f"DRIFT  {REMOTE}/{m.group(1)}: this machine's label on a remote entry — "
+                  f"edit by hand to the role only, e.g. \"{m.group(1)} (remote)\"")
+            rc = max(rc, 1)
 
 # Edit prediction (ADR 0033). Checked, never written: the provider is the
 # one Zed setting that decides whether file text leaves the machine.
