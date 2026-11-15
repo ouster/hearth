@@ -1,6 +1,6 @@
 # Prompt injection threat model
 
-Last updated: 2026-11-05. Controls in §4 verified on macOS 26.4 by
+Last updated: 2026-11-14 (ADR 0049). Controls in §4 verified 2026-11-05 on macOS 26.4 by
 `scripts/sandbox-probe.sh` (10 passed, 0 failed). Write + search (ADR 0029)
 is listed in §2 and §3; it is outside that sandbox.
 

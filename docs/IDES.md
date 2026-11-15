@@ -115,7 +115,7 @@ demand-load first.
 
 Automatic compaction for `main-brain` runs at 170,000 tokens (262,144
 window). Zed has one threshold, so lower it to about 80,000 for a session on
-`coding-brain` (98K window), or compact by hand.
+`coding-brain` (96K window), or compact by hand.
 Past that the server refuses the prompt, and Zed compacts on that error.
 170,000 leaves the old ~21,000-token count lag plus Zed's 65,536 output
 budget inside the trained window. A 90% threshold (about 236,000) would

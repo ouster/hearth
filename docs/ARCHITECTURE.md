@@ -15,7 +15,7 @@ flowchart TB
         scripts["scripts / benches"]
         searx["SearXNG :8888<br/>(Podman)"]
         sbx["sandboxed.sh agents"]
-        srv["oMLX 127.0.0.1:1234<br/>main-brain: 256K x 3 (resident)<br/>coding-brain: 98K x 1 (swap, 64 GB only)<br/>deep-brain: 64K, swaps current agent<br/>token required"]
+        srv["oMLX 127.0.0.1:1234<br/>main-brain: 256K x 3 (resident)<br/>coding-brain: 96K x 1 (swap, 64 GB only)<br/>deep-brain: 64K, swaps current agent<br/>token required"]
         swapd["hearth-swapd :1236<br/>sub-key load/unload"]
     end
 
@@ -50,7 +50,7 @@ exactly two files: `config/roles.tsv` and `docs/MODELS.md`.
 | Role | Backend | What |
 |---|---|---|
 | `main-brain` | oMLX | **resident on every tier** (ADR 0048). 256K × 3 (ADR 0046). Default for editors and `ask` |
-| `coding-brain` | oMLX | **swap, 64 GB only** (ADR 0047, 0048). 98K × 1. `coding-brain` / `demand-load.sh coding-brain up` unloads `main-brain`; `down` restores it. Never shares RAM with `main-brain` or `deep-brain`. No 48 GB row |
+| `coding-brain` | oMLX | **swap, 64 GB only** (ADR 0047, 0048). 96K × 1. `coding-brain` / `demand-load.sh coding-brain up` unloads `main-brain`; `down` restores it. Never shares RAM with `main-brain` or `deep-brain`. No 48 GB row |
 | `deep-brain` | oMLX | slower, more careful model for hard one-offs. Evicts the current agent for its session (ADR 0031, 0033, 0047). `ask-deep` restores the prior agent on the way out. Editors and laptops use it only while the host has it in (`demand-load.sh`, or `hearth-load` via hearth-swapd, ADR 0049) |
 | `edit-brain` | laptop oMLX | editor edit prediction: `/v1/completions` only, 8K × 2, on the laptop's own oMLX. Never a chat or agent model; host does not load it (ADR 0033) |
 | `cloud-cheap` | Gemini | client-only: a laptop's `ask-cloud` with that laptop's own key. Never on the host, never in oMLX (ADR 0038) |

@@ -1,7 +1,7 @@
 # ADR 0047 — Default resident is coding-brain; main-brain is a 3-slot swap
 
 **Date:** 2026-11-12
-**Status:** accepted 2026-11-12 by the operator.
+**Status:** amended by ADR 0048 (2026-11-14): `main-brain` is the default resident again and `coding-brain` is a 64 GB swap role. The exclusivity rule stands. Was: accepted 2026-11-12 by the operator.
 **Amends:** ADR 0020, 0028, 0031, 0033 (load exclusivity), 0032 (tiers), 0035 (OptiQ stays `main-brain`), 0046 (256K on `main-brain` only).
 
 ## Context

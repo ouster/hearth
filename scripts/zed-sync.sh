@@ -1,7 +1,8 @@
 #!/bin/bash
 # Write each local role's label and context into Zed's settings, from
 # config/roles.tsv. Clients still call the role (`main-brain`). The label
-# is `role — <weights-leaf>` so the picker shows the backing model (ADR 0034),
+# is `role — <weights-leaf> — ctx × slots` so the picker shows the backing
+# model and its window (ADR 0034, 0047),
 # regenerated whenever roles change so it cannot go stale.
 #
 #   scripts/zed-sync.sh            # update ~/.config/zed/settings.json

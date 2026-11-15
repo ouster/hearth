@@ -54,7 +54,7 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
    `docs/MCP.md`.
 
    Live: `main-brain` (oMLX identifier, **resident on every tier**, 256K × 3,
-   ADR 0046, 0048), `coding-brain` (**swap, 64 GB only**, 98K × 1, ADR 0047,
+   ADR 0046, 0048), `coding-brain` (**swap, 64 GB only**, 96K × 1, ADR 0047,
    0048 — never call it unless loaded), `deep-brain` (loaded for an `ask-deep` session; `load` is
    `beside` or `swap` per RAM tier, ADR 0020, 0028, 0031, 0032, 0047 — never
    call it unless loaded; never beside `coding-brain`), `edit-brain` (editor
@@ -144,18 +144,25 @@ If the same tool error gets the same fix twice, stop, state the options, and ask
 
 ```
 CLAUDE.md            this file
-AGENTS.md            same rules, for Zed and aider
+AGENTS.md            symlink to CLAUDE.md, for Zed, aider and Cline
 docs/
-  PLAN.md            build plan and status
   ARCHITECTURE.md    how serving is wired
   ROUTING.md         local vs cloud decision table
   MODELS.md          role → model registry
   HISTORY.md         what we tried, and why it stayed or went
+  IDES.md            editor and agent setup
+  LAPTOP.md          laptop and dual-machine setup
   MCP.md             MCP server → tools → which clients
   RUNBOOK.md         start, stop, diagnose
+  THREAT-MODEL.md    prompt injection threat model
   CLAUDE-PROJECT.md  the claude.ai Project spec
+  PLAN.md            gateway-era build status (historical)
   decisions/         ADRs
 config/roles.tsv     role → model key, context, slots (names models)
-scripts/             omlx, benches, sandbox, aliases
+pins/digests.tsv     weight hashes, written by scripts/pin-digests.sh
+scripts/             host scripts: omlx, benches, sandbox, aliases
+client/              laptop scripts
+rules/               global rules and bootstrap, installed per user
+.claude/skills/      on-demand skills
 bench/tasks/         fixed prompts for model comparison
 ```

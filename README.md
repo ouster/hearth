@@ -13,7 +13,7 @@ New here? Read *Words used here*, check *Before you start*, then follow
 
 - **A coding model on hardware you own.** `main-brain` stays loaded
   (256K × 3) on every host and serves agents in VS Code, Cline, JetBrains
-  IDEs, Zed and aider (ADR 0048). On a 64 GB host, `coding-brain` (98K × 1)
+  IDEs, Zed and aider (ADR 0048). On a 64 GB host, `coding-brain` (96K × 1)
   can take its place for a session.
 - **A bigger model when you need one (optional).** `ask-deep` loads
   `deep-brain`, a slower, more careful model. It swaps the current agent out
@@ -49,7 +49,7 @@ New here? Read *Words used here*, check *Before you start*, then follow
 | tunnel | An SSH connection that makes the host's oMLX appear at `127.0.0.1` on the laptop, so it is never open on the network |
 | token | A password every request must carry. Each laptop and editor gets its own, so you can cancel one without touching the others |
 | RAM tier | Settings tested for one memory size. 8 GB is always held back for macOS and your apps |
-| context, 98K / 256K | How much text a role reads at once. `main-brain` is 256K (262,144); `coding-brain` is 98K; `deep-brain` stays at 64K |
+| context, 96K / 256K | How much text a role reads at once. `main-brain` is 256K (262,144); `coding-brain` is 96K; `deep-brain` stays at 64K |
 | slots | How many requests the model works on at the same time (3 under `main-brain`, 1 under `coding-brain`) |
 | aider | A terminal coding assistant. `ask`, `coding-brain` and `ask-deep` start it |
 | ADR | A short decision record in [`docs/decisions/`](docs/decisions/). "ADR 0040" is number 40 |
@@ -82,8 +82,8 @@ model.
 
   | RAM (usable) | Resident | Swap | State |
   |---|---|---|---|
-  | 64 GB (56) | `main-brain` 256K × 3 | `coding-brain` 98K × 1; `deep-brain` 64K | **tested**: reference host (ADR 0048) |
-  | 48 GB (40) | `main-brain` 256K × 3 | `deep-brain` 64K | **tested** on short turns. No `coding-brain` (40 GB ceiling) |
+  | 64 GB (56) | `main-brain` 256K × 3 | `coding-brain` 96K × 1; `deep-brain` 64K | **tested**: reference host (ADR 0048) |
+  | 48 GB (40) | `main-brain` 256K × 3 | `deep-brain` 64K | **tested** on short turns; not yet benched on 48 GB hardware. No `coding-brain` (40 GB ceiling) |
   | 32 GB (24) | ~26B MoE, ~4B active, 1 slot | dense 27B, swaps in | candidate, not tested |
   | 24 GB (16) | dense ~12B, 1 slot | none | candidate, not tested |
   | under 24 GB | none: use another host (*Laptops*) | — | — |

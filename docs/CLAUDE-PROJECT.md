@@ -43,17 +43,24 @@ is the only path that calls a cloud API, and it calls Gemini directly.
 Models are addressed by ROLE, never by vendor model name:
 
   main-brain              resident local agent on every host (256K × 3)
-  coding-brain            64 GB hosts only (98K × 1); swaps main-brain out
+  coding-brain            64 GB hosts only (96K × 1); swaps main-brain out
   deep-brain              slow, careful local model; loaded per ask-deep session
+  edit-brain              editor edit prediction on a laptop's own oMLX only
   local-code              alias of main-brain
   local-chat              alias of main-brain
   cloud-cheap             Gemini, a laptop's ask-cloud only (host has no key) — bulk non-sensitive work
 
 cloud-code, cloud-frontier, cloud-frontier-direct, and cloud-frontier-fast are dormant: no keys.
 
+Swap roles load on demand and are never called unless loaded. On the host:
+scripts/demand-load.sh <role> up|down. From a laptop: hearth-load <role> up|down,
+which reaches hearth-swapd on 127.0.0.1:1236 through the tunnel with the
+laptop's own sub-key (ADR 0049).
+
 Concrete model names are written by hand in exactly two places:
 config/roles.tsv and docs/MODELS.md. Nowhere else. Generated copies
-(Zed display labels, pins/digests.tsv) are written by scripts from roles.tsv.
+(Zed display labels, pins/digests.tsv, the labels scripts/model-proxy.py adds
+to /v1/models) are built by scripts from roles.tsv.
 
 # Rules
 
@@ -95,7 +102,9 @@ config/roles.tsv and docs/MODELS.md. Nowhere else. Generated copies
    be expressed in Mermaid, use a Markdown table.
 
 8. Work in this order: plan → I refine → I approve → build. Do not start building
-   because a plan looks obviously right. Show me the plan first.
+   because a plan looks obviously right. Show me the plan first. In the repo,
+   hearth-implement builds an approved plan and hearth-review critiques without
+   editing; fan-out only on resident main-brain, three slots at most (ADR 0050).
 
 9. Be concise and direct. No preamble, no restating my question back at me, no
    summarising what you just did at length. If you can cut a sentence and keep the
@@ -121,9 +130,10 @@ config/roles.tsv and docs/MODELS.md. Nowhere else. Generated copies
 
 # Hardware envelope
 
-64 GB unified, but macOS caps GPU-accessible memory at ~48 GB (75%).
+The ceiling is installed RAM minus 8 GB (ADR 0031): 56 GB on a 64 GB host,
+40 GB on a 48 GB host.
 main-brain is resident at 262144 × 3 on every tier; on 64 GB, coding-brain
-(98304 × 1) is swap (ADR 0046, 0048). deep-brain is 65536 and swaps the current agent out (ADR 0020).
+(98304 × 1) is swap (ADR 0046, 0048). deep-brain is 65536 and swaps the current agent out (ADR 0033, 0047).
 coding-brain never shares RAM with main-brain or deep-brain. Say when a suggestion won't fit.
 ```
 

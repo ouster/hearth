@@ -263,7 +263,7 @@ Same provider as the host, through the tunnel. Default is `main-brain`
         "api_url": "http://127.0.0.1:1234/v1",
         "available_models": [
           { "name": "main-brain", "display_name": "main-brain — 256K × 3", "max_tokens": 262144 },
-          { "name": "coding-brain", "display_name": "coding-brain — 98K × 1 — load first", "max_tokens": 98304 },
+          { "name": "coding-brain", "display_name": "coding-brain — 96K × 1 — load first", "max_tokens": 98304 },
           { "name": "deep-brain", "display_name": "deep-brain — 64K × 1 — load first", "max_tokens": 65536 }
         ]
       }
