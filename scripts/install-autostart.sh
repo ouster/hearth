@@ -34,6 +34,28 @@ PROXY_LOG="$HOME/Library/Logs/hearth-model-proxy.log"
 DOMAIN="gui/$(id -u)"
 MODE="${1:---check}"
 
+# These are user LaunchAgents. Under sudo the domain is gui/0, which does not
+# exist ("125: Domain does not support specified action"), and the plists
+# and logs written on the way end up owned by root.
+if [ "$(id -u)" -eq 0 ]; then
+  echo "could not run: do not use sudo — these agents load in your own login session"
+  exit 2
+fi
+
+# Unload LABEL and wait until launchd has let go of it. bootout returns while
+# a running job is still being torn down; a bootstrap in that window fails
+# with "5: Input/output error".
+bootout_wait() {
+  local label="$1" i=0
+  launchctl bootout "${DOMAIN}/${label}" >/dev/null 2>&1 || true
+  while launchctl print "${DOMAIN}/${label}" >/dev/null 2>&1; do
+    i=$((i + 1))
+    [ "$i" -ge 50 ] && { echo "FAIL: ${label} still loaded 10 s after bootout"; return 1; }
+    sleep 0.2
+  done
+  return 0
+}
+
 write_plist() {
   cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -173,7 +195,7 @@ load_proxy() {
   mkdir -p "$(dirname "$PROXY_PLIST")" "$(dirname "$PROXY_LOG")"
   write_proxy_plist
   plutil -lint "$PROXY_PLIST" >/dev/null || { echo "FAIL: model-proxy plist does not lint"; return 1; }
-  launchctl bootout "${DOMAIN}/${PROXY_LABEL}" >/dev/null 2>&1 || true
+  bootout_wait "$PROXY_LABEL" || return 1
   launchctl bootstrap "$DOMAIN" "$PROXY_PLIST" || { echo "FAIL: launchctl bootstrap ${PROXY_LABEL}"; return 1; }
   echo "installed ${PROXY_LABEL} — labelled /v1/models on 127.0.0.1:${HEARTH_PROXY_PORT} (ADR 0051)"
 }
@@ -186,6 +208,7 @@ load_swap() {
   # plist existed. A leftover would hold :1236 and make launchd restart the
   # new job every 10 s.
   "${ROOT}/scripts/hearth-swapd.sh" down >/dev/null 2>&1 || true
+  bootout_wait "$SWAP_LABEL" || return 1
   launchctl bootstrap "$DOMAIN" "$SWAP_PLIST" || { echo "FAIL: launchctl bootstrap ${SWAP_LABEL}"; return 1; }
   echo "installed ${SWAP_LABEL} — sub-key swap on 127.0.0.1:1236 (ADR 0049)"
 }
@@ -194,7 +217,7 @@ load_watch() {
   mkdir -p "$(dirname "$WATCH_PLIST")" "$(dirname "$WATCH_LOG")"
   write_watch_plist
   plutil -lint "$WATCH_PLIST" >/dev/null || { echo "FAIL: context-watch plist does not lint"; return 1; }
-  launchctl bootout "${DOMAIN}/${WATCH_LABEL}" >/dev/null 2>&1 || true
+  bootout_wait "$WATCH_LABEL" || return 1
   launchctl bootstrap "$DOMAIN" "$WATCH_PLIST" || { echo "FAIL: launchctl bootstrap ${WATCH_LABEL}"; return 1; }
   echo "installed ${WATCH_LABEL} — notifies when a prompt is trimmed (the turn still runs)"
 }
@@ -217,7 +240,7 @@ case "$MODE" in
     mkdir -p "$(dirname "$PLIST")" "$(dirname "$LOG")"
     write_plist
     plutil -lint "$PLIST" >/dev/null || { echo "FAIL: plist does not lint"; exit 1; }
-    launchctl bootout "${DOMAIN}/${LABEL}" >/dev/null 2>&1 || true
+    bootout_wait "$LABEL" || exit 1
     if launchctl bootstrap "$DOMAIN" "$PLIST"; then
       echo "installed ${LABEL} — runs scripts/boot.sh at login (and just now)"
     else
