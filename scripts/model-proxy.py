@@ -81,11 +81,21 @@ def resolve_roles(root: Path) -> Dict[str, tuple]:
             continue
         role, _, model_key, ctx, slots, weights, _, load = parts[:8]
         leaf = weights.rstrip("/").split("/")[-1] if weights and weights != "-" else ""
-        ctx_int = int(ctx)
-        ctx_label = f"{ctx_int // 1024}K" if ctx_int >= 1024 else str(ctx)
+        ctx_int = _parse_ctx(ctx)
+        ctx_label = f"{ctx_int // 1024}K" if ctx_int >= 1024 else str(ctx_int)
         slot_n = int(slots) if str(slots).isdigit() else 0
         resolved[role] = (model_key, leaf, ctx_label, slot_n, load)
     return resolved
+
+
+def _parse_ctx(ctx: str) -> int:
+    """Parse context window from roles.tsv, handling '-' for cloud rows."""
+    if ctx == "-":
+        return 0
+    try:
+        return int(ctx)
+    except ValueError:
+        return 0
 
 
 def parse_raw_roles(root: Path) -> Dict[str, List[dict]]:
@@ -103,6 +113,9 @@ def parse_raw_roles(root: Path) -> Dict[str, List[dict]]:
             if len(parts) < 9:
                 continue
             role, _, model_key, ctx, slots, weights, _, load, min_ram = parts[:9]
+            # Cloud rows (gemini etc.) have min_ram="-"; skip them.
+            if min_ram == "-":
+                continue
             entry = {
                 "model_key": model_key,
                 "weights": weights,
@@ -121,8 +134,8 @@ def _resolve_fallback(raw: Dict[str, List[dict]]) -> Dict[str, tuple]:
     for role, rows in raw.items():
         best = rows[-1]
         leaf = best["weights"].rstrip("/").split("/")[-1] if best["weights"] and best["weights"] != "-" else ""
-        ctx_int = int(best["ctx"])
-        ctx_label = f"{ctx_int // 1024}K" if ctx_int >= 1024 else str(best["ctx"])
+        ctx_int = _parse_ctx(best["ctx"])
+        ctx_label = f"{ctx_int // 1024}K" if ctx_int >= 1024 else str(ctx_int)
         slot_n = int(best["slots"]) if str(best["slots"]).isdigit() else 0
         result[role] = (best["model_key"], leaf, ctx_label, slot_n, best["load"])
     return result
@@ -194,7 +207,8 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             conn.request(self.command, path, body=body, headers=headers)
             resp = conn.getresponse()
 
-            # Forward status + headers
+            # Forward status + headers (skip transfer-encoding, connection, content-length
+            # to let Python's http.server handle chunked encoding)
             self.send_response(resp.status)
             for hdr in resp.getheaders():
                 key, val = hdr
@@ -204,11 +218,13 @@ class ProxyHandler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
 
             # Stream body chunk-by-chunk (preserves SSE for chat completions)
+            # Python's http.server handles chunked encoding automatically when no Content-Length
             while True:
                 chunk = resp.read(8192)
                 if not chunk:
                     break
                 self.wfile.write(chunk)
+            self.wfile.flush()
         finally:
             conn.close()
 
@@ -287,11 +303,11 @@ def main() -> None:
     # Resolve roles
     display_names: Dict[str, str] = {}
     roles = resolve_roles(root)
-    for role, (model_key, leaf, ctx_label, load) in roles.items():
+    for role, (model_key, leaf, ctx_label, slot_n, load) in roles.items():
         # Skip embeddings and edit-only roles (chat model picker only)
         if "embed" in model_key:
             continue
-        display_names[role] = build_display_name(role, model_key, leaf, ctx_label, load)
+        display_names[role] = build_display_name(role, leaf, ctx_label, slot_n, load)
 
     if not display_names:
         print("[model-proxy] WARNING: no roles resolved, models unenriched", file=sys.stderr)
