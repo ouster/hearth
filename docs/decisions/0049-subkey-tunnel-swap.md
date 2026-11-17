@@ -1,7 +1,7 @@
 # ADR 0049 — sub-key swap over the tunnel
 
 **Date:** 2026-11-14
-**Status:** accepted 2026-11-14 by the operator.
+**Status:** superseded by ADR 0052 (2026-11-16). Was accepted 2026-11-14.
 **Amends:** ADR 0048 (laptop swap path). ADR 0047 exclusivity stands. ADR 0045
 (tunnel still forwards loopback only; add `:1236`).
 

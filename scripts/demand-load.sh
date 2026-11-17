@@ -7,6 +7,7 @@
 #   scripts/demand-load.sh <role> down          # unload; restore prior agent
 #                                               # (no-op "not-loaded" if another
 #                                               # role holds the host)
+#   scripts/demand-load.sh status               # print loaded roles, or "none"
 #
 # main-brain is resident on every tier (ADR 0048). On 64 GB, coding-brain and
 # deep-brain are swap. coding-brain never shares RAM with main-brain or
@@ -22,9 +23,15 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 ROLE="${1:-}"; ACTION="${2:-}"; EVICT=0
 [ "${3:-}" = "--evict" ] && EVICT=1
-[ -n "$ROLE" ] && { [ "$ACTION" = up ] || [ "$ACTION" = down ]; } || { sed -n '2,10p' "$0"; exit 2; }
-hearth_demand_roles | grep -qxF "$ROLE" || { echo "could not run: ${ROLE} is not a beside or swap role for this host in roles.tsv" >&2; exit 2; }
-LOAD="$(hearth_role_load "$ROLE")"
+# status reads which roles oMLX has loaded and changes nothing. /v1/models
+# cannot tell: it lists every role, loaded or not (ADR 0034, 0052).
+if [ "$ROLE" = status ] && [ -z "$ACTION" ]; then
+  ROLE=""; ACTION=status; LOAD=""
+else
+  [ -n "$ROLE" ] && { [ "$ACTION" = up ] || [ "$ACTION" = down ]; } || { sed -n '2,11p' "$0"; exit 2; }
+  hearth_demand_roles | grep -qxF "$ROLE" || { echo "could not run: ${ROLE} is not a beside or swap role for this host in roles.tsv" >&2; exit 2; }
+  LOAD="$(hearth_role_load "$ROLE")"
+fi
 if [ "$ACTION" = up ] && [ "$EVICT" = 0 ] && [ "$LOAD" = swap ]; then
   EVICT=1
   echo "${ROLE} is load=swap on this $(hearth_ram_gb || echo ?) GB host: unloading the other agent first." >&2
@@ -99,6 +106,16 @@ for line in os.environ["HEARTH_ROLES_TSV"].splitlines():
 agents = [r for r in ("coding-brain", "main-brain") if r in role_to_leaf]
 if not agents:
     agents = [r for r in residents if r in role_to_leaf]
+
+if action == "status":
+    code, body = call("GET", "/admin/api/models")
+    if code != 200:
+        raise SystemExit("admin models failed (%s)" % code)
+    models = {m.get("id"): m for m in body.get("models") or []}
+    up = [r for r in sorted(role_to_leaf)
+          if (models.get(role_to_leaf[r]) or {}).get("loaded")]
+    print("\n".join(up) if up else "none")
+    sys.exit(0)
 
 leaf = role_to_leaf.get(role)
 if not leaf:
@@ -198,7 +215,7 @@ if leaf not in listing():
 default_resident = residents[0] if residents else None
 
 if action == "down":
-    # Another session may hold the host (ADR 0049 makes two clients likely).
+    # Another session may hold the host (two sessions on one host).
     # A down for a role that is not loaded must not unload what is: it would
     # end that other session. If deep-brain is in and would restore this role
     # afterwards, point it at the resident instead, since this role's session

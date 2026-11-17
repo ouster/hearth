@@ -16,15 +16,9 @@
 #   HEARTH_DUAL         1 on a machine that also runs its own brain (ADR 0040):
 #                       the tunnel port defaults to 1235, commands get -remote
 #   HEARTH_LOCAL_PORT   local end of the oMLX tunnel (default 1234; 1235 when dual)
-#   HEARTH_SWAP_PORT    local end of hearth-swapd (default 1236 → host :1236)
-#   HEARTH_SSH_ADMIN    fallback: ordinary SSH login on the host (not the tunnel
-#                       key) when swapd is down (ADR 0048, 0049). Preferred
-#                       path is POST to hearth-swapd over the tunnel with the
-#                       laptop sub-key.
-#   HEARTH_REMOTE_ROOT  the hearth repo on the host, relative to that
-#                       login's home (default dev/hearth); SSH fallback only
-#                       SearXNG is local on this machine (ADR 0045). An old
-#                       HEARTH_SEARXNG_PORT or HEARTH_WEBUI_PORT is ignored.
+#
+# SearXNG is local on this machine (ADR 0045). An old HEARTH_SEARXNG_PORT or
+# HEARTH_WEBUI_PORT is ignored.
 #
 # Secrets (files, mode 600 — never exported into this shell):
 #   ~/.hearth-key         this machine's API key (laptop-<name>)
@@ -32,8 +26,8 @@
 #
 # Commands: ai-tunnel, ai-tunnel-install, ai-tunnel-stop, ai-ping, ai-models,
 #           ai-ask, ask and main-brain (the host's resident), ask-arch,
-#           coding-brain and deep-brain / ask-deep (swap roles: loaded on
-#           the host for the session), hearth-load, ask-cloud
+#           coding-brain and deep-brain / ask-deep (swap roles: someone
+#           loads them on the host first, ADR 0052), ask-cloud
 #
 # macOS: ai-tunnel-install once. launchd (com.hearth.tunnel) restarts the
 # forwards when the session drops, and again at login. ai-tunnel then
@@ -56,16 +50,12 @@ fi
 # (scripts/aliases.zsh) keep ask, main-brain, ask-deep.
 HEARTH_DUAL="${HEARTH_DUAL:-0}"
 if [ "$HEARTH_DUAL" = 1 ]; then
-  # Local oMLX keeps :1234; local hearth-swapd (if this machine is also a host)
-  # keeps :1236. Tunnel ends move aside (ADR 0040, 0049).
+  # Local oMLX keeps :1234. The tunnel end moves aside (ADR 0040).
   HEARTH_LOCAL_PORT="${HEARTH_LOCAL_PORT:-1235}"
-  HEARTH_SWAP_PORT="${HEARTH_SWAP_PORT:-1237}"
 else
   HEARTH_LOCAL_PORT="${HEARTH_LOCAL_PORT:-1234}"
-  HEARTH_SWAP_PORT="${HEARTH_SWAP_PORT:-1236}"
 fi
 HEARTH_TUNNEL_URL="http://127.0.0.1:${HEARTH_LOCAL_PORT}/v1"
-HEARTH_SWAP_URL="http://127.0.0.1:${HEARTH_SWAP_PORT}"
 
 # Read a secret file without exporting it. Refuses a world-readable file.
 _hearth_secret() {
@@ -97,19 +87,8 @@ _hearth_our_ssh() {
     >/dev/null 2>&1
 }
 
-# The same ssh also carries the hearth-swapd forward (ADR 0049). Model calls
-# do not need it: a tunnel installed before ADR 0049 still serves oMLX. Only
-# hearth-load checks this, before it sends the token to the swap port.
-_hearth_swap_forward() {
-  ps axww -o command= 2>/dev/null \
-    | grep -F "ssh " \
-    | grep -F -- "-L 127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" \
-    | grep -F -- "-L 127.0.0.1:${HEARTH_SWAP_PORT}:127.0.0.1:1236" \
-    >/dev/null 2>&1
-}
-
 # "Up" means the oMLX forward (ADR 0045). An old ssh that also forwards
-# SearXNG, or that lacks the swapd forward, is still up for the model;
+# SearXNG or the retired swapd port is still up for the model;
 # _hearth_tunnel_stale says so.
 _hearth_forwards_open() {
   _hearth_port_open "$HEARTH_LOCAL_PORT"
@@ -143,14 +122,13 @@ _hearth_connect() {
   fi
 }
 
-# One argv line per ssh argument. oMLX + hearth-swapd (ADR 0045, 0049).
+# One argv line per ssh argument. oMLX only (ADR 0045, 0052).
 _hearth_tunnel_argv() {
   printf '%s\n' /usr/bin/ssh -N \
     -o ExitOnForwardFailure=yes \
     -o ServerAliveInterval=30 \
     -o ServerAliveCountMax=3 \
     -L "127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" \
-    -L "127.0.0.1:${HEARTH_SWAP_PORT}:127.0.0.1:1236" \
     "$HEARTH_SSH"
 }
 
@@ -162,9 +140,8 @@ _hearth_tunnel_stale() {
   if [ -f "$_plist" ] && grep -F -- "127.0.0.1:8888" "$_plist" >/dev/null 2>&1; then
     echo "tunnel: this agent still forwards SearXNG. Search stays on this machine (ADR 0045). Run: ai-tunnel-stop && ai-tunnel-install" >&2
   fi
-  if [ -f "$_plist" ] && ! grep -F -- "127.0.0.1:1236" "$_plist" >/dev/null 2>&1; then
-    echo "tunnel: this agent has no hearth-swapd forward, so hearth-load cannot use the tunnel (ADR 0049)." >&2
-    echo "        On the host first: scripts/client-setup.sh --update-keys. Then here: ai-tunnel-stop && ai-tunnel-install" >&2
+  if [ -f "$_plist" ] && grep -F -- "127.0.0.1:1236" "$_plist" >/dev/null 2>&1; then
+    echo "tunnel: this agent still forwards the retired hearth-swapd port (ADR 0052). Run: ai-tunnel-stop && ai-tunnel-install" >&2
   fi
   if ps axww -o command= 2>/dev/null \
       | grep -F -- "-L 127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" \
@@ -175,11 +152,7 @@ _hearth_tunnel_stale() {
 }
 
 _hearth_tunnel_up_msg() {
-  if _hearth_swap_forward; then
-    echo "tunnel: up (oMLX → 127.0.0.1:${HEARTH_LOCAL_PORT}, swapd → 127.0.0.1:${HEARTH_SWAP_PORT})"
-  else
-    echo "tunnel: up (oMLX → 127.0.0.1:${HEARTH_LOCAL_PORT}; no swapd forward)"
-  fi
+  echo "tunnel: up (oMLX → 127.0.0.1:${HEARTH_LOCAL_PORT})"
   _hearth_tunnel_stale
 }
 
@@ -202,7 +175,7 @@ _hearth_tunnel_names_ok() {
       return 1
       ;;
   esac
-  for _p in "$HEARTH_LOCAL_PORT" "$HEARTH_SWAP_PORT"; do
+  for _p in "$HEARTH_LOCAL_PORT"; do
     case "$_p" in
       ''|*[!0-9]*)
         echo "tunnel: port '${_p}' is not a number." >&2
@@ -324,7 +297,6 @@ ai-tunnel() {
   ssh -f -N \
     -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
     -L "127.0.0.1:${HEARTH_LOCAL_PORT}:127.0.0.1:1234" \
-    -L "127.0.0.1:${HEARTH_SWAP_PORT}:127.0.0.1:1236" \
     "$HEARTH_SSH" \
     && _hearth_tunnel_up_msg
 }
@@ -413,149 +385,23 @@ _hearth_aider() {
 }
 _hearth_ask_arch() { _hearth_aider --architect --editor-model openai/main-brain "$@"; }
 
-# Load or unload a swap role on the host (ADR 0048, 0049):
-#   hearth-load coding-brain up      hearth-load deep-brain down
-# Preferred: POST hearth-swapd over the tunnel with ~/.hearth-key.
-# Fallback: HEARTH_SSH_ADMIN runs demand-load.sh on the host.
-# Prints loaded, already, or restored <role>.
-# While a swap role is in, main-brain on that host has no model of its own.
-_hearth_load_ssh() {
-  case "${HEARTH_REMOTE_ROOT:-dev/hearth}" in *[!A-Za-z0-9_./-]*)
-    echo "hearth: HEARTH_REMOTE_ROOT has characters other than letters, digits, . _ / -" >&2; return 1 ;; esac
-  /usr/bin/ssh "$HEARTH_SSH_ADMIN" "cd ${HEARTH_REMOTE_ROOT:-dev/hearth} && scripts/demand-load.sh $1 $2"
-}
-
-_hearth_load_http() {
-  _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
-  _body=$(umask 077 && mktemp "${TMPDIR:-/tmp}/hearth-load.XXXXXX") || { unset _k; return 1; }
-  printf '{"role":"%s","action":"%s"}\n' "$1" "$2" > "$_body"
-  _resp=$(umask 077 && mktemp "${TMPDIR:-/tmp}/hearth-load-out.XXXXXX") || {
-    rm -f "$_body"; unset _k _body; return 1
-  }
-  _code=$(printf 'header = "Authorization: Bearer %s"\n' "$_k" \
-    | curl -s -m 600 -o "$_resp" -w '%{http_code}' -K - \
-        -H 'Content-Type: application/json' \
-        --data-binary @"$_body" \
-        "${HEARTH_SWAP_URL}/v1/hearth/load")
-  unset _k
-  _out=$(tr -d '\r' < "$_resp" | sed -e 's/[[:space:]]*$//')
-  rm -f "$_body" "$_resp"
-  unset _body _resp
-  case "$_code" in
-    200)
-      printf '%s\n' "$_out"
-      unset _code _out
-      return 0
-      ;;
-    000)
-      # No answer: the caller may try another path.
-      echo "hearth: swapd did not answer on 127.0.0.1:${HEARTH_SWAP_PORT}" >&2
-      unset _code _out
-      return 3
-      ;;
-    401)
-      echo "hearth: swapd refused ~/.hearth-key (401). ai-ping shows whether oMLX accepts it." >&2
-      unset _code _out
-      return 1
-      ;;
-    *)
-      # It answered and said no (wrong tier, a failed load). Another path
-      # would run the same demand-load.sh, so do not retry.
-      echo "hearth: the host refused (HTTP ${_code}): ${_out}" >&2
-      unset _code _out
-      return 1
-      ;;
-  esac
-}
-
-_hearth_agent_http() {
-  _hearth_swap_forward || return 1
-  _k=$(_hearth_secret "$HOME/.hearth-key") || return 1
-  _out=$(printf 'header = "Authorization: Bearer %s"\n' "$_k" \
-    | curl -s -m 8 -K - "${HEARTH_SWAP_URL}/v1/hearth/agent") || {
-    unset _k; return 1
-  }
-  unset _k
-  printf '%s' "$_out" | python3 -c 'import sys, json
-try:
-    d = json.load(sys.stdin)
-except Exception:
-    raise SystemExit(1)
-a = d.get("agent")
-print(a if a else "")'
-}
-
-hearth-load() {
-  case "${1:-}" in coding-brain|deep-brain) : ;; *)
-    echo "usage: hearth-load coding-brain|deep-brain up|down" >&2; return 2 ;; esac
-  case "${2:-}" in up|down) : ;; *)
-    echo "usage: hearth-load coding-brain|deep-brain up|down" >&2; return 2 ;; esac
-  _hearth_connect || return 1
-  # The token goes to the swap port only when our own ssh holds that forward.
-  if _hearth_swap_forward && _hearth_port_open "$HEARTH_SWAP_PORT"; then
-    _hearth_load_http "$1" "$2"
-    _lrc=$?
-    # 0 done. 1 the host answered and refused. 3 no answer: try SSH below.
-    [ "$_lrc" = 3 ] || { _lr=$_lrc; unset _lrc; return $_lr; }
-    unset _lrc
-    echo "        On the host: scripts/hearth-swapd.sh up" >&2
-  else
-    echo "hearth: this tunnel has no hearth-swapd forward (ADR 0049)." >&2
-    echo "        On the host: scripts/client-setup.sh --update-keys. Then here: ai-tunnel-stop && ai-tunnel-install" >&2
-  fi
-  if [ -n "${HEARTH_SSH_ADMIN:-}" ]; then
-    echo "hearth: using HEARTH_SSH_ADMIN instead" >&2
-    _hearth_load_ssh "$1" "$2"
-    return $?
-  fi
-  echo "        Or set HEARTH_SSH_ADMIN, or run scripts/demand-load.sh $1 $2 on the host." >&2
-  return 1
-}
-
-# A swap role for one aider session (coding-brain, deep-brain). This laptop
-# cannot load weights itself. hearth-load (swapd, else HEARTH_SSH_ADMIN) brings
-# the role in; this call restores the resident if it did the loading.
-# Without either path, ask whether the host already has the role loaded.
+# A swap role for one aider session (coding-brain, deep-brain). A laptop
+# cannot change what the host has loaded (ADR 0052) and cannot see it either:
+# oMLX lists every role, loaded or not. So ask. While a swap role is in,
+# main-brain on that host has no model of its own.
 _hearth_swap_remote() {
   _role="$1"; shift
   _hearth_connect || return 1
-  _state=""
-  if _state=$(hearth-load "$_role" up); then
-    # Strip host chatter; demand-load / swapd return one state token.
-    _state=$(printf '%s\n' "$_state" | tail -1 | tr -d '\r')
-    case "$_state" in
-      loaded)  echo "${_role}: loaded on the host. If this session is killed: hearth-load ${_role} down" >&2 ;;
-      already) echo "${_role}: already loaded on the host; this session will not unload it." >&2 ;;
-      *)       echo "${_role}: unexpected answer from the host: ${_state}" >&2; unset _role _state; return 1 ;;
-    esac
-  else
-    # hearth-load printed why. If swapd can say which agent is loaded, trust
-    # that; a wrong or absent answer stops here rather than asking.
-    _agent=$(_hearth_agent_http 2>/dev/null) || _agent="?"
-    if [ "$_agent" = "$_role" ]; then
-      _state=already
-      echo "${_role}: already loaded on the host; this session will not unload it." >&2
-    elif [ "$_agent" != "?" ]; then
-      echo "${_role} is not loaded on the host (loaded: ${_agent:-none})." >&2
-      unset _role _state _agent; return 1
-    else
-      echo "${_role} must already be loaded on the host: scripts/demand-load.sh ${_role} up" >&2
-      echo "(hearth-load needs swapd on :${HEARTH_SWAP_PORT}, or HEARTH_SSH_ADMIN)." >&2
-      printf 'Is it loaded? [y/N] ' >&2
-      read -r _yn
-      case "$_yn" in y|Y) : ;; *) unset _role _state _yn _agent; return 1 ;; esac
-      unset _yn
-      _state=""
-    fi
-    unset _agent
-  fi
-  _k=$(_hearth_secret "$HOME/.hearth-key") || { unset _role _state; return 1; }
+  echo "${_role} must already be loaded on the host. There: scripts/demand-load.sh ${_role} up" >&2
+  printf 'Is it loaded? [y/N] ' >&2
+  read -r _yn
+  case "$_yn" in y|Y) : ;; *) unset _role _yn; return 1 ;; esac
+  unset _yn
+  _k=$(_hearth_secret "$HOME/.hearth-key") || { unset _role; return 1; }
   # weak-model is the same role: the resident is not loaded to answer it.
   OPENAI_API_BASE="$HEARTH_TUNNEL_URL" OPENAI_API_KEY="$_k" \
     aider --model "openai/${_role}" --weak-model "openai/${_role}" "$@"
-  _rc=$?; unset _k
-  [ "$_state" = loaded ] && hearth-load "$_role" down >&2
-  unset _role _state
+  _rc=$?; unset _k _role
   return $_rc
 }
 _hearth_ask_coding() { _hearth_swap_remote coding-brain "$@"; }

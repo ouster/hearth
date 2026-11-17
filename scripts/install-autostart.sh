@@ -8,10 +8,9 @@
 #   scripts/install-autostart.sh --remove
 #
 # The boot agent runs scripts/boot.sh once at login (RunAtLoad, no KeepAlive):
-# start oMLX, hearth-swapd, Podman + SearXNG. Log: ~/Library/Logs/hearth-boot.log
-# com.hearth.swap (KeepAlive) serves sub-key load/unload on :1236 (ADR 0049).
-# com.hearth.model-proxy (KeepAlive) serves labelled /v1/models on :1238
-# (ADR 0051). It holds no key and runs as this user, never as root.
+# start oMLX, Podman + SearXNG. Log: ~/Library/Logs/hearth-boot.log
+# com.hearth.swap and com.hearth.model-proxy are retired (ADR 0052): --apply
+# and --remove unload and delete them, --check fails while either remains.
 #
 # Exit 0 ok, 1 not installed / broken (--check), 2 could not run.
 
@@ -25,12 +24,9 @@ LOG="$HOME/Library/Logs/hearth-boot.log"
 WATCH_LABEL="com.hearth.context-watch"
 WATCH_PLIST="$HOME/Library/LaunchAgents/${WATCH_LABEL}.plist"
 WATCH_LOG="$HOME/Library/Logs/hearth-context-watch.log"
-SWAP_LABEL="com.hearth.swap"
-SWAP_PLIST="$HOME/Library/LaunchAgents/${SWAP_LABEL}.plist"
-SWAP_LOG="$HOME/Library/Logs/hearth-swapd.log"
-PROXY_LABEL="com.hearth.model-proxy"
-PROXY_PLIST="$HOME/Library/LaunchAgents/${PROXY_LABEL}.plist"
-PROXY_LOG="$HOME/Library/Logs/hearth-model-proxy.log"
+RETIRED_LABELS="com.hearth.swap com.hearth.model-proxy"
+RETIRED_PROCS="scripts/hearth-swapd.py scripts/model-proxy.py"
+RETIRED_PORTS="1236 1238"
 DOMAIN="gui/$(id -u)"
 MODE="${1:---check}"
 
@@ -122,95 +118,28 @@ write_watch_plist() {
 EOF
 }
 
-write_swap_plist() {
-  cat > "$SWAP_PLIST" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>${SWAP_LABEL}</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>${ROOT}/scripts/hearth-swapd.sh</string>
-    <string>run</string>
-  </array>
-  <key>KeepAlive</key>
-  <true/>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>ThrottleInterval</key>
-  <integer>10</integer>
-  <key>StandardOutPath</key>
-  <string>${SWAP_LOG}</string>
-  <key>StandardErrorPath</key>
-  <string>${SWAP_LOG}</string>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PATH</key>
-    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-  </dict>
-</dict>
-</plist>
-EOF
-}
-
-write_proxy_plist() {
-  cat > "$PROXY_PLIST" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>${PROXY_LABEL}</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/usr/bin/python3</string>
-    <string>${ROOT}/scripts/model-proxy.py</string>
-    <string>--port</string>
-    <string>${HEARTH_PROXY_PORT}</string>
-  </array>
-  <key>KeepAlive</key>
-  <true/>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>ThrottleInterval</key>
-  <integer>10</integer>
-  <key>StandardOutPath</key>
-  <string>${PROXY_LOG}</string>
-  <key>StandardErrorPath</key>
-  <string>${PROXY_LOG}</string>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>PATH</key>
-    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-  </dict>
-</dict>
-</plist>
-EOF
-}
-
-load_proxy() {
-  mkdir -p "$(dirname "$PROXY_PLIST")" "$(dirname "$PROXY_LOG")"
-  write_proxy_plist
-  plutil -lint "$PROXY_PLIST" >/dev/null || { echo "FAIL: model-proxy plist does not lint"; return 1; }
-  bootout_wait "$PROXY_LABEL" || return 1
-  launchctl bootstrap "$DOMAIN" "$PROXY_PLIST" || { echo "FAIL: launchctl bootstrap ${PROXY_LABEL}"; return 1; }
-  echo "installed ${PROXY_LABEL} — labelled /v1/models on 127.0.0.1:${HEARTH_PROXY_PORT} (ADR 0051)"
-}
-
-load_swap() {
-  mkdir -p "$(dirname "$SWAP_PLIST")" "$(dirname "$SWAP_LOG")"
-  write_swap_plist
-  plutil -lint "$SWAP_PLIST" >/dev/null || { echo "FAIL: swap plist does not lint"; return 1; }
-  # Stops the launchd job and any copy boot.sh started by hand before this
-  # plist existed. A leftover would hold :1236 and make launchd restart the
-  # new job every 10 s.
-  "${ROOT}/scripts/hearth-swapd.sh" down >/dev/null 2>&1 || true
-  bootout_wait "$SWAP_LABEL" || return 1
-  launchctl bootstrap "$DOMAIN" "$SWAP_PLIST" || { echo "FAIL: launchctl bootstrap ${SWAP_LABEL}"; return 1; }
-  echo "installed ${SWAP_LABEL} — sub-key swap on 127.0.0.1:1236 (ADR 0049)"
+# Unload and delete the agents ADR 0052 removed. Their scripts are gone, so a
+# leftover KeepAlive job would only restart-loop. hearth-swapd.sh also started
+# a nohup copy when no plist existed, which launchd never knew about: stop
+# that by its command line. A running process keeps its script open after
+# the file is deleted.
+retire_stale() {
+  local label proc
+  for label in $RETIRED_LABELS; do
+    bootout_wait "$label" || return 1
+    if [ -f "$HOME/Library/LaunchAgents/${label}.plist" ]; then
+      rm -f "$HOME/Library/LaunchAgents/${label}.plist"
+      echo "removed retired ${label} (ADR 0052)"
+    fi
+  done
+  for proc in $RETIRED_PROCS; do
+    if pgrep -f "$proc" >/dev/null 2>&1; then
+      pkill -f "$proc" >/dev/null 2>&1 || true
+      echo "stopped a stray ${proc} process (ADR 0052)"
+    fi
+  done
+  rm -f "$HOME/Library/Logs/hearth-swapd.log" "$HOME/Library/Logs/hearth-model-proxy.log"
+  return 0
 }
 
 load_watch() {
@@ -247,8 +176,7 @@ case "$MODE" in
       echo "FAIL: launchctl bootstrap"; exit 1
     fi
     load_watch || exit 1
-    load_swap || exit 1
-    load_proxy || exit 1
+    retire_stale || exit 1
     print_sleep_advice
     exec "$0" --check
     ;;
@@ -259,10 +187,9 @@ case "$MODE" in
   --remove)
     launchctl bootout "${DOMAIN}/${LABEL}" >/dev/null 2>&1 || true
     launchctl bootout "${DOMAIN}/${WATCH_LABEL}" >/dev/null 2>&1 || true
-    launchctl bootout "${DOMAIN}/${SWAP_LABEL}" >/dev/null 2>&1 || true
-    launchctl bootout "${DOMAIN}/${PROXY_LABEL}" >/dev/null 2>&1 || true
-    rm -f "$PLIST" "$WATCH_PLIST" "$SWAP_PLIST" "$PROXY_PLIST"
-    echo "removed ${LABEL}, ${WATCH_LABEL}, ${SWAP_LABEL}, and ${PROXY_LABEL}"
+    retire_stale || exit 1
+    rm -f "$PLIST" "$WATCH_PLIST"
+    echo "removed ${LABEL} and ${WATCH_LABEL}"
     ;;
   --check)
     rc=0
@@ -295,35 +222,19 @@ case "$MODE" in
     else
       echo "FAIL  ${WATCH_LABEL} not loaded"; rc=1
     fi
-    if [ -f "$SWAP_PLIST" ] && plutil -lint "$SWAP_PLIST" >/dev/null 2>&1 \
-       && grep -q "${ROOT}/scripts/hearth-swapd.sh" "$SWAP_PLIST"; then
-      echo "OK    plist ${SWAP_PLIST}"
-    else
-      # Optional (ADR 0049): serving does not depend on it, so no exit 1.
-      echo "WARN  no swap plist — laptops cannot swap roles over the tunnel (--apply)"
-    fi
-    if launchctl print "${DOMAIN}/${SWAP_LABEL}" >/dev/null 2>&1; then
-      echo "OK    ${SWAP_LABEL} loaded"
-    else
-      echo "WARN  ${SWAP_LABEL} not loaded (--apply)"
-    fi
-    # Optional (ADR 0051): editors can always use :1234 directly.
-    if [ -f "$PROXY_PLIST" ] && plutil -lint "$PROXY_PLIST" >/dev/null 2>&1 \
-       && grep -q "${ROOT}/scripts/model-proxy.py" "$PROXY_PLIST" \
-       && ! grep -q -e '--backend' -e '--local' "$PROXY_PLIST"; then
-      echo "OK    plist ${PROXY_PLIST}"
-    else
-      echo "WARN  no current model-proxy plist — no labelled /v1/models on :${HEARTH_PROXY_PORT} (--apply)"
-    fi
-    if launchctl print "${DOMAIN}/${PROXY_LABEL}" >/dev/null 2>&1; then
-      plast=$(launchctl print "${DOMAIN}/${PROXY_LABEL}" | awk -F'= ' '/last exit code/ {print $2; exit}')
-      case "${plast:-}" in
-        ''|0|"(never exited)") echo "OK    ${PROXY_LABEL} loaded" ;;
-        *) echo "WARN  ${PROXY_LABEL} loaded but exiting (last exit: ${plast}) — see ${PROXY_LOG}" ;;
-      esac
-    else
-      echo "WARN  ${PROXY_LABEL} not loaded (--apply)"
-    fi
+    for retired in $RETIRED_LABELS; do
+      if [ -f "$HOME/Library/LaunchAgents/${retired}.plist" ] \
+         || launchctl print "${DOMAIN}/${retired}" >/dev/null 2>&1; then
+        echo "FAIL  ${retired} is retired (ADR 0052) but still installed or loaded (--apply)"; rc=1
+      else
+        echo "OK    ${retired} not installed (retired, ADR 0052)"
+      fi
+    done
+    for port in $RETIRED_PORTS; do
+      if nc -z 127.0.0.1 "$port" >/dev/null 2>&1; then
+        echo "FAIL  something still listens on retired :${port} (ADR 0052) — lsof -nP -iTCP:${port} -sTCP:LISTEN; --apply stops a stray swapd or proxy"; rc=1
+      fi
+    done
     [ -f "$LOG" ] && { echo "--- last lines of ${LOG}"; tail -5 "$LOG"; }
     exit "$rc"
     ;;

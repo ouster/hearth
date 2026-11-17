@@ -53,14 +53,12 @@ Models are addressed by ROLE, never by vendor model name:
 cloud-code, cloud-frontier, cloud-frontier-direct, and cloud-frontier-fast are dormant: no keys.
 
 Swap roles load on demand and are never called unless loaded. On the host:
-scripts/demand-load.sh <role> up|down. From a laptop: hearth-load <role> up|down,
-which reaches hearth-swapd on 127.0.0.1:1236 through the tunnel with the
-laptop's own sub-key (ADR 0049).
+scripts/demand-load.sh <role> up|down. A laptop cannot load or unload a host's
+roles (ADR 0052).
 
 Concrete model names are written by hand in exactly two places:
 config/roles.tsv and docs/MODELS.md. Nowhere else. Generated copies
-(Zed display labels, pins/digests.tsv, the labels scripts/model-proxy.py adds
-to /v1/models) are built by scripts from roles.tsv.
+(Zed display labels, pins/digests.tsv) are built by scripts from roles.tsv.
 
 # Rules
 

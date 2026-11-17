@@ -70,9 +70,8 @@ The same install loads `com.hearth.context-watch` (`scripts/context-watch.sh`,
 KeepAlive). It watches `~/Library/Logs/hearth-omlx.log` and notifies if a
 trim line appears. oMLX does not emit that line today, so it stays quiet.
 `scripts/install-autostart.sh --watch` loads only that agent. `--apply` also
-loads `com.hearth.model-proxy` (`scripts/model-proxy.py`, labelled
-`/v1/models` on `127.0.0.1:1238`, no key, ADR 0051; log
-`~/Library/Logs/hearth-model-proxy.log`). Notices land in
+unloads and deletes the retired `com.hearth.swap` and
+`com.hearth.model-proxy` agents (ADR 0052). Notices land in
 `~/Library/Logs/hearth-context-watch.log`.
 
 ### oMLX

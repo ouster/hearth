@@ -62,7 +62,7 @@ tunnel, or both (ADR 0040).
 | | **hearth** (this machine) | **hearth-remote** (another host) | **cloud-cheap** |
 |---|---|---|---|
 | Address | `127.0.0.1:1234` | `127.0.0.1:1235` on a dual machine; `:1234` on a plain laptop | Gemini |
-| Commands | `ask`, `ask-deep`; `coding-brain` on 64 GB | `ask-remote`, `coding-brain-remote`, `ask-deep-remote`, `hearth-load` (no suffix on a plain laptop) | `ask-cloud` |
+| Commands | `ask`, `ask-deep`; `coding-brain` on 64 GB | `ask-remote`, `coding-brain-remote`, `ask-deep-remote` (no suffix on a plain laptop) | `ask-cloud` |
 | Needs | 24 GB RAM or more; 48 GB tested (*Before you start*) | network, host awake | laptop's own key |
 | Works offline | yes | no | no |
 | Sensitive code | yes | yes: your hardware, your tunnel | **never** |
@@ -214,7 +214,7 @@ While Hearth owns `:1234`:
 - Pasting into first-time setup returns **400**: `API key is already configured`.
 - Do **not** press Start. That starts a second server on the same port.
 
-Editors, the tunnel, and `hearth-load` use the Hearth server. That path is
+Editors and the tunnel use the Hearth server. That path is
 fine while the app looks empty.
 
 ### When the app should start the server
@@ -357,9 +357,8 @@ ask                # aider with main-brain (also: main-brain)
 ask-arch           # aider architect mode, resident on both sides
 coding-brain       # aider on the host's coding-brain (64 GB host only)
 ask-deep           # aider on the host's deep-brain (also: deep-brain)
-                   # Both load via hearth-swapd on :1236 (ADR 0049), then restore.
-                   # HEARTH_SSH_ADMIN is fallback (docs/LAPTOP.md)
-hearth-load <role> up|down   # load or unload a host swap role (swapd, else SSH)
+                   # Both need the role loaded on the host first:
+                   # scripts/demand-load.sh <role> up, there (ADR 0052)
 ask-cloud          # Gemini via THIS machine's own key — the only cloud alias
 
 ```
@@ -372,8 +371,7 @@ Every editor defaults to the role `main-brain` at
 `http://127.0.0.1:1234/v1` (ADR 0048): directly on the host, through
 `ai-tunnel` on a laptop. `coding-brain` (64 GB host) and `deep-brain` are
 swap roles: pick one only after `scripts/demand-load.sh <role> up` on the
-host, or `hearth-load <role> up` from a laptop, and switch back to
-`main-brain` after `down`. Authenticate with a token:
+host, and switch back to `main-brain` after `down`. Authenticate with a token:
 your laptop's token, or a per-editor token you can revoke on its own
 (`scripts/omlx.sh sub-key add <editor>-<machine>` on the host; names are
 letters, digits, `-` and `_`). **No editor gets a cloud provider on the
@@ -537,8 +535,7 @@ selection: `main-brain`.
 
 Cline only **selects** a role. It does not load or unload weights. On the
 host, `demand-load.sh <role> up` / `down` (or `coding-brain` / `ask-deep`)
-swaps RAM; from a laptop, `hearth-load <role> up` / `down` posts to
-hearth-swapd on `:1236` with the laptop sub-key (ADR 0049; `docs/LAPTOP.md`).
+swaps RAM. A laptop cannot load a host's roles (ADR 0052).
 `coding-brain` and `deep-brain` each evict `main-brain` for the session
 (ADR 0048). Pick a swap role in Cline only while it is loaded; after `down`,
 switch the model picker back to `main-brain`. There is no cloud fallback,
@@ -717,7 +714,7 @@ port the sandbox, scripts and editors use. The tunnel moves aside:
 |---|---|---|
 | oMLX | `127.0.0.1:1234` | `127.0.0.1:1235` |
 | SearXNG | `:8888` on this machine | its own `:8888`. The tunnel does not forward it |
-| Shell | `ask`, `ask-deep`; `coding-brain` on 64 GB | `ask-remote`, `coding-brain-remote`, `ask-deep-remote`, `hearth-load` |
+| Shell | `ask`, `ask-deep`; `coding-brain` on 64 GB | `ask-remote`, `coding-brain-remote`, `ask-deep-remote` |
 | Editor provider | `hearth` | `hearth-remote` |
 
 Both are your own hardware, so both are brains (rule 3). To convert a laptop:

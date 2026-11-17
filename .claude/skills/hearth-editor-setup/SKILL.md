@@ -15,8 +15,8 @@ before acting.
   `http://127.0.0.1:1234/v1` (resident on every host, ADR 0048). Never write
   a model name (rule 1). List `deep-brain`, and `coding-brain` when the host
   has 64 GB, only as optional picks; tell the person to run
-  `scripts/demand-load.sh <role> up` on the host (`hearth-load <role> up`
-  from a laptop via hearth-swapd, ADR 0049) before selecting either, or the
+  `scripts/demand-load.sh <role> up` on the host (a laptop cannot load a
+  host's roles, ADR 0052) before selecting either, or the
   resident may answer silently, and to switch back to `main-brain` after `down`.
 - **No cloud provider on the host** in any editor (rule 3). On a laptop,
   never pick a vendor's own cloud provider for sensitive repos.

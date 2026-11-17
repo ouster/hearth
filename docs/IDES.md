@@ -46,7 +46,7 @@ coding-brain   # 64 GB host: swap coding-brain in, aider, restore main-brain
 (ADR 0020, 0028, 0047). Swap roles are also in Zed's model picker, labelled
 "load first": a request to an unloaded role can be answered by whatever is
 loaded, without saying so. Run `scripts/demand-load.sh <role> up` on the host
-(`hearth-load <role> up` from a laptop, `docs/LAPTOP.md`) before picking
+before picking
 `coding-brain` or `deep-brain` in an editor, and switch back to `main-brain`
 after `down` (ADR 0048).
 
@@ -137,9 +137,7 @@ The sync writes only inside the local `hearth` provider. On a dual machine
 know the other host's RAM tier, so label those entries by hand with the role
 only, e.g. `main-brain (remote)`. An entry there that carries this machine's
 label is reported as drift. A demand role you do not list under `hearth` is
-a note, not drift. Zed's `hearth` belongs on `http://127.0.0.1:1234/v1`;
-Zed reads labels from its settings, so the `:1238` proxy (ADR 0051) adds
-nothing for it.
+a note, not drift. Zed's `hearth` belongs on `http://127.0.0.1:1234/v1`.
 
 The token goes in through the UI (Agent panel → settings → `hearth` → API
 key) so it lands in the keychain rather than a dotfile. Use the host token on
@@ -444,11 +442,8 @@ README → *Cline* has the field table. Extra detail here:
    `http://127.0.0.1:1234/v1`, Model Source URL empty. Add models
    `main-brain` (262144), `deep-brain` (65536), and on a 64 GB host
    `coding-brain` (98304); default `main-brain`.
-   For labels in the model list, a host may use Base URL
-   `http://127.0.0.1:1238/v1` instead (model-proxy, ADR 0051; same key,
-   same roles). `hearth-remote` on a dual machine stays on the tunnel,
-   `http://127.0.0.1:1235/v1` — never point both at `:1238`. If `:1238`
-   is down, switch back to `:1234`.
+   `hearth-remote` on a dual machine is the tunnel,
+   `http://127.0.0.1:1235/v1`.
    Cline selects a role; it does not demand-load —
    run `scripts/demand-load.sh <role> up` on the host before picking a
    swap role, then `down` and switch Cline back. Capabilities: streaming,

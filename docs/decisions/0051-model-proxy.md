@@ -1,8 +1,8 @@
 # ADR 0051 — model display proxy on `:1238`
 
 **Date:** 2026-11-15
-**Status:** proposed. The operator approved the design points below on
-2026-11-15; acceptance waits on the Cline picker check (see *Open*).
+**Status:** withdrawn by ADR 0052 (2026-11-16); never accepted. The proxy
+is removed.
 **Amends:** rule 1 (a third generated copy of model names). Uses ADR 0048
 resident slots. Serving and routing are unchanged.
 

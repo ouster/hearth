@@ -18,7 +18,7 @@ If a fix is obvious, describe it; leave the patch to the person or to
 - After a plan or a diff the person wants checked.
 - As the second concurrent call while `main-brain` is resident (≤3 slots;
   ADR 0048, 0050). Confirm the agent is still `main-brain` before starting
-  a parallel review (`hearth-load` / swapd agent, or ask).
+  a parallel review (`scripts/demand-load.sh status` on the host, or ask).
 
 ## Do not run when
 

@@ -1,6 +1,6 @@
 # Prompt injection threat model
 
-Last updated: 2026-11-14 (ADR 0049). Controls in §4 verified 2026-11-05 on macOS 26.4 by
+Last updated: 2026-11-16 (ADR 0052). Controls in §4 verified 2026-11-05 on macOS 26.4 by
 `scripts/sandbox-probe.sh` (10 passed, 0 failed). Write + search (ADR 0029)
 is listed in §2 and §3; it is outside that sandbox.
 
@@ -208,13 +208,9 @@ Recorded so nobody mistakes silence for safety.
    agents (Claude Code, Codex, Gemini CLI) bypass profiles, `confirm` and the
    sandbox entirely, calling their own cloud. None on the host
    (`docs/IDES.md`).
-5. **Any valid key can swap the host's agent** (ADR 0049). `hearth-swapd` on
-   `127.0.0.1:1236` accepts every key oMLX accepts: a laptop key and an
-   editor sub-key alike. A stolen key, or an unsandboxed agent on the host
-   that finds one, can unload `main-brain`. It cannot read a prompt, reach
-   oMLX `/admin`, or name any role other than `coding-brain` and
-   `deep-brain`. The effect is an outage, and `scripts/demand-load.sh
-   <role> down` ends it. A `sandboxed.sh` agent cannot reach `:1236`.
+5. **A key cannot swap the host's agent.** `hearth-swapd` let any key oMLX
+   accepts unload `main-brain`; it was removed (ADR 0052). Loading and
+   unloading need the host token or a shell on the host.
 6. **No confirmation gates** beyond git commits. This costs nothing today
    because nothing in the stack can send mail or move money. It becomes urgent
    the day something can.

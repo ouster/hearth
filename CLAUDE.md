@@ -33,9 +33,9 @@ Read `docs/ROUTING.md` before suggesting any routing change.
 `main-brain` on every tier (ADR 0048). On 64 GB, `coding-brain` /
 `demand-load.sh coding-brain up` swaps `main-brain` out and `down` restores
 it; `ask-deep` evicts the current agent, loads `deep-brain`, and restores the
-prior agent on the way out (ADR 0031, 0033, 0047). A laptop loads the host's
-swap roles with `hearth-load` via hearth-swapd on `:1236` (sub-key over the
-tunnel, ADR 0049); `HEARTH_SSH_ADMIN` is fallback. `edit-brain` is laptop oMLX only (ADR 0033 amend).
+prior agent on the way out (ADR 0031, 0033, 0047). Swap roles are
+loaded on the host that owns them; a laptop cannot change what a host has
+loaded (ADR 0052). `edit-brain` is laptop oMLX only (ADR 0033 amend).
 
 Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgres is the removed gateway — never suggest commands against it. `docs/MIGRATION-LMSTUDIO.md` is the record of the earlier cut onto LM Studio, which oMLX replaced.
 
@@ -44,12 +44,12 @@ Any doc or script describing `:4000`, `:11434`, LiteLLM, virtual keys or Postgre
 1. **Concrete model names appear in exactly two files:** `config/roles.tsv` and
    `docs/MODELS.md`. Everywhere else — aliases, scripts, IDE config, code — uses roles.
    If you are about to write a model tag into a shell alias, stop.
-   Three generated copies, all built from `roles.tsv` so they cannot drift:
+   Two generated copies, both built from `roles.tsv` so they cannot drift:
    the `display_name` labels in Zed's settings (`scripts/zed-sync.sh`, from
-   `roles.tsv`), the model key plus weights path in
-   `pins/digests.tsv` (`scripts/pin-digests.sh`), and the `display_name`
-   labels `scripts/model-proxy.py` adds to `/v1/models` at run time
-   (ADR 0051). Clients always *call* the role.
+   `roles.tsv`) and the model key plus weights path in
+   `pins/digests.tsv` (`scripts/pin-digests.sh`). Clients always *call* the
+   role. Nothing sits between a client and oMLX: no proxy, no swap daemon
+   (ADR 0052).
    Same discipline for MCP servers: client config docs (`docs/IDES.md`) and
    `docs/MCP.md`.
 

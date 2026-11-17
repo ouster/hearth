@@ -257,56 +257,27 @@ hdr "Autostart"
   && ok "launchd agent $(ai_boot_label) installed and loaded" \
   || wrn "autostart not installed or last run failed — scripts/install-autostart.sh --check"
 
-# ---------------------------------------------------------------- hearth-swapd (ADR 0049)
-hdr "hearth-swapd"
-if nc -z 127.0.0.1 "$HEARTH_PORT" >/dev/null 2>&1; then
-  if nc -z 127.0.0.1 "$HEARTH_SWAP_PORT" >/dev/null 2>&1; then
-    wan=$(hearth_wan_binds "$HEARTH_SWAP_PORT")
-    if [ -n "$wan" ]; then
-      bad "hearth-swapd :${HEARTH_SWAP_PORT} is not loopback-only:${wan}"
-    else
-      ok "hearth-swapd listening on 127.0.0.1:${HEARTH_SWAP_PORT}"
-    fi
+# ---------------------------------------------------------------- retired daemons (ADR 0052)
+hdr "Retired daemons"
+for retired in com.hearth.swap com.hearth.model-proxy; do
+  if [ -f "$HOME/Library/LaunchAgents/${retired}.plist" ]; then
+    bad "${retired} is still installed (removed by ADR 0052) — scripts/install-autostart.sh --apply"
   else
-    wrn "oMLX up but hearth-swapd not on :${HEARTH_SWAP_PORT} — scripts/hearth-swapd.sh up"
+    ok "${retired} not installed"
   fi
-else
-  ok "hearth-swapd skipped (oMLX not listening)"
-fi
-if [ -f "$HOME/.ssh/authorized_keys" ]; then
-  if grep -E 'hearth-tunnel-' "$HOME/.ssh/authorized_keys" >/dev/null 2>&1; then
-    if grep -E 'hearth-tunnel-' "$HOME/.ssh/authorized_keys" | grep -F 'permitopen="127.0.0.1:1236"' >/dev/null 2>&1; then
-      ok "tunnel keys permitopen includes 127.0.0.1:1236"
-    else
-      wrn "tunnel keys lack permitopen 1236 — scripts/client-setup.sh --update-keys"
-    fi
-  fi
-fi
-
-# ---------------------------------------------------------------- model-proxy (ADR 0051)
-hdr "model-proxy"
-PROXY_PLIST="$HOME/Library/LaunchAgents/com.hearth.model-proxy.plist"
-if [ ! -f "$PROXY_PLIST" ]; then
-  ok "model-proxy not installed (optional; editors use :${HEARTH_PORT})"
-elif ! nc -z 127.0.0.1 "$HEARTH_PROXY_PORT" >/dev/null 2>&1; then
-  # An editor pointed at the proxy has no models at all while it is down.
-  bad "model-proxy plist exists but nothing listens on :${HEARTH_PROXY_PORT} — scripts/install-autostart.sh --apply, log ~/Library/Logs/hearth-model-proxy.log"
-else
-  wan=$(hearth_wan_binds "$HEARTH_PROXY_PORT")
-  if [ -n "$wan" ]; then
-    bad "model-proxy :${HEARTH_PROXY_PORT} is not loopback-only:${wan}"
+done
+# A nohup swapd never had a plist, so check the ports too. On a dual machine
+# :1235 is the tunnel; :1236 and :1238 belong to nothing now.
+for port in 1236 1238; do
+  if nc -z 127.0.0.1 "$port" >/dev/null 2>&1; then
+    bad "something still listens on retired :${port} (ADR 0052) — scripts/install-autostart.sh --apply, or lsof -nP -iTCP:${port} -sTCP:LISTEN"
   else
-    ok "model-proxy listening on 127.0.0.1:${HEARTH_PROXY_PORT}"
+    ok "nothing on retired :${port}"
   fi
-  if nc -z 127.0.0.1 "$HEARTH_PORT" >/dev/null 2>&1; then
-    # It must hold no key: without one it answers what oMLX answers.
-    code=$(hearth_http /models "" "http://127.0.0.1:${HEARTH_PROXY_PORT}/v1")
-    case "$code" in
-      401|403) ok "model-proxy adds no key (keyless /v1/models → ${code})" ;;
-      200)     bad "model-proxy answered a keyless /v1/models with 200 — it is injecting a key" ;;
-      *)       er "model-proxy keyless probe got ${code:-nothing}" ;;
-    esac
-  fi
+done
+if [ -f "$HOME/.ssh/authorized_keys" ] \
+   && grep -E 'hearth-tunnel-' "$HOME/.ssh/authorized_keys" | grep -F 'permitopen="127.0.0.1:1236"' >/dev/null 2>&1; then
+  wrn "tunnel keys still permit a forward to :1236 — scripts/client-setup.sh --update-keys"
 fi
 
 # ---------------------------------------------------------------- hygiene

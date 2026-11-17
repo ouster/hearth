@@ -1,7 +1,7 @@
 # ADR 0048 — main-brain is the resident on every tier; coding-brain is a 64 GB swap role
 
 **Date:** 2026-11-14
-**Status:** accepted 2026-11-14 by the operator.
+**Status:** amended by ADR 0052 (2026-11-16): a laptop no longer loads or unloads host swap roles; they load on the host that owns them. Was: accepted 2026-11-14 by the operator.
 **Amends:** ADR 0047 (the default resident and the load of `coding-brain` and `main-brain` on 64 GB). ADR 0047's exclusivity rule stands. ADR 0040 (a dual machine can load the other host's swap roles).
 
 ## Context
