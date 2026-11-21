@@ -1,0 +1,5 @@
+model	task	tokens	seconds	verdict
+Ripple-65B-Preview-MLX-4bit	01-bash-launchd	162	15.5	syntax-ok
+Ripple-65B-Preview-MLX-4bit	02-python-mcp-tool	1655	150.0	syntax-ok
+Ripple-65B-Preview-MLX-4bit	03-refactor-judgment	598	55.2	needs-reading
+Ripple-65B-Preview-MLX-4bit	04-long-context	490	829.7	needs-reading

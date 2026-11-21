@@ -1,0 +1,8 @@
+=== tool-smoke openai model=NVIDIA-Nemotron-3.5-Bolt-74B-A9B-4bit ===
+turn1: tool_calls=2 content_len=0
+  read_file
+  read_file
+turn2: tool_calls=1 content_len=0
+  write_file
+  has_lt=True head='# hearth tool smoke\n#!/bin/bash\n\ncheck_health() {\n  x=0\n  if [[ $x < 1 ]]; then '
+PASS — write/edit tool in turn 2

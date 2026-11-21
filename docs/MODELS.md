@@ -24,10 +24,27 @@ oMLX serves these from `~/.hearth/models`. Machine-read copy:
 | Role | Model key | Source | Size | Load | Set | Why |
 |---|---|---|---|---|---|---|
 | `coding-brain` | `qwen3-coder-next-4bit` | `mlx-community/Qwen3-Coder-Next-4bit` | ~42 GB | 96K × 1 (98,304), **swap, 64 GB only** (ADR 0047, 0048). No draft. Thinking on in oMLX settings | 2026-11-12 | 80B-A3B coding MoE. c1 tool gate 10/10, TTFT p50 27.2 s, peak 52.0 GB (`2026-11-12-1903-coder-next-4bit`). `bench/tasks` 03/04 ok (`2026-11-12-1923-coder-next-quality`). oMLX intel 100-sample: HumanEval 92%, MBPP 82%, LiveCodeBench 73%, GSM8K 94% (`2026-11-12-2103-coder-next-omlx`). Perf 64k PP 788 / TG 59 (`9dz1w6ja`). Never beside `main-brain` or `deep-brain`. Not on 48 GB |
-| `main-brain` | `qwen3.6-35b-a3b-mlx` | `mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit` @ `08567bc` | 22 GB | 256K × 3 (262,144), **resident on every tier** (ADR 0048), no draft, **thinking on (set by `scripts/omlx.sh`)** | 2026-11-12 | MoE, ~3B active, OptiQ. Won the 2026-11-07 quant A/B. ADR 0035, 0046. Default for editors and `ask` (ADR 0048). c3 TTFT p50 59.8 s at 256K |
-| `deep-brain` | `qwen3.8-27b-mlx` | `lmstudio-community/Qwen3.8-27B-MLX-4bit` @ `6067b15` | 16.1 GB | 64K × 1, **on demand**: `ask-deep` loads it, evicting the current agent (`coding-brain` or `main-brain`) for the session (swap, ADR 0033, 0047), and restores that agent on the way out | 2026-11-01 | Dense 27B. Hard one-off questions, never agent loops. Never beside `coding-brain` |
-| `edit-brain` | `sweep-next-edit-1.5b-mlx-8bit` | `sweepai/sweep-next-edit-1.5B` @ `4090165` (`sweep-next-edit-1.5b.q8_0.v2.gguf`, sha256 `1321ea5e…`), tokenizer rebuilt from the GGUF's pruned 43,839-token vocabulary (template `Qwen/Qwen2.5-Coder-1.5B` @ `df3ce67`), converted to MLX 8-bit at `~/.hearth/models/hearth/sweep-next-edit-1.5B-MLX-8bit` | 1.4 GB | 8K × 2, **edit**: laptop oMLX only, `/v1/completions`, greedy, 512 max tokens | 2026-11-07 | Editor edit prediction (Zed `open_ai_compatible_api`, prompt format `sweep`). Apache 2.0, Qwen2.5-Coder base. Laptop bench 2026-11-07: p50 350 / p95 398 ms, 24/30 (misses `02-add-field`). Host alone p95 281 ms; beside c3 p95 5747 ms and `main-brain` TTFT p95 89.7 s — **host does not load it** (ADR 0033 amend). Paid Zed Zeta is a separate cloud opt-in (`docs/IDES.md`) |
-| `cloud-cheap` | `gemini-3.6-flash` | Google, laptop `ask-cloud` only (client-only, ADR 0038) | — | — | 2026-10-22 | 1M ctx, 65K output. ADR 0014 |
+| `main-brain` | `qwen3.6-35b-a3b-mlx` | `mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit` @ `08567bc` | 22 GB | 256K × 3 (262,144), **resident on every tier** (ADR 0048), no draft, **thinking on (set by `scripts/omlx.sh`)** | 2026-11-12 | MoE (~3B active) + vision tower in weights. OptiQ. Won the 2026-11-07 quant A/B. ADR 0035, 0046. Default for editors and `ask` (ADR 0048). c3 TTFT p50 59.8 s at 256K |
+| `deep-brain` (64 GB) | `nemotron-bolt-74b-a9b-4bit` | `nativ-community/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-4bit` @ `4bc0a24` | ~40 GB | 96K × 1 (98,304), **swap, 64 GB only** (ADR 0053). `ask-deep` / `demand-load.sh` evict the current agent and restore it on the way out | 2026-11-21 | MoE VLM 74B-A9B (text + image + video; C-RADIO vision; no audio). c1 TTFT p50 60.0 s vs prior deep ~123 s; 03/04 strong; peak ~51 GB (`2026-11-21-1600-nemotron-bolt`). OpenMDW-1.1. Never beside `coding-brain`. Not on 48 GB |
+| `deep-brain` (48 GB) | `qwen3.8-27b-mlx` | `lmstudio-community/Qwen3.8-27B-MLX-4bit` @ `6067b15` | 16.1 GB | 64K × 1, **swap** (ADR 0033, 0047). Same load path as above | 2026-11-01 | **Dense** 27B + vision tower in weights (not MoE; no audio). Hard one-off questions, never agent loops. Never beside `coding-brain` |
+| `edit-brain` | `sweep-next-edit-1.5b-mlx-8bit` | `sweepai/sweep-next-edit-1.5B` @ `4090165` (`sweep-next-edit-1.5b.q8_0.v2.gguf`, sha256 `1321ea5e…`), tokenizer rebuilt from the GGUF's pruned 43,839-token vocabulary (template `Qwen/Qwen2.5-Coder-1.5B` @ `df3ce67`), converted to MLX 8-bit at `~/.hearth/models/hearth/sweep-next-edit-1.5B-MLX-8bit` | 1.4 GB | 8K × 2, **edit**: laptop oMLX only, `/v1/completions`, greedy, 512 max tokens | 2026-11-07 | Dense text. Editor edit prediction (Zed `open_ai_compatible_api`, prompt format `sweep`). Apache 2.0, Qwen2.5-Coder base. Laptop bench 2026-11-07: p50 350 / p95 398 ms, 24/30 (misses `02-add-field`). Host alone p95 281 ms; beside c3 p95 5747 ms and `main-brain` TTFT p95 89.7 s — **host does not load it** (ADR 0033 amend). Paid Zed Zeta is a separate cloud opt-in (`docs/IDES.md`) |
+| `cloud-cheap` | `gemini-3.6-flash` | Google, laptop `ask-cloud` only (client-only, ADR 0038) | — | — | 2026-10-22 | 1M ctx, 65K output. ADR 0014. Cloud multimodal is Gemini’s surface, not oMLX |
+
+### Capabilities (weights on disk, checked 2026-11-21)
+
+What the checkpoint **contains**, not what every Hearth client sends today.
+Editors / `ask` / `ask-deep` are **text** unless a client explicitly posts
+image (or video) parts. **No live local role has an audio tower** — zero
+`audio`/`sound` weight keys in every pack below.
+
+| Role | Shape | Text | Vision tower | Video | Audio tower | Reasoning (thinking) | Notes |
+|---|---|---|---|---|---|---|---|
+| `main-brain` | MoE 35B-A3B (`qwen3_5_moe`, 256 experts / top-8) | yes | yes (~333 vision weight keys; Qwen3.5-style ViT) | tokens in config (`video_token_id`) | no | yes — `scripts/omlx.sh` forces thinking on; healthcheck requires it | OptiQ HF card tags `text-generation`; vision weights are still in the pack |
+| `coding-brain` | MoE 80B-A3B (`qwen3_next`, 512 experts / top-10) | yes | no | no | no | thinking on in oMLX settings; not probed by healthcheck | Text / tools / code. No multimodal |
+| `deep-brain` (64 GB) | MoE 74B-A9B (`nemotron_h_omni` + C-RADIO) | yes | yes (~390 vision keys) | yes (upstream + config; video not re-benched here) | no (`sound_config` null) | yes — returns `reasoning_content` | OpenMDW-1.1. VLM; Hearth deep path still text-first |
+| `deep-brain` (48 GB) | **Dense** 27B (`qwen3_5`) | yes | yes (~333 vision keys) | tokens in config | no | model can think; deep use is one-shot Q&A | Not MoE. Same vision family as main, smaller dense LLM |
+| `edit-brain` | Dense 1.5B (`qwen2`) | completions only | no | no | no | no | FIM / next-edit; not a chat model |
+| `cloud-cheap` | Gemini Flash (remote) | yes | Gemini’s own | Gemini’s own | Gemini’s own | vendor | Laptop key only (ADR 0038); never on host oMLX |
 
 **Resident set (64 GB):** `main-brain` at boot (ADR 0048). OptiQ c3:
 30/30 at 256K, TTFT p50 59.8 s
@@ -57,8 +74,8 @@ detected size. Ceiling is RAM minus 8 (ADR 0031).
 | RAM | Ceiling | Agent resident | `main-brain` | `deep-brain` | Status |
 |---|---|---|---|---|---|
 | < 48 GB | — | none: `omlx.sh up` refuses | — | — | no tier benched |
-| 48 GB | 40 | OptiQ `main-brain` 256K × 3 | resident | swap 64K | No `coding-brain` (Coder-Next ~52 GB peak). c3 on 48 GB hardware still outstanding |
-| 64 GB | 56 | OptiQ `main-brain` 256K × 3 | resident | swap 64K | ADR 0048. `coding-brain` 96K × 1 is a second swap role; never beside main or deep. `edit-brain` laptop-only |
+| 48 GB | 40 | OptiQ `main-brain` 256K × 3 | resident | swap 64K (Qwen3.8) | No `coding-brain` (Coder-Next ~52 GB peak). c3 on 48 GB hardware still outstanding |
+| 64 GB | 56 | OptiQ `main-brain` 256K × 3 | resident | swap 96K (Bolt, ADR 0053) | ADR 0048. `coding-brain` 96K × 1 is a second swap role; never beside main or deep. `edit-brain` laptop-only |
 
 ### Candidates by RAM (unbenched)
 
@@ -79,7 +96,7 @@ and stronger, for one-off questions.
 | 24 GB (16) | Gemma 4 12B OptiQ 4-bit (`mlx-community/gemma-4-12B-it-OptiQ-4bit`): 9.0 GB disk, about 12 GB memory (catalog 2026-10-18). Dense. Qwen that fits: Qwen3.5-9B 4-bit, ~5.6 GB (mlx-community card). The 26B-A4B and the 27B/35B Qwens do not fit | none | — |
 | 32 GB (24) | Gemma 4 26B-A4B uniform 4-bit, 15.4 GB disk (mlx-community). Laptop c3 peak 22 GB, so one slot; host 3×128K peaked 25.2 GB (ADR 0019). Qwen alternative: Qwen3.6 35B-A3B uniform 4-bit, 20.4 GB *(repo)*, about 32K × 1 | Qwen3.8-27B, 16.1 GB *(repo)*, swap. Gemma 4 31B oQ4e is 20.5 GB (Jundot card, updated 2026-10-29): short context only | swap |
 | 48 GB (40) | Qwen3.6 35B-A3B (tier row) | Qwen3.8-27B (tier row) | swap |
-| 64 GB (56) | Qwen3.6 35B-A3B (tier row); alternative Qwen3-Coder-Next 80B-A3B with no deep beside | Qwen3.8-27B (tier row) | beside |
+| 64 GB (56) | Qwen3.6 35B-A3B (tier row); alternative Qwen3-Coder-Next 80B-A3B with no deep beside | Nemotron Bolt 74B-A9B (tier row, ADR 0053); Qwen3.8 remains the 48 GB deep | swap |
 | 128 GB (120) | Qwen3.6 35B-A3B | Qwen3.5-122B-A10B or gpt-oss-120b | beside (~109 GB with the 122B, tight) |
 | 256 GB (248) | Qwen3.6 35B-A3B | DeepSeek V4 Flash | beside |
 | 512 GB (504) | Qwen3.6 35B-A3B | MiniMax M3 (beside) or GLM-5.3 (swap) | see below |
@@ -104,9 +121,19 @@ org/name). Do **not** point `roles.tsv` at these until a bench wins (rule 5).
 | catalog | either | `majentik/garden` TurboQuant / RotorQuant tiers | smoke-gated | varies | Only after a named repo is picked; verify text vs full tower |
 
 Live pins: `mlx-community/Qwen3.6-35B-A3B-OptiQ-4bit` (`main-brain`,
-ADR 0035), `lmstudio-community/Qwen3.8-27B-MLX-4bit` (`deep-brain`). The
-uniform lmstudio, Jundot oQ4e, and Unsloth UD leaves stay on disk unloaded.
-Skip GGUF orgs for oMLX (no GGUF→MLX path).
+ADR 0035), `nativ-community/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-4bit`
+(`deep-brain` on 64 GB, ADR 0053), `lmstudio-community/Qwen3.8-27B-MLX-4bit`
+(`deep-brain` on 48 GB). Skip GGUF orgs for oMLX (no GGUF→MLX path).
+
+**64 GB swap benches (2026-11-21)**
+
+Results: `bench/results/2026-11-21-1450-ripple-65b`,
+`bench/results/2026-11-21-1600-nemotron-bolt`.
+
+| Challenges | Weights (HF) | Size *(repo)* | c1 TTFT p50 (~30k) | Peak | Quality | Outcome |
+|---|---|---|---|---|---|---|
+| `coding-brain` | `frogggias/Ripple-65B-Preview-MLX-4bit` | 34 GB | 322.6 s | ~54 GB | 03/04 strong; denser than Coder-Next | Rejected — too slow for agents. Weights deleted |
+| `deep-brain` | `nativ-community/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-4bit` | 40 GB | 60.0 s | ~50–51 GB | 03/04 strong; ~50 tok/s short; VLM; OpenMDW-1.1 | **Promoted** on 64 GB (ADR 0053). Not coding-brain (60 s vs Coder-Next 27 s) |
 
 **Alternatives by tier**
 
@@ -125,7 +152,9 @@ Skip GGUF orgs for oMLX (no GGUF→MLX path).
 | 32 | Gemma 4 31B, Qwen3.6-27B | deep | ~17 GB | Dense |
 | 48 | Gemma 4 26B-A4B | agent | ~15 GB *(repo)* | Fallback if Qwen3.6 exceeds 36 GB on 48 GB |
 | 48 | Devstral Small 2, Gemma 4 31B, Qwen3.6-27B | deep | 14–17 GB | Swap alternatives to Qwen3.8-27B |
-| 64 | Qwen3-Coder-Next 80B-A3B | agent | ~46 GB | SWE-bench Verified 70.6 (vendor). ~10 GB left for KV; no deep beside |
+| 64 | Qwen3-Coder-Next 80B-A3B | agent | ~46 GB | SWE-bench Verified 70.6 (vendor). ~10 GB left for KV; no deep beside. Live `coding-brain` |
+| 64 | Nemotron 3.5 Bolt 74B-A9B 4-bit | deep | 40 GB *(repo)*, peak ~51 GB | Live `deep-brain` on 64 GB (ADR 0053). VLM weights; OpenMDW-1.1. Not a coding-brain replacement |
+| 64 | Ripple-65B Preview 4-bit | coding/deep | 34 GB *(repo)* | Benched 2026-11-21: c1 TTFT p50 323 s — rejected for agents. Weights removed |
 | 64 | gpt-oss-120b, Nemotron 3 Super 120B-A12B | deep | 64–72 GB | Do not fit; need 96 GB+ |
 | 128 | Qwen3.5-122B-A10B | deep or agent | 63–75 GB peak | oMLX bench, M3 Max: 42 tok/s, 63.4 GB. ~65 tok/s reported on M5 Max |
 | 128 | gpt-oss-120b | deep | ~65 GB | Reported as the most reliable open-weight tool caller |

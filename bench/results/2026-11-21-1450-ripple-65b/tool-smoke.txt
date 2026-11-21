@@ -1,0 +1,8 @@
+=== tool-smoke openai model=Ripple-65B-Preview-MLX-4bit ===
+turn1: tool_calls=2 content_len=41
+  read_file
+  read_file
+turn2: tool_calls=1 content_len=42
+  write_file
+  has_lt=True head='# hearth tool smoke\n#!/usr/bin/env bash\n\nhealthcheck() {\n  if [[ $x < 1 ]]; then'
+PASS — write/edit tool in turn 2

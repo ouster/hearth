@@ -1,0 +1,9 @@
+1. Not in the file — the document describes `cloud-frontier` as a dormant role blocked on an OpenRouter key (for Kimi K3), but it contains no fallback chain for it. There is a separate note: “There is no router, so nothing can quietly reroute a request to a cloud model,” and fallback chains are explicitly retired as a leak source.
+
+2. The dormant roles are:
+   - `cloud-code` — blocked on an Anthropic API key (deliberately unset; a Console key bills separately from any Claude subscription).
+   - `cloud-frontier` — blocked on an OpenRouter key; primary frontier route for Kimi K3.
+   - `cloud-frontier-direct` — blocked on a Moonshot key; same price as OpenRouter, best K3 caching.
+   - `cloud-frontier-fast` — blocked on a Fireworks key; dearest; throughput or LoRA only.
+
+3. Port 5433. It was the Podman Postgres container used by the retired LiteLLM gateway; the port is listed as “free” after the 2026-10-31 cleanup, along with ports 4000 and 11434.

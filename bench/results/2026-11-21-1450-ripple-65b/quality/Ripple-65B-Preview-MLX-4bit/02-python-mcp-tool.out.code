@@ -1,0 +1,19 @@
+import sqlite3
+
+def search_cases(query: str, limit: int = 10) -> list[dict]:
+    conn: sqlite3.Connection = sqlite3.connect("cases.db")
+    try:
+        conn.row_factory = sqlite3.Row
+        cur: sqlite3.Cursor = conn.cursor()
+        cur.execute(
+            "SELECT id, citation, court, year, summary FROM cases "
+            "WHERE instr(lower(citation), lower(?)) > 0 "
+            "OR instr(lower(summary), lower(?)) > 0 "
+            "ORDER BY year DESC LIMIT ?",
+            (query, query, limit),
+        )
+        rows: list[sqlite3.Row] = cur.fetchall()
+        result: list[dict] = [dict(row) for row in rows]
+        return result
+    finally:
+        conn.close()

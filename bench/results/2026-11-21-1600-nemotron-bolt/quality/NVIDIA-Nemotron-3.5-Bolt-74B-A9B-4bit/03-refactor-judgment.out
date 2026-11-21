@@ -1,0 +1,126 @@
+## Bugs
+
+1. **IEEE‑754 floating‑point rounding.**  
+   `price`, `qty`, and `discount_pct` are all binary floats.  
+   ```python
+   total = total - (total * discount_pct / 100)
+   ```  
+   creates rounding errors such as `0.1 + 0.2 != 0.3`. Because the result is then passed to `round(total, 2)`, tiny errors like `99.99999999999999` get rounded upward to `100.0` instead of `99.99`. For a billing system that loses or gains fractions of a cent and can produce incorrect **pennies‑exact** totals.
+
+2. **`total - (total * discount_pct / 100)` can lose precision.**  
+   The discount is computed as a sub‑expression and subtracted from a float that itself is already approximate. The relative error of a subtraction of two nearly‑equal floats is compounded; the result can be off by more than one ULP.
+
+3. **No protection against negative discounts / charges.**  
+   If `discount_pct` is negative, the code *adds* money. If `price` or `qty` are negative, the running total can become negative. There is no validation, so the function can produce negative bills or “discounts” that increase the charge.
+
+4. **Assumes every item has `'price'` and `'qty'` keys.**  
+   `items[i]['price']` and `items[i]['qty']` raise `KeyError` for malformed records.
+
+5. **Mutating index loop is unnecessary and error‑prone.**  
+   `for i in range(len(items)):` with `items[i]` is slower and more brittle than iterating directly; it also makes off‑by‑one or index‑out‑of‑range bugs easier to introduce if the loop body is edited later.
+
+6. **`round(..., 2)` is banker’s rounding, not commercial rounding.**  
+   Python’s built‑in `round()` uses round‑half‑to‑even. For currency you usually want decimal‑aware rounding (often round‑half‑up). The result of binary float arithmetic makes the rounding input unreliable anyway.
+
+7. **No validation of `discount_pct`.**  
+   Values > 100, `NaN`, or non‑numeric types are accepted and can produce absurd totals or crash later.
+
+8. **Side‑effects / order of operations.**  
+   Because Python evaluates left‑to‑right, `total * discount_pct / 100` is `(total * discount_pct) / 100`. If `total` is huge and `discount_pct` is small, the intermediate product can overflow / lose precision before the division. More importantly, the multiplication is done in binary float, so the “discount amount” is never exactly representable.
+
+---
+
+## Corrected version
+
+```python
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+from typing import Mapping, Sequence
+
+def apply_discount(items, discount_pct):
+    """
+    Compute a money total with an optional percentage discount.
+
+    Parameters
+    ----------
+    items : sequence of mappings
+        Each element must provide numeric 'price' and 'qty'.
+    discount_pct : int, float, str, or Decimal
+        Percentage to subtract (0 for none).  Negative values are rejected.
+
+    Returns
+    -------
+    Decimal
+        The final amount, rounded to two decimal places using
+        ROUND_HALF_UP (commercial rounding).
+
+    Raises
+    ------
+    ValueError
+        If any price/qty is negative, if discount_pct is negative,
+        or if discount_pct is not a number.
+    KeyError / TypeError
+        If an item is missing required keys or they are non‑numeric.
+    """
+    TWO_PLACES = Decimal("0.01")
+
+    # ---- validate discount percentage ---------------------------------------
+    try:
+        discount = Decimal(str(discount_pct))
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise ValueError(f"discount_pct must be numeric, got {discount_pct!r}") from exc
+
+    if discount < 0:
+        raise ValueError("discount_pct cannot be negative")
+    if discount > 100:
+        raise ValueError("discount_pct cannot exceed 100%")
+
+    # ---- accumulate line items -----------------------------------------------
+    total = Decimal("0")
+    for item in items:                     # direct iteration, no index juggling
+        if not isinstance(item, Mapping):
+            raise TypeError("each item must be a mapping")
+
+        try:
+            price = Decimal(str(item["price"]))
+            qty   = Decimal(str(item["qty"]))
+        except KeyError as exc:
+            raise KeyError(f"item missing required key: {exc}") from exc
+        except (InvalidOperation, ValueError, TypeError) as exc:
+            raise TypeError(f"price and qty must be numeric, got {item!r}") from exc
+
+        if price < 0 or qty < 0:
+            raise ValueError("price and qty must be non‑negative")
+
+        total += price * qty               # exact decimal arithmetic
+
+    # ---- apply discount -------------------------------------------------------
+    if discount > 0:
+        # (total * discount / 100) is computed in decimal, then subtracted.
+        # This avoids the binary‑float rounding of `total * discount_pct / 100`.
+        discount_amount = (total * discount / Decimal("100"))
+        total = total - discount_amount
+
+    # ---- final commercial rounding --------------------------------------------
+    total = total.quantize(TWO_PLACES, rounding=ROUND_HALF_UP)
+    return total
+```
+
+### What changed and why
+
+| Problem | Fix |
+|---|---|
+| Binary float errors | All arithmetic is done with `Decimal`, which represents decimal fractions exactly (within the current context precision). |
+| `round(total, 2)` banker’s rounding | `quantize(..., rounding=ROUND_HALF_UP)` gives the standard “round half up” behaviour expected in billing. |
+| Negative discounts / charges | Explicit validation rejects negative `discount_pct`, `price`, and `qty`. |
+| Missing keys | A clear `KeyError` (or `TypeError`) is raised instead of letting Python raise an opaque error later. |
+| Index loop | Direct `for item in items` is clearer and cannot suffer from off‑by‑one mistakes. |
+| Discount > 100 % | Rejected as invalid input. |
+| Non‑numeric `discount_pct` | Converted via `Decimal(str(...))` with a precise error message. |
+
+The function now returns a `Decimal`. If your downstream code expects a `float` or `int` (cents), convert at the API boundary:
+
+```python
+return float(total)                 # or int(total * 100) for integer cents
+```
+
+…but **do not** perform the discount calculation in binary float.

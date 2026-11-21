@@ -1,0 +1,11 @@
+round	slot	status	ttfb	ttft	total	tool_ok	tool_name	finish	prompt_tokens	completion_tokens	error
+1	0	200	0.056	59.651	60.12	1	read_file	tool_calls	30474	26	
+2	0	200	0.028	60.046	60.525	1	read_file	tool_calls	30480	26	
+3	0	200	0.03	59.718	60.231	1	read_file	tool_calls	30478	26	
+4	0	200	0.029	59.679	60.162	1	read_file	tool_calls	30478	26	
+5	0	200	0.028	59.26	59.751	1	read_file	tool_calls	30477	26	
+6	0	200	0.028	60.018	60.513	1	read_file	tool_calls	30476	26	
+7	0	200	0.027	60.558	61.099	1	read_file	tool_calls	30477	26	
+8	0	200	0.033	63.856	64.397	1	read_file	tool_calls	30477	26	
+9	0	200	0.029	63.04	63.564	1	read_file	tool_calls	30476	26	
+10	0	200	0.03	63.21	63.752	1	read_file	tool_calls	30477	26	

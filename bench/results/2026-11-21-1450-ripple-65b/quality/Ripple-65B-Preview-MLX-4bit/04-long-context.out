@@ -1,0 +1,12 @@
+1. There is no fallback chain for `cloud-frontier` anywhere in the file. The file describes only a single target: `kimi-k3` via OpenRouter, with a Moonshot key as the primary frontier route. No secondary or tertiary provider is listed for that role.
+
+2. The dormant roles are four: `cloud-code`, `cloud-frontier`, `cloud-frontier-direct` and `cloud-frontier-fast`. They are blocked on missing provider keys, each recorded as deliberately unset:
+
+   - `cloud-code` — `claude-sonnet-5`, blocked on an Anthropic API key, which is deliberately unset. The file says a Console key bills separately from any Claude subscription, so the gateway route only earns its place if aider, Zed or a laptop should reach Claude through the gateway.
+   - `cloud-frontier` — `kimi-k3` via OpenRouter, blocked on an OpenRouter key. The file calls it the primary frontier route.
+   - `cloud-frontier-direct` — `kimi-k3` via Moonshot, blocked on a Moonshot key. The file notes this is the same price as OpenRouter with the best K3 caching.
+   - `cloud-frontier-fast` — `kimi-k3` via Fireworks, blocked on a Fireworks key. The file notes it is the dearest of the three and is for throughput or LoRA only.
+
+   All four are described as having no keys: "Four roles, no keys". The file also states there is no local Kimi K3 at any quantisation — the smallest community quant is about 540 GB at 1.56 bits, and Ollama cannot load it.
+
+3. Postgres is bound to `:5433`. The file gives no stated reason for that specific port — the number appears in the historical gateway-era description (`Postgres via Podman on :5433`) and in the retired-component list ("LiteLLM, Postgres, Rapid-MLX, llmster and their launchd agents. Ports 4000, 5433 and 11434 should be free"). The only context around it is the gateway era's stack: LiteLLM plus Ollama plus Postgres, with Ollama on `:11434` and the gateway on `:4000`. Nothing in the file explains why 5433 was chosen.
